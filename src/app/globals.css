@@ -1,0 +1,162 @@
+@import 'tailwindcss';
+
+/* ==========================================================================
+   Design tokens
+   --------------------------------------------------------------------------
+   As cores de semáforo existem em duas escalas:
+     · `*-ink`  → texto sobre fundo claro  (contraste ≥ 4.5:1, WCAG 2.1 AA)
+     · `*-tv`   → texto sobre fundo escuro do painel de TV (≥ 7:1, AAA)
+   Nunca use a mesma cor nos dois contextos: o que é legível no admin claro
+   vira ilegível na TV escura vista a 5 metros de distância.
+   ========================================================================== */
+@theme {
+  --color-surface: #ffffff;
+  --color-surface-2: #f7f8fa;
+  --color-surface-3: #eef0f4;
+  --color-border: #d8dce4;
+  --color-ink: #14181f;
+  --color-ink-2: #4a5261;
+  --color-ink-3: #6b7482;
+
+  --color-brand: #1d4ed8;
+  --color-brand-ink: #1e3a8a;
+  --color-brand-soft: #e8eefc;
+
+  /* Semáforo de SLA — fundo claro */
+  --color-ok-ink: #15803d;
+  --color-ok-soft: #e7f6ec;
+  --color-warn-ink: #a16207;
+  --color-warn-soft: #fdf4e3;
+  --color-crit-ink: #c2410c;
+  --color-crit-soft: #fdeee5;
+  --color-breach-ink: #b91c1c;
+  --color-breach-soft: #fdeaea;
+  --color-neutral-ink: #475569;
+  --color-neutral-soft: #eef1f5;
+
+  /* Painel de TV — fundo escuro */
+  --color-tv-bg: #0b0f17;
+  --color-tv-panel: #151b26;
+  --color-tv-border: #263041;
+  --color-tv-ink: #f2f5fa;
+  --color-tv-ink-2: #a7b2c4;
+  --color-tv-ok: #4ade80;
+  --color-tv-warn: #fbbf24;
+  --color-tv-crit: #fb923c;
+  --color-tv-breach: #f87171;
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--color-surface-2);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Foco sempre visível — critério 2.4.7 do WCAG. Removê-lo é o jeito mais rápido
+   de tornar o sistema inoperável por teclado. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Atalho para leitores de tela e navegação por teclado (WCAG 2.4.1). */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background: var(--color-brand);
+  color: #fff;
+  font-weight: 600;
+}
+.skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   Painel de TV
+   ========================================================================== */
+
+/* Auto-scroll da fila quando a lista excede a altura da tela (RF-DSH-03).
+   Percorre metade da altura porque a lista é duplicada no DOM, o que produz
+   um laço contínuo sem "salto" visível ao reiniciar. */
+@keyframes tv-marquee {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+.tv-autoscroll {
+  animation: tv-marquee var(--scroll-duration, 40s) linear infinite;
+}
+
+.tv-autoscroll:hover {
+  animation-play-state: paused;
+}
+
+/* Pulso discreto nos indicadores de breach: chama atenção de longe sem virar
+   estroboscópio numa sala onde as pessoas trabalham o dia inteiro. */
+@keyframes tv-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.tv-pulse {
+  animation: tv-pulse 2s ease-in-out infinite;
+}
+
+/* Tipografia fluida: o mesmo layout precisa servir 1080p e 4K sem media query
+   por resolução. `clamp` escala com a viewport dentro de limites legíveis. */
+.tv-metric-value {
+  font-size: clamp(2.75rem, 6.2vw, 7rem);
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.tv-metric-label {
+  font-size: clamp(0.8rem, 1.15vw, 1.4rem);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.tv-row-text {
+  font-size: clamp(1rem, 1.5vw, 1.9rem);
+}

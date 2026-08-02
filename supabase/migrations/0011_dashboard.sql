@@ -81,6 +81,22 @@ begin
 end;
 $$;
 
+-- Wrapper em `public` porque o PostgREST só expõe funções dos schemas
+-- publicados — o schema `app` fica deliberadamente fora da API. O EXECUTE é
+-- concedido apenas a service_role: nenhum usuário final resolve tokens de TV.
+create or replace function public.resolve_dashboard_token(p_token text)
+returns table (tenant_id uuid, layout_id uuid, branch_ids uuid[], refresh_seconds smallint)
+language sql
+volatile
+security definer
+set search_path = public, pg_temp
+as $$
+  select * from app.resolve_dashboard_token(p_token);
+$$;
+
+revoke all on function public.resolve_dashboard_token(text) from public, anon, authenticated;
+grant execute on function public.resolve_dashboard_token(text) to service_role;
+
 -- =============================================================================
 -- Score de priorização de fila (RF-FIL-03)
 -- =============================================================================
