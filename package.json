@@ -1,0 +1,36 @@
+{
+  "name": "sti-iarx",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SaaS multi-tenant de helpdesk e gestão de TI",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:validate": "bash scripts/validate-migrations.sh"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.8.0",
+    "@supabase/supabase-js": "^2.97.0",
+    "next": "16.2.12",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^22.19.1",
+    "@types/react": "^19.2.9",
+    "@types/react-dom": "^19.2.4",
+    "eslint": "^9.40.0",
+    "eslint-config-next": "16.2.12",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
