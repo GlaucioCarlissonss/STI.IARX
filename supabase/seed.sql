@@ -357,4 +357,86 @@ select t.tenant_id, t.id, '22220000-0000-4000-8000-000000000003',
        'Verificar se o contrato NL-2026-001 cobre SLA de 4h — cliente vai cobrar.', 'internal'
 from public.tickets t where t.title = 'Link de internet da matriz oscilando';
 
+-- -----------------------------------------------------------------------------
+-- Áreas por filial (migração 0013) — base do detalhamento por área nos mapas
+-- -----------------------------------------------------------------------------
+select app.fn_seed_branch_areas(b.id)
+from public.branches b
+where b.tenant_id = 'a0000000-0000-4000-8000-000000000001';
+
+-- Coordenadas das filiais, para o mapa ter o que plotar.
+update public.branches set latitude = -23.550520, longitude = -46.633308,
+       geocoded_at = now(), geocode_source = 'manual'
+ where id = '11110000-0000-4000-8000-000000000001';
+update public.branches set latitude = -22.909938, longitude = -47.062633,
+       geocoded_at = now(), geocode_source = 'manual'
+ where id = '11110000-0000-4000-8000-000000000002';
+update public.branches set latitude = -3.119028, longitude = -60.021731,
+       geocoded_at = now(), geocode_source = 'manual'
+ where id = '11110000-0000-4000-8000-000000000003';
+-- A sede da Vertex fica sem coordenada de propósito: exercita o aviso
+-- "filiais sem localização" em vez de a filial desaparecer do mapa em silêncio.
+
+-- Aloca os ativos em áreas da própria filial.
+update public.it_assets a
+   set branch_area_id = (
+     select ar.id from public.branch_areas ar
+     where ar.branch_id = a.branch_id
+       and ar.name = case a.asset_type
+                       when 'server'           then 'TI'
+                       when 'software_license' then 'TI'
+                       when 'smartphone'       then 'Enfermagem'
+                       else 'Administração'
+                     end
+     limit 1)
+ where a.tenant_id = 'a0000000-0000-4000-8000-000000000001'
+   and a.branch_id is not null;
+
+-- Aloca as linhas em áreas da própria filial.
+update public.telecom_lines l
+   set company_area_id = (
+     select ar.id from public.branch_areas ar
+     where ar.branch_id = l.branch_id and ar.name = 'Enfermagem' limit 1)
+ where l.tenant_id = 'a0000000-0000-4000-8000-000000000001'
+   and l.branch_id is not null;
+
+-- -----------------------------------------------------------------------------
+-- Links de internet
+-- -----------------------------------------------------------------------------
+insert into public.internet_links (
+  tenant_id, branch_id, branch_area_id, contract_number, supplier_id,
+  technology, download_mbps, upload_mbps, guaranteed_mbps,
+  has_static_ip, static_ip, cpe_brand, cpe_model, status, monthly_cost,
+  activated_on, contract_start, contract_end, monitoring_host, last_state, last_state_at
+)
+select
+  'a0000000-0000-4000-8000-000000000001', b.id,
+  (select ar.id from public.branch_areas ar where ar.branch_id = b.id and ar.name = 'TI' limit 1),
+  v.contract, '44440000-0000-4000-8000-000000000001',
+  v.tech, v.down, v.up, v.guaranteed,
+  v.static_ip is not null, v.static_ip, v.brand, v.model, v.status, v.cost,
+  v.activated, v.activated, v.contract_end, v.host, v.state, now()
+from public.branches b
+join (values
+  ('11110000-0000-4000-8000-000000000001'::uuid, 'NL-LINK-001', 'fiber',     500, 500, 250, '200.150.10.2'::inet, 'Huawei',  'EG8145V5', 'active', 4800.00, '2026-01-01'::date, '2027-01-01'::date, '200.150.10.2', 'up'),
+  ('11110000-0000-4000-8000-000000000002'::uuid, 'NL-LINK-002', 'fiber',     300, 300, 150, null,                 'Intelbras','WiFiber',  'active', 2200.00, '2026-02-15'::date, '2027-02-15'::date, '10.20.0.1',     'up'),
+  ('11110000-0000-4000-8000-000000000003'::uuid, 'NL-LINK-003', 'satellite', 100,  20,  50, null,                 'Starlink', 'Gen3',     'active', 1900.00, '2026-03-01'::date, '2027-03-01'::date, '10.30.0.1',     'down')
+) as v(branch, contract, tech, down, up, guaranteed, static_ip, brand, model, status, cost, activated, contract_end, host, state)
+  on v.branch = b.id;
+
+-- Evento de indisponibilidade em aberto para o link de Manaus.
+insert into public.link_availability_events (tenant_id, link_id, state, started_at, source, note)
+select k.tenant_id, k.id, 'down', now() - interval '35 minutes', 'manual',
+       'Queda registrada manualmente — aguardando retorno da operadora.'
+from public.internet_links k where k.contract_number = 'NL-LINK-003';
+
+-- Contrato anexado a um dos links, para o indicador "sem contrato" ter contraste.
+insert into public.internet_link_attachments
+  (tenant_id, link_id, kind, storage_path, file_name, mime_type, size_bytes, uploaded_by)
+select k.tenant_id, k.id, 'contract',
+       format('%s/%s/contrato-nl-link-001.pdf', k.tenant_id, k.id),
+       'contrato-nl-link-001.pdf', 'application/pdf', 184320,
+       '22220000-0000-4000-8000-000000000001'
+from public.internet_links k where k.contract_number = 'NL-LINK-001';
+
 commit;

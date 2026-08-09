@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-37 tabelas e 5 views em `public`, com 100 policies de RLS. Nomenclatura conforme
+44 tabelas e 14 views em `public`, com 114 policies de RLS. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
 ## 1. Visão geral
@@ -81,6 +81,26 @@ remoção/renome/desativação), `queue_members`, `queue_rules` (condições em 
 
 ### Auditoria e dashboard (0010–0011)
 `audit_log`, `dashboard_layouts`, `dashboard_tokens`.
+
+### Áreas, anexos e conectividade (0013)
+Camada de dados das lacunas especificadas em
+[06 — Lacunas e Roadmap](06-lacunas-e-roadmap.md).
+
+| Tabela | Papel |
+|---|---|
+| `branch_areas` | Subdivisões da filial (Recepção, Enfermagem, TI…). Base do detalhamento por área em inventário, telefonia, links e mapas. |
+| `asset_attachments` | Notas fiscais e fotos do ativo; uma foto principal garantida por índice parcial. |
+| `telecom_line_attachments` | Contratos, adendos e termos de fidelidade da linha. |
+| `internet_links` | Links de internet por filial: tecnologia, banda, IP fixo, CPE, contrato, custo e estado de monitoração. |
+| `internet_link_attachments` | Documentos do link. |
+| `link_availability_events` | Histórico de indisponibilidade, com duração como coluna gerada e idempotência por ID externo. |
+| `integration_mapping_versions` | Snapshot do conjunto de mapeamentos, para rollback. |
+
+Colunas acrescentadas: `it_assets.branch_area_id`, `telecom_lines.company_area_id`
+e vigência de contrato, `asset_assignments.previous_*` + `reason`,
+`ticket_attachments.kind`/`thumbnail_path`/`scan_status`, `tenants.attachment_quota_mb`,
+`queues.tiebreaker`, `sla_definitions.name`/`deleted_at`,
+`branches.latitude`/`longitude`.
 
 ## 3. Padrões estruturais
 
@@ -166,12 +186,18 @@ entre tenants.
 | `vw_agents_online` | Presença (últimos 5 min) |
 | `vw_sla_compliance` | Compliance por mês, fila, atendente e cliente |
 | `vw_telecom_costs` | Custos por filial e operadora |
+| `vw_telecom_dashboard` | Telefonia agregada por filial, área, operadora, tipo e status |
+| `vw_internet_dashboard` | Links por filial, operadora e tecnologia, com quedas e contratos vencendo |
+| `vw_connectivity_cost` | Telefonia + links consolidados por filial |
+| `vw_map_tickets` · `vw_map_assets` · `vw_map_telecom` · `vw_map_internet` | Agregação por filial com coordenadas e semáforo calculado **na view** |
+| `vw_map_area_breakdown` | Detalhamento por área, para o popup do marcador |
+| `asset_custody_history` | Timeline de custódia sobre `asset_assignments`, com o nome pedido pelo escopo |
 
 ## 7. Verificação
 
 `supabase/tests/schema_test.sql` roda contra um banco semeado, com um papel
 **sem `BYPASSRLS`** — como superusuário, todo teste de isolamento passaria
-trivialmente e não provaria nada. São 62 asserções cobrindo cobertura de RLS,
+trivialmente e não provaria nada. São 114 asserções cobrindo cobertura de RLS,
 isolamento entre tenants, visibilidade por filial, comentário interno oculto do
 solicitante, escalonamento de privilégio, máquina de estados, fila padrão,
 precedência de SLA, pausa/retomada, idempotência, numeração, views, tokens de TV

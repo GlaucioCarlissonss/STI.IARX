@@ -104,7 +104,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 22 testes do motor de mapeamento
-npm run db:validate   # migrações + seed + 62 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 114 asserções em PostgreSQL real
 ```
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
@@ -134,7 +134,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 12 migrações
+  migrations/         # 13 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -165,7 +165,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado nesta entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 22 testes unitários e 62 asserções de banco passando — incluindo
+apontamentos, 22 testes unitários e 114 asserções de banco passando — incluindo
 a aritmética de horário útil conferida contra 8 cenários (almoço, fim de semana,
 feriado, fora de expediente).
 
@@ -205,5 +205,6 @@ aceitável. A resolução depende de uma atualização do Next.
 | [01 — Requisitos](docs/01-requisitos.md) | Requisitos rastreáveis, matriz de permissões, lacunas e decisões por padrão |
 | [02 — Benchmarking](docs/02-benchmarking.md) | Freshservice, Jira SM, Zendesk, GLPI, ManageEngine — padrões adotados e 10 antipatterns evitados |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Visão geral e 12 ADRs com alternativas rejeitadas |
-| [04 — Modelo de dados](docs/04-modelo-dados.md) | 37 tabelas, funções, triggers, views e estratégia de índices |
+| [04 — Modelo de dados](docs/04-modelo-dados.md) | 44 tabelas, funções, triggers, views e estratégia de índices |
 | [05 — Bitrix24](docs/05-integracao-bitrix24.md) | Estudo da API, mapeamento, configuração passo a passo e limitações |
+| [06 — Lacunas e Roadmap](docs/06-lacunas-e-roadmap.md) | Especificação dos 11 módulos pendentes, cronograma em lotes e 14 lacunas globais |
