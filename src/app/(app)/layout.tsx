@@ -22,6 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: '/clientes', label: 'Clientes e filiais', show: canManageRecords(profile.role) },
     { href: '/usuarios', label: 'Usuários', show: canManageRecords(profile.role) },
     { href: '/integracoes', label: 'Integrações', show: canManageConfig(profile.role) },
+    { href: '/mapas', label: 'Mapas', show: true },
     { href: '/tv', label: 'Painéis de TV', show: canManageRecords(profile.role) },
   ].filter((item) => item.show)
 

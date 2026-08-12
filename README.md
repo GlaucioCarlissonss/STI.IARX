@@ -79,7 +79,28 @@ await supabase.auth.admin.updateUserById(userId, {
 > qualquer pessoa autenticada migrasse para outro tenant e lesse dados alheios.
 > Ver [ADR-002](docs/03-arquitetura.md#adr-002).
 
-### 4. Edge Functions (integrações)
+### 4. Google Maps (módulo de mapas)
+
+Duas chaves, com escopos diferentes de propósito:
+
+```bash
+# .env.local
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=   # navegador — Maps JavaScript API
+GOOGLE_MAPS_SERVER_KEY=            # servidor  — Geocoding API
+```
+
+No console do Google, habilite **Maps JavaScript API** e **Geocoding API**, e restrinja
+cada chave: a do navegador por *referrer HTTP* (seu domínio), a de servidor por *IP*.
+
+> A chave do navegador é pública por natureza — a Maps JS API valida por referrer, não por
+> segredo. Sem a restrição de domínio, qualquer site consome sua cota. Já a chave de
+> Geocoding **nunca** vai para o cliente: uma chave de servidor irrestrita no bundle é o
+> erro clássico dessa integração.
+
+Sem as chaves o app não quebra: `/mapas` degrada para a lista de filiais com coordenada e
+link para o ponto exato no Google Maps.
+
+### 5. Edge Functions (integrações)
 
 ```bash
 supabase secrets set BITRIX24_INBOUND_WEBHOOK_URL="https://SEU.bitrix24.com.br/rest/1/SEGREDO/"
@@ -89,7 +110,7 @@ supabase functions deploy integration-webhook --no-verify-jwt
 
 Passo a passo completo do Bitrix24: [docs/05-integracao-bitrix24.md](docs/05-integracao-bitrix24.md).
 
-### 5. Executar
+### 6. Executar
 
 ```bash
 npm run dev     # http://localhost:3000
@@ -103,7 +124,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 22 testes do motor de mapeamento
+npm test              # 40 testes: motor de mapeamento e coordenadas
 npm run db:validate   # migrações + seed + 114 asserções em PostgreSQL real
 ```
 
@@ -134,7 +155,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 13 migrações
+  migrations/         # 14 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -165,7 +186,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado nesta entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 22 testes unitários e 114 asserções de banco passando — incluindo
+apontamentos, 40 testes unitários e 114 asserções de banco passando — incluindo
 a aritmética de horário útil conferida contra 8 cenários (almoço, fim de semana,
 feriado, fora de expediente).
 

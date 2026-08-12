@@ -47,7 +47,7 @@ a **interface** — e, nos casos marcados, a decisão do operador.
 | M8 — Links de Internet | ✅ `internet_links`, anexos, `link_availability_events`, dashboards | ⬜ CRUD, Edge Function do Zabbix |
 | M9 — Área na Telefonia | ✅ `company_area_id` + trigger | ⬜ campo no formulário, filtro |
 | M10 — Edição de Integrações | ✅ `integration_mapping_versions` + trigger, campos de rotação | ⬜ telas de configuração e dry run |
-| M11 — Mapas | ✅ `latitude`/`longitude`, 5 views de mapa com semáforo na view | ⬜ componente de mapa (bloqueado por LG-09) |
+| M11 — Mapas | ✅ `latitude`/`longitude`, precisão do geocode, 5 views com semáforo | ✅ Google Maps em `/mapas`, geocodificação e coordenada colada do Maps |
 
 **Dois achados que só apareceram ao implementar**, ambos corrigidos:
 
@@ -1257,14 +1257,19 @@ navegador.
 - [ ] Nenhuma chave de API de mapa exposta no bundle do cliente.
 
 ### Lacunas e Decisões Pendentes
-- **[DECISÃO PENDENTE — BLOQUEANTE]** Provedor de mapas. O escopo diz "mesma escolha da
-  plataforma de locação" — **essa informação não está disponível aqui**. Recomendo
-  **Leaflet + OpenStreetMap**: sem chave, sem cobrança por carregamento, e compatível com
-  CSP restritiva. Google Maps e Mapbox trazem cobrança por visualização, o que num painel
-  com auto-refresh de 60s aberto o dia inteiro se torna custo recorrente relevante.
-- **[DECISÃO PENDENTE]** Geocodificação: manual (gestor informa lat/lng), automática por
-  Nominatim (grátis, com limite de uso e política de atribuição) ou paga. Sugestão:
-  automática com revisão manual, e `geocode_source` registrando a origem.
+- **[DECIDIDO — Google Maps]** O operador escolheu **Google Maps**, por precisão de
+  localização. Implementado: Maps JavaScript API em `src/components/google-map.tsx` e
+  Geocoding API em `src/app/(app)/clientes/geo-actions.ts`, com duas chaves de escopos
+  distintos (navegador por referrer, servidor por IP).
+  **Consequência de custo a acompanhar:** a Maps JS API cobra por carregamento de mapa. Num
+  painel com auto-refresh de 60s aberto o dia inteiro, isso é custo recorrente — por isso o
+  refresh do mapa recarrega **dados**, não o mapa, e o painel de TV não embarca mapa.
+  Convém configurar alerta de cota no console do Google.
+- **[RESOLVIDO]** Geocodificação: os dois caminhos existem. O gestor cola a URL do Google
+  Maps (mais exato — quem cola está olhando o prédio), ou geocodifica pelo endereço
+  cadastrado. `geocode_source` registra a origem e `geocode_precision` guarda o
+  `location_type` devolvido pelo Google, para que "centro da cidade" não se confunda com
+  "porta da filial" (migração `0014`).
 - **[LACUNA]** "Portal do fornecedor" e "portal do cliente" aparecem no escopo do mapa,
   mas **portal do cliente não existe** na plataforma — hoje há um único app com papéis.
   Isso é escopo de módulo novo, bem maior que o mapa. Ver
@@ -1449,8 +1454,9 @@ domínio próprio ou catálogo de serviços.
 Construir isso é **módulo maior que os 11 deste roadmap somados**. Precisa ser tratado
 como iniciativa separada, não como característica do mapa.
 
-### LG-09 — Provedor de mapas — **bloqueia M11**
-Ver o item detalhado no Módulo 11. Recomendação: Leaflet + OpenStreetMap.
+### LG-09 — Provedor de mapas — **RESOLVIDO: Google Maps**
+Decidido pelo operador. Implementado com duas chaves e degradação explícita quando ausentes.
+Resta acompanhar **custo por carregamento** e configurar alerta de cota.
 
 ### LG-10 — Pausa de clock configurável por SLA
 Ver Módulo 1. Hoje a pausa é comportamento de status, não configuração. Se o requisito é

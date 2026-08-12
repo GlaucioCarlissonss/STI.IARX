@@ -436,17 +436,21 @@
 
     const branches = [
       { id:'b1', name:'Meridiano — Matriz São Paulo', short:'Matriz SP', client:'Grupo Meridiano Alimentos S.A.',
-        city:'São Paulo', state:'SP', lat:-23.55052, lng:-46.633308 },
+        city:'São Paulo', state:'SP', lat:-23.55052, lng:-46.633308, precision:'rooftop',
+        address:'Av. Paulista, 1000 — Bela Vista, São Paulo - SP' },
       { id:'b2', name:'Meridiano — CD Campinas', short:'CD Campinas', client:'Grupo Meridiano Alimentos S.A.',
-        city:'Campinas', state:'SP', lat:-22.909938, lng:-47.062633 },
+        city:'Campinas', state:'SP', lat:-22.909938, lng:-47.062633, precision:'manual',
+        address:'Rod. Anhanguera, km 98 — Campinas - SP' },
       { id:'b3', name:'Meridiano — Filial Manaus', short:'Manaus', client:'Grupo Meridiano Alimentos S.A.',
-        city:'Manaus', state:'AM', lat:-3.119028, lng:-60.021731 },
+        city:'Manaus', state:'AM', lat:-3.119028, lng:-60.021731, precision:'rooftop',
+        address:'Av. Djalma Batista, 500 — Manaus - AM' },
       { id:'b4', name:'Meridiano — Filial Recife', short:'Recife', client:'Grupo Meridiano Alimentos S.A.',
-        city:'Recife', state:'PE', lat:-8.047562, lng:-34.877 },
+        city:'Recife', state:'PE', lat:-8.047562, lng:-34.877, precision:'approximate',
+        address:'Recife - PE' },
       // Sem coordenada de propósito: exercita o aviso "filiais sem localização"
       // em vez de a filial desaparecer do mapa em silêncio.
       { id:'b5', name:'Vertex — Sede', short:'Vertex BH', client:'Construtora Vertex Ltda.',
-        city:'Belo Horizonte', state:'MG', lat:null, lng:null }
+        city:'Belo Horizonte', state:'MG', lat:null, lng:null, precision:null, address:null }
     ];
 
     const areas = [];
@@ -1099,6 +1103,53 @@
       <input type="file" id="file-${id}" multiple style="display:none">
       <label for="file-${id}" style="cursor:pointer;font-weight:600;color:var(--brand-ink)">Escolher arquivos</label>
       ou arraste aqui<div class="dim" style="margin-top:.2rem">${esc(hint)}</div></div>`;
+  }
+
+  /* ===================== Google Maps ===================== */
+  // Espelha src/lib/maps.ts. A página publicada não pode carregar o script do
+  // Google (o CSP do artefato bloqueia host externo), então aqui o Maps entra
+  // por LINK para o ponto exato — no app real o mapa é a Maps JavaScript API.
+  const PRECISION_LABEL = {
+    rooftop:'Endereço exato', range_interpolated:'Interpolado no logradouro',
+    geometric_center:'Centro do logradouro', approximate:'Aproximado (cidade/bairro)',
+    manual:'Informado manualmente'
+  };
+  const isPreciseEnough = p => p === 'rooftop' || p === 'range_interpolated' || p === 'manual';
+  const validCoords = (la, ln) => Number.isFinite(la) && Number.isFinite(ln) &&
+    Math.abs(la) <= 90 && Math.abs(ln) <= 180 && !(la === 0 && ln === 0);
+
+  /** Aceita a URL colada do Maps, o link de compartilhamento ou o par solto. */
+  function parseCoords(input) {
+    const text = String(input || '').trim();
+    if (!text) return null;
+    const pats = [
+      /@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+      /[?&](?:q|query|ll|center)=(-?\d+(?:\.\d+)?)%2C(-?\d+(?:\.\d+)?)/i,
+      /[?&](?:q|query|ll|center)=(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i,
+      /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
+      /^\s*(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)\s*$/
+    ];
+    for (const re of pats) {
+      const m = text.match(re);
+      if (!m) continue;
+      const la = Number(m[1]), ln = Number(m[2]);
+      if (validCoords(la, ln)) return { lat:Number(la.toFixed(6)), lng:Number(ln.toFixed(6)) };
+    }
+    return null;
+  }
+  const gmapsUrl = (la, ln, label) =>
+    `https://www.google.com/maps/search/?api=1&query=${la},${ln}` +
+    (label ? `(${encodeURIComponent(label)})` : '');
+  const gdirUrl = (la, ln) => `https://www.google.com/maps/dir/?api=1&destination=${la},${ln}`;
+  const fmtCoords = (la, ln) => `${la.toFixed(6)}, ${ln.toFixed(6)}`;
+
+  function setBranchCoords(branchId, input) {
+    const c = parseCoords(input);
+    if (!c) return 'Não reconheci coordenadas. Cole a URL do Google Maps ou o par "-23.550520, -46.633308".';
+    const b = branchById(branchId);
+    if (!b) return 'Filial não encontrada.';
+    b.lat = c.lat; b.lng = c.lng; b.precision = 'manual';
+    save(); return null;
   }
 
   /* ===================== Mapa (Módulo 11) ===================== */
@@ -1833,11 +1884,46 @@
         `<button type="button" data-mapdomain="${k}" aria-pressed="${mapDomain===k}">${v}</button>`).join('')}
     </div>
     ${renderMap(mapDomain, mapRows(mapDomain))}
-    <p class="dim" style="margin-top:.8rem">
-      No sistema real este mapa usa Leaflet com OpenStreetMap — recomendado por não cobrar
-      por carregamento, o que importa num painel aberto o dia inteiro. Aqui o contorno é SVG
-      embutido, porque a página é autocontida e não pode buscar tiles externos.
-    </p>`;
+
+    <div class="alert" data-kind="info" style="margin-top:.9rem">
+      <strong>Google Maps.</strong> No app real o mapa é a Maps JavaScript API do Google, com
+      geocodificação pela Geocoding API e o nível de precisão que ela devolve
+      (<span class="mono">ROOFTOP</span>, <span class="mono">APPROXIMATE</span>…).
+      Esta página é autocontida e o CSP dela bloqueia host externo, então aqui o contorno é SVG
+      embutido — e o Google entra por <strong>link para o ponto exato</strong>, abaixo e no popup
+      de cada marcador.
+    </div>
+
+    <h2 style="margin:1.5rem 0 .6rem">Localização das filiais</h2>
+    <p class="dim" style="margin:0 0 .6rem">
+      Cole a URL do Google Maps para fixar a coordenada exata. No Maps: clique com o botão direito
+      no local — a primeira linha do menu já traz o par de coordenadas.
+    </p>
+    <div class="table-wrap" style="margin-bottom:1rem"><table>
+      <thead><tr><th>Filial</th><th>Cidade</th><th>Coordenada</th><th>Precisão</th>
+        <th>Definir pela URL do Google Maps</th><th></th></tr></thead>
+      <tbody>${db.branches.map(b => `<tr>
+        <td class="strong">${esc(b.name)}</td>
+        <td class="muted">${esc([b.city,b.state].filter(Boolean).join(' / '))||'—'}</td>
+        <td class="mono">${b.lat!==null?fmtCoords(b.lat,b.lng):'<span class="dim">sem coordenada</span>'}</td>
+        <td>${b.lat===null?pill('não localizada','breach')
+              :isPreciseEnough(b.precision)?pill(PRECISION_LABEL[b.precision],'ok')
+              :pill(PRECISION_LABEL[b.precision]||'desconhecida','warn')}</td>
+        <td><div style="display:flex;gap:.35rem;min-width:17rem">
+          <input type="text" data-geo-input="${b.id}" placeholder="https://www.google.com/maps/@-23.55,-46.63,17z">
+          <button type="button" class="btn btn-sm" data-geo-save="${b.id}">Definir</button>
+        </div></td>
+        <td>${b.lat!==null?`<div style="display:flex;gap:.6rem;font-size:.74rem;white-space:nowrap">
+          <a href="${gmapsUrl(b.lat,b.lng,b.name)}" target="_blank" rel="noopener">Ver no Maps</a>
+          <a href="${gdirUrl(b.lat,b.lng)}" target="_blank" rel="noopener">Rota</a></div>`:''}</td>
+      </tr>`).join('')}</tbody></table></div>
+    <div id="geo-msg"></div>
+    ${db.branches.some(b => b.lat!==null && !isPreciseEnough(b.precision))?`
+      <div class="alert" data-kind="warn" style="margin-top:.6rem">
+        Há filial com coordenada <strong>aproximada</strong> — o marcador cai no centro da cidade.
+        Serve para o painel, não para despachar técnico ao endereço. Confira no Maps e cole a
+        coordenada exata.
+      </div>`:''}`;
 
   /* ===================== Integrações (Módulo 10) ===================== */
   const TRANSFORMS = { direct:'Direto', value_map:'Mapa de valores', datetime:'Data/hora',
@@ -2648,7 +2734,15 @@
           <span>${esc(r.name)}</span><span class="num strong">${r.count}</span></div>`).join('')
         :'<span class="dim">Nada nesta filial para este domínio.</span>'}</div>
       ${rows.length?`<div class="dim" style="margin-top:.4rem;border-top:1px solid var(--border);padding-top:.3rem">
-        Total: <strong>${rows.reduce((s,r)=>s+r.count,0)}</strong> · quebra por área da filial</div>`:''}`;
+        Total: <strong>${rows.reduce((s,r)=>s+r.count,0)}</strong> · quebra por área da filial</div>`:''}
+      ${b.lat!==null?`<div style="margin-top:.5rem;border-top:1px solid var(--border);padding-top:.45rem">
+        <div class="dim mono">${fmtCoords(b.lat,b.lng)}</div>
+        <div class="dim" style="color:${isPreciseEnough(b.precision)?'var(--ok-ink)':'var(--warn-ink)'}">
+          ${b.precision?esc(PRECISION_LABEL[b.precision]):'precisão desconhecida'}</div>
+        <div style="display:flex;gap:.7rem;margin-top:.3rem;font-size:.74rem">
+          <a href="${gmapsUrl(b.lat,b.lng,b.name)}" target="_blank" rel="noopener">Ver no Google Maps</a>
+          <a href="${gdirUrl(b.lat,b.lng)}" target="_blank" rel="noopener">Rota</a>
+        </div></div>`:''}`;
     wrap.appendChild(pop);
   }
 
@@ -2919,6 +3013,17 @@
       if (err) msg.innerHTML = `<div class="alert" data-kind="error">${esc(err)}</div>`;
       else { msg.innerHTML = ''; toast('Área excluída'); }
       renderAreaList(); return;
+    }
+
+    // Localização da filial pela URL do Google Maps
+    const geo = T.closest('[data-geo-save]');
+    if (geo) {
+      const id = geo.dataset.geoSave;
+      const input = document.querySelector(`[data-geo-input="${id}"]`);
+      const err = setBranchCoords(id, input ? input.value : '');
+      const msg = document.getElementById('geo-msg');
+      if (err) { if (msg) msg.innerHTML = `<div class="alert" data-kind="error">${esc(err)}</div>`; return; }
+      toast('Localização atualizada'); render(); return;
     }
 
     // Mapeamento de integração
