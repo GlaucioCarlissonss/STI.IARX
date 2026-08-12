@@ -1,0 +1,3190 @@
+<title>STI · Suporte TI</title>
+
+<style>
+  /* ==========================================================================
+     Tokens — herdados de src/app/globals.css. A cor semântica (verde/âmbar/
+     laranja/vermelho) comunica estado de SLA; o azul comunica ação.
+     ========================================================================== */
+  :root {
+    --surface:#fff; --surface-2:#f7f8fa; --surface-3:#eef0f4; --border:#d8dce4;
+    --ink:#14181f; --ink-2:#4a5261; --ink-3:#6b7482;
+    --brand:#1d4ed8; --brand-ink:#1e3a8a; --brand-soft:#e8eefc;
+    --ok-ink:#15803d; --ok-soft:#e7f6ec;
+    --warn-ink:#a16207; --warn-soft:#fdf4e3;
+    --crit-ink:#c2410c; --crit-soft:#fdeee5;
+    --breach-ink:#b91c1c; --breach-soft:#fdeaea;
+    --neut-ink:#475569; --neut-soft:#eef1f5;
+    --shadow:0 1px 2px rgba(20,24,31,.06),0 1px 3px rgba(20,24,31,.04);
+    --font-ui:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --font-data:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface:#131820; --surface-2:#0d1117; --surface-3:#1b222d; --border:#29313e;
+      --ink:#eef2f8; --ink-2:#a8b3c4; --ink-3:#7d8798;
+      --brand:#5b8def; --brand-ink:#a8c4fb; --brand-soft:#17243c;
+      --ok-ink:#56d98a; --ok-soft:#10281a;
+      --warn-ink:#f0c05a; --warn-soft:#2b2410;
+      --crit-ink:#fb9a63; --crit-soft:#2e1c11;
+      --breach-ink:#f87171; --breach-soft:#301518;
+      --neut-ink:#9aa5b6; --neut-soft:#1c232e;
+      --shadow:0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface:#131820; --surface-2:#0d1117; --surface-3:#1b222d; --border:#29313e;
+    --ink:#eef2f8; --ink-2:#a8b3c4; --ink-3:#7d8798;
+    --brand:#5b8def; --brand-ink:#a8c4fb; --brand-soft:#17243c;
+    --ok-ink:#56d98a; --ok-soft:#10281a; --warn-ink:#f0c05a; --warn-soft:#2b2410;
+    --crit-ink:#fb9a63; --crit-soft:#2e1c11; --breach-ink:#f87171; --breach-soft:#301518;
+    --neut-ink:#9aa5b6; --neut-soft:#1c232e; --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+  :root[data-theme="light"] {
+    --surface:#fff; --surface-2:#f7f8fa; --surface-3:#eef0f4; --border:#d8dce4;
+    --ink:#14181f; --ink-2:#4a5261; --ink-3:#6b7482;
+    --brand:#1d4ed8; --brand-ink:#1e3a8a; --brand-soft:#e8eefc;
+    --ok-ink:#15803d; --ok-soft:#e7f6ec; --warn-ink:#a16207; --warn-soft:#fdf4e3;
+    --crit-ink:#c2410c; --crit-soft:#fdeee5; --breach-ink:#b91c1c; --breach-soft:#fdeaea;
+    --neut-ink:#475569; --neut-soft:#eef1f5;
+    --shadow:0 1px 2px rgba(20,24,31,.06),0 1px 3px rgba(20,24,31,.04);
+  }
+  /* A parede é sempre escura: é uma TV numa sala, não uma página. */
+  .wall { --tv-bg:#0b0f17; --tv-panel:#151b26; --tv-border:#263041;
+    --tv-ink:#f2f5fa; --tv-ink-2:#a7b2c4;
+    --tv-ok:#4ade80; --tv-warn:#fbbf24; --tv-crit:#fb923c; --tv-breach:#f87171; }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--surface-2); color:var(--ink);
+    font-family:var(--font-ui); font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  :where(a,button,input,select,textarea,[tabindex]):focus-visible {
+    outline:2px solid var(--brand); outline-offset:2px; border-radius:5px; }
+  @media (prefers-reduced-motion: reduce) {
+    *,*::before,*::after { animation-duration:.01ms !important; animation-iteration-count:1 !important;
+      transition-duration:.01ms !important; } }
+
+  .shell { max-width:92rem; margin:0 auto; padding:0 1.25rem 4rem; }
+  .banner { background:var(--brand-soft); color:var(--brand-ink);
+    border-bottom:1px solid color-mix(in srgb,var(--brand-ink) 20%,transparent);
+    font-size:.79rem; padding:.55rem 1.25rem; text-align:center; }
+  .banner strong { font-weight:680; }
+
+  .top { position:sticky; top:0; z-index:30; border-bottom:1px solid var(--border);
+    background:color-mix(in srgb,var(--surface) 92%,transparent); backdrop-filter:blur(10px); }
+  .top-inner { max-width:92rem; margin:0 auto; padding:.7rem 1.25rem;
+    display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
+  .logo { font-weight:800; letter-spacing:-.03em; font-size:1.15rem; color:var(--brand); text-decoration:none; }
+  .logo span { color:var(--ink-3); font-weight:500; font-size:.8rem; letter-spacing:0; margin-left:.5rem; }
+  .seg { display:flex; gap:2px; padding:3px; margin-left:auto; background:var(--surface-3); border-radius:9px; }
+  .seg button { border:0; background:transparent; cursor:pointer; font:inherit; font-size:.82rem;
+    font-weight:600; color:var(--ink-2); padding:.35rem .85rem; border-radius:7px; }
+  .seg button[aria-pressed="true"] { background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+  .icon-btn { border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
+    cursor:pointer; font:inherit; font-size:.82rem; padding:.38rem .7rem; border-radius:8px; }
+  .icon-btn:hover { background:var(--surface-3); }
+
+  .layout { display:grid; grid-template-columns:13.5rem minmax(0,1fr); gap:1.75rem; padding-top:1.5rem; }
+  @media (max-width:980px) { .layout { grid-template-columns:1fr; gap:1rem; } }
+  .side { position:sticky; top:4.4rem; align-self:start; display:flex; flex-direction:column; gap:1px; }
+  @media (max-width:980px) { .side { position:static; flex-direction:row; overflow-x:auto; gap:.3rem; padding-bottom:.3rem; } }
+  .side button { display:flex; align-items:center; gap:.4rem; text-align:left; white-space:nowrap;
+    border:0; background:transparent; font:inherit; font-size:.875rem; font-weight:500;
+    color:var(--ink-2); padding:.45rem .7rem; border-radius:7px; cursor:pointer; }
+  .side button:hover { background:var(--surface-3); }
+  .side button[aria-current="page"] { background:var(--brand-soft); color:var(--brand-ink); font-weight:600; }
+  .tag-new { font-size:.58rem; font-weight:800; letter-spacing:.06em; padding:.08rem .3rem;
+    border-radius:4px; background:var(--ok-soft); color:var(--ok-ink); text-transform:uppercase; }
+
+  h1 { font-size:1.5rem; letter-spacing:-.022em; margin:0; text-wrap:balance; font-weight:700; }
+  h2 { font-size:1rem; letter-spacing:-.01em; margin:0; font-weight:650; }
+  h3 { font-size:.875rem; margin:0; font-weight:650; }
+  .lede { color:var(--ink-2); font-size:.9rem; margin:.3rem 0 0; max-width:66ch; }
+  .page-head { margin-bottom:1.25rem; display:flex; justify-content:space-between; gap:1rem;
+    align-items:flex-start; flex-wrap:wrap; }
+  .eyebrow { font-size:.68rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); }
+  .card-body { padding:1.1rem; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr)); gap:.75rem; margin-bottom:1.5rem; }
+  .tile { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:.85rem 1rem; box-shadow:var(--shadow); position:relative; overflow:hidden; }
+  .tile[data-tone]::before { content:""; position:absolute; inset:0 auto 0 0; width:3px; }
+  .tile[data-tone="ok"]::before { background:var(--ok-ink); }
+  .tile[data-tone="warn"]::before { background:var(--warn-ink); }
+  .tile[data-tone="crit"]::before { background:var(--crit-ink); }
+  .tile[data-tone="breach"]::before { background:var(--breach-ink); }
+  .tile-label { font-size:.68rem; font-weight:700; letter-spacing:.085em; text-transform:uppercase; color:var(--ink-3); }
+  .tile-value { font-size:1.9rem; font-weight:750; letter-spacing:-.03em; font-variant-numeric:tabular-nums;
+    margin-top:.15rem; line-height:1.1; }
+  .tile-hint { font-size:.72rem; color:var(--ink-3); }
+
+  .table-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:12px;
+    background:var(--surface); box-shadow:var(--shadow); }
+  table { width:100%; border-collapse:collapse; font-size:.85rem; min-width:46rem; }
+  thead th { text-align:left; font-size:.67rem; font-weight:700; letter-spacing:.085em;
+    text-transform:uppercase; color:var(--ink-3); padding:.6rem .8rem; background:var(--surface-2);
+    border-bottom:1px solid var(--border); white-space:nowrap; }
+  tbody td { padding:.62rem .8rem; border-bottom:1px solid var(--border); vertical-align:middle; }
+  tbody tr:last-child td { border-bottom:0; }
+  tbody tr[data-clickable] { cursor:pointer; }
+  tbody tr[data-clickable]:hover { background:var(--surface-2); }
+  tbody tr.group-head td { background:var(--surface-3); font-weight:650; font-size:.78rem; }
+  .num { font-variant-numeric:tabular-nums; }
+  .mono { font-family:var(--font-data); font-size:.78rem; }
+  .muted { color:var(--ink-2); } .dim { color:var(--ink-3); font-size:.74rem; }
+  .strong { font-weight:600; }
+
+  .pill { display:inline-flex; align-items:center; gap:.35rem; padding:.16rem .55rem; border-radius:999px;
+    font-size:.72rem; font-weight:650; white-space:nowrap; background:var(--neut-soft); color:var(--neut-ink); }
+  .pill[data-tone="ok"] { background:var(--ok-soft); color:var(--ok-ink); }
+  .pill[data-tone="warn"] { background:var(--warn-soft); color:var(--warn-ink); }
+  .pill[data-tone="crit"] { background:var(--crit-soft); color:var(--crit-ink); }
+  .pill[data-tone="breach"] { background:var(--breach-soft); color:var(--breach-ink); }
+  .pill[data-tone="info"] { background:var(--brand-soft); color:var(--brand-ink); }
+  .dot { width:.45rem; height:.45rem; border-radius:50%; background:currentColor; flex:none; }
+  .prio { display:inline-flex; align-items:center; gap:.38rem; font-weight:600; font-size:.8rem; }
+  .prio .dot { width:.5rem; height:.5rem; }
+  .countdown { font-family:var(--font-data); font-variant-numeric:tabular-nums; font-size:.8rem; font-weight:600; }
+  .countdown[data-late="true"] { color:var(--breach-ink); }
+
+  .filters { display:flex; flex-wrap:wrap; gap:.6rem; align-items:flex-end; margin-bottom:1rem;
+    background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:.85rem; }
+  .field { display:flex; flex-direction:column; gap:.25rem; }
+  .field label { font-size:.7rem; font-weight:650; color:var(--ink-2); }
+  .req { color:var(--breach-ink); }
+  select,input[type=search],input[type=text],input[type=number],input[type=date],textarea {
+    font:inherit; font-size:.84rem; color:var(--ink); background:var(--surface);
+    border:1px solid var(--border); border-radius:8px; padding:.38rem .55rem; min-width:9rem; width:100%; }
+  textarea { resize:vertical; min-height:4.5rem; }
+  input[type=range] { width:100%; accent-color:var(--brand); }
+  .btn { font:inherit; font-size:.84rem; font-weight:600; cursor:pointer; border-radius:8px;
+    padding:.42rem .9rem; border:1px solid transparent; background:var(--brand); color:#fff; }
+  .btn:hover { background:var(--brand-ink); }
+  .btn[data-variant=ghost] { background:var(--surface); border-color:var(--border); color:var(--ink); }
+  .btn[data-variant=ghost]:hover { background:var(--surface-3); }
+  .btn[data-variant=danger] { background:var(--breach-ink); }
+  .btn:disabled { opacity:.55; cursor:not-allowed; }
+  .btn-sm { font-size:.75rem; padding:.25rem .6rem; }
+  .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(12rem,1fr)); gap:.85rem; }
+  .form-full { grid-column:1/-1; }
+  .alert { border-radius:9px; padding:.55rem .75rem; font-size:.8rem; font-weight:550; }
+  .alert[data-kind=error] { background:var(--breach-soft); color:var(--breach-ink); }
+  .alert[data-kind=ok] { background:var(--ok-soft); color:var(--ok-ink); }
+  .alert[data-kind=info] { background:var(--brand-soft); color:var(--brand-ink); }
+  .alert[data-kind=warn] { background:var(--warn-soft); color:var(--warn-ink); }
+
+  /* Painel lateral e modal */
+  .backdrop { position:fixed; inset:0; z-index:40; background:rgba(9,12,18,.45); backdrop-filter:blur(2px); }
+  .drawer { position:fixed; top:0; right:0; bottom:0; z-index:41; width:min(42rem,100vw);
+    background:var(--surface); border-left:1px solid var(--border); overflow-y:auto; animation:slide .22s ease-out; }
+  @keyframes slide { from { transform:translateX(1.5rem); opacity:0; } to { transform:none; opacity:1; } }
+  .drawer-head { position:sticky; top:0; z-index:2; background:var(--surface);
+    border-bottom:1px solid var(--border); padding:1rem 1.25rem; display:flex; align-items:flex-start; gap:1rem; }
+  .drawer-body { padding:1.25rem; display:flex; flex-direction:column; gap:1.25rem; }
+  .modal { position:fixed; z-index:41; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:min(38rem,calc(100vw - 2rem)); max-height:calc(100vh - 3rem); overflow-y:auto;
+    background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:0 18px 48px rgba(0,0,0,.28); }
+  .modal-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;
+    padding:1rem 1.25rem; border-bottom:1px solid var(--border); }
+  .modal-body { padding:1.25rem; display:flex; flex-direction:column; gap:1rem; }
+
+  .tabs { display:flex; gap:.25rem; border-bottom:1px solid var(--border); margin-bottom:1rem; flex-wrap:wrap; }
+  .tabs button { border:0; background:transparent; font:inherit; font-size:.82rem; font-weight:600;
+    color:var(--ink-3); padding:.45rem .75rem; cursor:pointer; border-bottom:2px solid transparent; }
+  .tabs button[aria-selected=true] { color:var(--brand-ink); border-bottom-color:var(--brand); }
+
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:.4rem 1rem; font-size:.84rem; margin:0; }
+  .kv dt { color:var(--ink-3); } .kv dd { margin:0; text-align:right; font-weight:550; }
+  .thread { display:flex; flex-direction:column; gap:.7rem; }
+  .msg { border:1px solid var(--border); border-radius:10px; padding:.7rem .85rem;
+    background:var(--surface-2); font-size:.85rem; }
+  .msg[data-internal=true] { background:var(--warn-soft); border-color:color-mix(in srgb,var(--warn-ink) 28%,transparent); }
+  .msg-head { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; margin-bottom:.3rem; }
+  .msg-body { white-space:pre-wrap; }
+  .timeline { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.55rem; font-size:.8rem; }
+  .timeline li { display:flex; gap:.55rem; align-items:flex-start; }
+  .tl-mark { width:.5rem; height:.5rem; border-radius:50%; margin-top:.42rem; flex:none; background:var(--brand); }
+
+  /* Anexos */
+  .drop { border:1.5px dashed var(--border); border-radius:10px; padding:.9rem; text-align:center;
+    font-size:.8rem; color:var(--ink-2); background:var(--surface-2); }
+  .drop.is-over { border-color:var(--brand); background:var(--brand-soft); }
+  .att-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr)); gap:.6rem; }
+  .att { border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--surface-2);
+    display:flex; flex-direction:column; }
+  .att-thumb { aspect-ratio:4/3; width:100%; object-fit:cover; display:block; background:var(--surface-3); }
+  .att-ph { aspect-ratio:4/3; display:grid; place-items:center; font-size:1.4rem; background:var(--surface-3); }
+  .att-meta { padding:.4rem .5rem; font-size:.68rem; line-height:1.35; }
+  .att-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .att-actions { display:flex; gap:.25rem; padding:0 .5rem .45rem; }
+  .att-star { border:0; background:transparent; cursor:pointer; font-size:.72rem; color:var(--ink-3); padding:0; }
+  .att-star[data-on=true] { color:var(--warn-ink); font-weight:700; }
+  .att-list { display:flex; flex-direction:column; gap:.4rem; }
+  .att-row { display:flex; align-items:center; gap:.6rem; border:1px solid var(--border);
+    border-radius:9px; padding:.45rem .6rem; background:var(--surface-2); font-size:.8rem; }
+  audio,video { width:100%; border-radius:8px; }
+
+  /* Mapa */
+  .map-wrap { position:relative; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; box-shadow:var(--shadow); padding:.75rem; }
+  .map-svg { width:100%; height:auto; display:block; max-height:32rem; }
+  .map-land { fill:var(--surface-3); stroke:var(--border); stroke-width:1.2; }
+  .mk { cursor:pointer; }
+  .mk-circle { stroke:var(--surface); stroke-width:2; }
+  .mk[data-state=green] .mk-circle { fill:var(--ok-ink); }
+  .mk[data-state=amber] .mk-circle { fill:var(--warn-ink); }
+  .mk[data-state=red] .mk-circle { fill:var(--breach-ink); }
+  .mk-count { fill:#fff; font-size:11px; font-weight:800; text-anchor:middle; dominant-baseline:central;
+    pointer-events:none; font-family:var(--font-ui); }
+  .mk-label { fill:var(--ink-2); font-size:9.5px; text-anchor:middle; pointer-events:none; font-family:var(--font-ui); }
+  .map-pop { position:absolute; z-index:5; background:var(--surface); border:1px solid var(--border);
+    border-radius:11px; box-shadow:0 10px 30px rgba(0,0,0,.18); padding:.75rem .85rem;
+    font-size:.8rem; width:16rem; }
+  .map-legend { display:flex; gap:.9rem; flex-wrap:wrap; font-size:.72rem; color:var(--ink-2); margin-top:.5rem; }
+  .map-legend span { display:inline-flex; align-items:center; gap:.3rem; }
+
+  /* Novidades */
+  .news { display:grid; grid-template-columns:repeat(auto-fit,minmax(19rem,1fr)); gap:.85rem; }
+  .news-card { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:1rem; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:.5rem; }
+  .news-n { font-family:var(--font-data); font-size:.7rem; font-weight:700; color:var(--brand-ink);
+    background:var(--brand-soft); border-radius:5px; padding:.1rem .35rem; align-self:flex-start; }
+  .news-card p { margin:0; font-size:.82rem; color:var(--ink-2); }
+  .news-card footer { margin-top:auto; display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
+
+  .bar { height:.55rem; border-radius:999px; background:var(--brand); min-width:2px; }
+  .empty { padding:2.5rem 1rem; text-align:center; color:var(--ink-2); font-size:.88rem; }
+  .toast { position:fixed; bottom:1.25rem; left:50%; transform:translateX(-50%); z-index:70;
+    background:var(--ink); color:var(--surface); padding:.6rem 1rem; border-radius:9px;
+    font-size:.84rem; font-weight:550; box-shadow:0 6px 24px rgba(0,0,0,.25); }
+  .footer { margin-top:2.5rem; padding-top:1.25rem; border-top:1px solid var(--border);
+    font-size:.8rem; color:var(--ink-3); }
+  .hidden { display:none !important; }
+  .row-actions { display:flex; gap:.5rem; flex-wrap:wrap; }
+  .sel-bar { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:.7rem;
+    background:var(--brand-soft); color:var(--brand-ink); border-radius:10px; padding:.5rem .75rem; font-size:.82rem; }
+
+  /* Parede de TV */
+  .wall-stage { padding-top:1.5rem; }
+  .wall { background:var(--tv-bg); color:var(--tv-ink); border:1px solid var(--tv-border);
+    border-radius:14px; aspect-ratio:16/9; overflow:hidden; display:flex; flex-direction:column;
+    container-type:inline-size; }
+  .wall.is-full { position:fixed; inset:0; z-index:60; border-radius:0; border:0; aspect-ratio:auto; }
+  .wall-top { display:flex; align-items:baseline; justify-content:space-between; gap:2cqi;
+    padding:1.6cqi 2cqi; border-bottom:1px solid var(--tv-border); flex:none; }
+  .wall-title { font-size:2.4cqi; font-weight:750; letter-spacing:-.02em; }
+  .wall-sub { font-size:1.25cqi; color:var(--tv-ink-2); }
+  .wall-clock { font-size:3.4cqi; font-weight:750; font-variant-numeric:tabular-nums; letter-spacing:-.02em; line-height:1; }
+  .wall-metrics { display:grid; grid-template-columns:repeat(6,1fr); gap:.9cqi; padding:1.5cqi 2cqi; flex:none; }
+  .wall-metric { background:var(--tv-panel); border:1px solid var(--tv-border); border-radius:1cqi; padding:1.1cqi 1.2cqi; }
+  .wall-metric-label { font-size:1.02cqi; font-weight:650; letter-spacing:.09em; text-transform:uppercase; color:var(--tv-ink-2); }
+  .wall-metric-value { font-size:4.6cqi; font-weight:800; letter-spacing:-.03em; line-height:1;
+    font-variant-numeric:tabular-nums; margin-top:.3cqi; }
+  .wall-list-label { font-size:1.02cqi; font-weight:650; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--tv-ink-2); padding:0 2cqi .8cqi; flex:none; }
+  .wall-list { margin:0 2cqi 2cqi; flex:1; min-height:0; overflow:hidden;
+    background:var(--tv-panel); border:1px solid var(--tv-border); border-radius:1cqi; }
+  .wall-track { list-style:none; margin:0; padding:0; }
+  @keyframes marquee { from { transform:translateY(0); } to { transform:translateY(-50%); } }
+  .wall-track[data-scroll=true] { animation:marquee var(--dur,42s) linear infinite; }
+  .wall-list:hover .wall-track { animation-play-state:paused; }
+  .wall-row { display:grid; grid-template-columns:.5cqi 5cqi minmax(0,1fr) 9cqi 12cqi 11cqi 11cqi 8cqi;
+    align-items:center; gap:1.2cqi; padding:1.15cqi 1.4cqi; border-bottom:1px solid var(--tv-border); font-size:1.45cqi; }
+  .wall-bar { height:3.2cqi; border-radius:999px; }
+  .wall-num { font-family:var(--font-data); color:var(--tv-ink-2); font-variant-numeric:tabular-nums; }
+  .wall-title-cell { font-weight:620; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wall-cell { color:var(--tv-ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wall-due { text-align:right; font-weight:750; font-variant-numeric:tabular-nums; font-family:var(--font-data); }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
+  .pulse { animation:pulse 2s ease-in-out infinite; }
+  .wall-controls { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; margin-top:1rem; }
+</style>
+
+<div class="banner">
+  <strong>Ferramenta operacional</strong> — as 11 melhorias solicitadas estão implementadas e utilizáveis.
+  Comece em <strong>Novidades</strong>. Tudo é gravado neste navegador.
+</div>
+
+<header class="top">
+  <div class="top-inner">
+    <a class="logo" href="#">STI<span>Helpdesk e Gestão de TI</span></a>
+    <div class="seg" role="group" aria-label="Alternar visão">
+      <button type="button" id="mode-console" aria-pressed="true">Console</button>
+      <button type="button" id="mode-wall" aria-pressed="false">Painel de TV</button>
+    </div>
+    <button type="button" class="icon-btn" id="theme-toggle">Tema</button>
+    <button type="button" class="icon-btn" id="reset-btn">Restaurar exemplo</button>
+  </div>
+</header>
+
+<main class="shell">
+  <div id="console" class="layout">
+    <nav class="side" aria-label="Módulos" id="nav"></nav>
+    <div id="view"></div>
+  </div>
+
+  <div id="wall-stage" class="wall-stage hidden">
+    <div class="wall" id="wall">
+      <div class="wall-top">
+        <div>
+          <div class="wall-title">IAR Office Soluções</div>
+          <div class="wall-sub">War Room — Operação</div>
+        </div>
+        <div style="text-align:right">
+          <div class="wall-clock" id="wall-clock">--:--:--</div>
+          <div class="wall-sub" id="wall-agents">—</div>
+        </div>
+      </div>
+      <div class="wall-metrics" id="wall-metrics"></div>
+      <div class="wall-list-label">Fila de atendimento — ordenada por prioridade e prazo</div>
+      <div class="wall-list"><ul class="wall-track" id="wall-track"></ul></div>
+    </div>
+    <div class="wall-controls">
+      <button type="button" class="btn" id="wall-full">Tela cheia (modo kiosk)</button>
+      <span class="dim">Passe o mouse na lista para pausar a rolagem · <kbd>Esc</kbd> sai da tela cheia.</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    Dados gravados apenas neste navegador (<span class="mono">localStorage</span>).
+    Código-fonte e especificação na branch <span class="mono">claude/saas-helpdesk-it-management-ama1gj</span>.
+  </div>
+</main>
+
+<div id="drawer-root"></div>
+<div id="modal-root"></div>
+<div id="toast-root"></div>
+<script>
+(() => {
+  'use strict';
+  const KEY = 'sti.helpdesk.v3';
+  const MIN = 60000;
+
+  /* ===================== Catálogos ===================== */
+  const PRIORITIES = {
+    critical:{label:'Crítica',color:'#dc2626',weight:100,tfr:15,res:240},
+    high:    {label:'Alta',   color:'#ea580c',weight:75, tfr:60,res:480},
+    medium:  {label:'Média',  color:'#ca8a04',weight:45, tfr:240,res:1440},
+    low:     {label:'Baixa',  color:'#0891b2',weight:20, tfr:480,res:2880}
+  };
+  const STATUS = {
+    open:{label:'Aberto',tone:'info'}, triage:{label:'Em triagem',tone:'info'},
+    assigned:{label:'Atribuído',tone:'info'}, in_progress:{label:'Em andamento',tone:'info'},
+    waiting_requester:{label:'Aguardando solicitante',tone:'warn'},
+    waiting_third_party:{label:'Aguardando terceiro',tone:'warn'},
+    resolved:{label:'Resolvido',tone:'ok'}, closed:{label:'Fechado',tone:'neutral'}
+  };
+  /* Cópia fiel de public.ticket_status_transitions (migração 0005). */
+  const TRANSITIONS = {
+    open:['triage','assigned','closed'], triage:['assigned','open','closed'],
+    assigned:['in_progress','open','waiting_requester','waiting_third_party'],
+    in_progress:['waiting_requester','waiting_third_party','resolved','assigned','open'],
+    waiting_requester:['in_progress','resolved','closed'],
+    waiting_third_party:['in_progress','resolved'],
+    resolved:['closed','in_progress'], closed:['in_progress']
+  };
+  const PAUSES = s => s === 'waiting_requester' || s === 'waiting_third_party';
+  const IS_OPEN = s => s !== 'resolved' && s !== 'closed';
+  const SLA_STATE = {
+    ok:{label:'No prazo',tone:'ok'}, warning:{label:'Em atenção',tone:'warn'},
+    critical:{label:'Em risco',tone:'crit'}, breached:{label:'SLA estourado',tone:'breach'},
+    met:{label:'Cumprido',tone:'ok'}, no_sla:{label:'Sem SLA',tone:'neutral'}
+  };
+  const TIEBREAKERS = {
+    fifo:'Ordem de chegada (FIFO)', lifo:'Mais recente primeiro (LIFO)',
+    menor_prazo_restante:'Menor prazo restante', maior_tempo_espera:'Maior tempo de espera'
+  };
+  const AREA_KIND = { assistencial:'Assistencial', administrativa:'Administrativa',
+    apoio:'Apoio', tecnica:'Técnica' };
+  const ASSET_TYPES = ['Notebook','Desktop','Servidor','Smartphone','Tablet','Monitor',
+    'Impressora','Periférico','Rede','Licença'];
+  const ASSET_STATUS = { active:{label:'Em uso',tone:'ok'}, in_stock:{label:'Em estoque',tone:'neutral'},
+    maintenance:{label:'Em manutenção',tone:'warn'}, retired:{label:'Baixado',tone:'neutral'},
+    lost:{label:'Perdido',tone:'breach'} };
+  const LINE_STATUS = { active:{label:'Ativa',tone:'ok'}, suspended:{label:'Suspensa',tone:'warn'},
+    cancelled:{label:'Cancelada',tone:'neutral'} };
+  const LINK_STATUS = LINE_STATUS;
+  const TECH = { fiber:'Fibra', radio:'Rádio', satellite:'Satélite', mobile_4g:'4G',
+    mobile_5g:'5G', xdsl:'xDSL', other:'Outra' };
+  const LINK_STATE = { up:{label:'No ar',tone:'ok'}, down:{label:'Fora do ar',tone:'breach'},
+    unknown:{label:'Não monitorado',tone:'neutral'} };
+  const CUSTODY_REASON = { realocacao:'Realocação', devolucao:'Devolução',
+    substituicao:'Substituição', baixa:'Baixa', manutencao:'Manutenção',
+    aquisicao:'Aquisição', perda:'Perda', outro:'Outro' };
+  const DOC_KIND = { nfe:'NF-e', cte:'CT-e', receipt:'Recibo', contract:'Contrato',
+    warranty:'Garantia', amendment:'Adendo', loyalty_term:'Termo de fidelidade',
+    cancellation:'Cancelamento', installation_report:'Laudo de instalação', other:'Outro' };
+  const AGENTS = ['Ana Souza','Bruno Lima','Gestor de Serviços'];
+  const ME = 'Ana Souza';
+  const CATEGORIES = ['Infraestrutura › Rede / Internet','Infraestrutura › Servidores',
+    'Sistemas › ERP','Telefonia › Linha móvel','Acessos › Reset de senha'];
+  const routeQueue = c => c.startsWith('Telefonia') ? 'telefonia'
+    : c.startsWith('Infraestrutura') ? 'infra' : 'geral';
+
+  /* Áreas padrão — em Home Care a natureza da área carrega peso operacional. */
+  const DEFAULT_AREAS = [
+    ['Recepção','assistencial'],['Enfermagem','assistencial'],['Administração','administrativa'],
+    ['Financeiro','administrativa'],['TI','tecnica'],['Logística','apoio'],
+    ['Diretoria','administrativa'],['Estoque de TI','apoio']
+  ];
+
+  /* ===================== Dados iniciais ===================== */
+  let uid = 1;
+  const nid = p => `${p}${uid++}`;
+
+  function seed() {
+    const now = Date.now();
+
+    const branches = [
+      { id:'b1', name:'Meridiano — Matriz São Paulo', short:'Matriz SP', client:'Grupo Meridiano Alimentos S.A.',
+        city:'São Paulo', state:'SP', lat:-23.55052, lng:-46.633308 },
+      { id:'b2', name:'Meridiano — CD Campinas', short:'CD Campinas', client:'Grupo Meridiano Alimentos S.A.',
+        city:'Campinas', state:'SP', lat:-22.909938, lng:-47.062633 },
+      { id:'b3', name:'Meridiano — Filial Manaus', short:'Manaus', client:'Grupo Meridiano Alimentos S.A.',
+        city:'Manaus', state:'AM', lat:-3.119028, lng:-60.021731 },
+      { id:'b4', name:'Meridiano — Filial Recife', short:'Recife', client:'Grupo Meridiano Alimentos S.A.',
+        city:'Recife', state:'PE', lat:-8.047562, lng:-34.877 },
+      // Sem coordenada de propósito: exercita o aviso "filiais sem localização"
+      // em vez de a filial desaparecer do mapa em silêncio.
+      { id:'b5', name:'Vertex — Sede', short:'Vertex BH', client:'Construtora Vertex Ltda.',
+        city:'Belo Horizonte', state:'MG', lat:null, lng:null }
+    ];
+
+    const areas = [];
+    branches.forEach(b => DEFAULT_AREAS.forEach(([name, kind], i) =>
+      areas.push({ id:nid('ar'), branchId:b.id, name, kind, active:true, order:(i+1)*10 })));
+    const areaOf = (branchId, name) => areas.find(a => a.branchId === branchId && a.name === name)?.id ?? null;
+
+    const queues = [
+      { slug:'geral', name:'Atendimento Geral', isDefault:true,
+        desc:'Fila padrão do sistema. Recebe todo ticket sem roteamento específico.',
+        w:[60,30,10], tiebreaker:'fifo', members:['Ana Souza','Bruno Lima'] },
+      { slug:'infra', name:'Infraestrutura', isDefault:false, desc:'Rede, servidores e datacenter.',
+        w:[70,25,5], tiebreaker:'menor_prazo_restante', members:['Bruno Lima'] },
+      { slug:'telefonia', name:'Telefonia', isDefault:false, desc:'Linhas móveis e fixas.',
+        w:[50,30,20], tiebreaker:'fifo', members:['Ana Souza'] }
+    ];
+
+    /* SLA como POLÍTICA: contrato × categoria × prioridade, do mais específico
+       ao mais genérico — é a mesma precedência de app.fn_resolve_sla(). */
+    const slaDefs = [
+      { id:nid('sla'), name:'Meridiano — Infra crítica', contract:'Meridiano — Padrão',
+        category:'Infraestrutura', priority:'critical', tfr:5, res:60, calendar:'Comercial', active:true },
+      { id:nid('sla'), name:'Meridiano — Crítica', contract:'Meridiano — Padrão',
+        category:null, priority:'critical', tfr:10, res:120, calendar:'Comercial', active:true },
+      { id:nid('sla'), name:'Meridiano — Alta', contract:'Meridiano — Padrão',
+        category:null, priority:'high', tfr:30, res:360, calendar:'Comercial', active:true },
+      { id:nid('sla'), name:'Manaus 24x7 — Crítica', contract:'Meridiano — Manaus 24x7',
+        category:null, priority:'critical', tfr:15, res:180, calendar:'24x7', active:true },
+      { id:nid('sla'), name:'Padrão do tenant — Crítica', contract:null, category:null,
+        priority:'critical', tfr:15, res:240, calendar:'Comercial', active:true },
+      { id:nid('sla'), name:'Padrão do tenant — Alta', contract:null, category:null,
+        priority:'high', tfr:60, res:480, calendar:'Comercial', active:true },
+      { id:nid('sla'), name:'Padrão do tenant — Média', contract:null, category:null,
+        priority:'medium', tfr:240, res:1440, calendar:'Comercial', active:true },
+      { id:nid('sla'), name:'Padrão do tenant — Baixa', contract:null, category:null,
+        priority:'low', tfr:480, res:2880, calendar:'Comercial', active:true }
+    ];
+
+    // Área provável por categoria — o ticket nasce localizado, e sem isso o
+    // popup do mapa de tickets abriria vazio.
+    const AREA_FOR_CAT = {
+      'Infraestrutura \u203a Rede / Internet':'TI',
+      'Infraestrutura \u203a Servidores':'TI',
+      'Sistemas \u203a ERP':'Administra\u00e7\u00e3o',
+      'Telefonia \u203a Linha m\u00f3vel':'Enfermagem',
+      'Acessos \u203a Reset de senha':'Recep\u00e7\u00e3o'
+    };
+
+    const t = (n, title, prio, status, cat, branchId, assignee, requester, ageMin, remMin, extra = {}) => {
+      const p = PRIORITIES[prio];
+      const b = branches.find(x => x.id === branchId);
+      return Object.assign({
+        id:nid('t'), n, title, prio, status, cat, branchId, client:b.client,
+        areaId:areaOf(branchId, AREA_FOR_CAT[cat] || 'Administra\u00e7\u00e3o'),
+        queue:routeQueue(cat), assignee, requester,
+        createdAt:now - ageMin*MIN, target:p.res, tfr:p.tfr,
+        dueAt:now + remMin*MIN, frozen:null, firstResponseAt:null, resolvedAt:null,
+        reopened:0, tags:[], comments:[], history:[], attachments:[], desc:''
+      }, extra);
+    };
+
+    const tickets = [
+      t(1042,'Link de internet da matriz oscilando','critical','in_progress',
+        'Infraestrutura › Rede / Internet','b1','Ana Souza','Carla Dias',182,-142,{
+        target:60,tfr:5,tags:['rede','urgente'],
+        desc:'Desde as 08h a conexão cai a cada poucos minutos. Afeta todo o andar comercial.',
+        firstResponseAt:now-150*MIN,
+        comments:[{who:'Ana Souza',at:now-120*MIN,vis:'public',body:'Abrimos chamado na operadora sob protocolo 884512.'},
+                  {who:'Ana Souza',at:now-60*MIN,vis:'internal',body:'Verificar se o contrato cobre SLA de 4h — o cliente vai cobrar.'}],
+        history:[{at:now-180*MIN,field:'Status',val:'Aberto → Em triagem',src:'Painel'},
+                 {at:now-150*MIN,field:'Atendente',val:'— → Ana Souza',src:'Painel'}]}),
+      t(1041,'ERP lento ao emitir nota fiscal','high','assigned','Sistemas › ERP','b1',
+        'Ana Souza','Carla Dias',1440,38,{target:360,tfr:30,tags:['erp'],
+        desc:'Emissão leva mais de 2 minutos por nota.'}),
+      t(1045,'Servidor de arquivos com disco cheio','critical','open',
+        'Infraestrutura › Servidores','b2',null,null,7200,96,{target:60,tfr:5,
+        tags:['servidor','capacidade'],desc:'Volume /dados em 96% de uso.'}),
+      t(1044,'Linha +55 92 98800-3001 sem sinal de dados','medium','waiting_third_party',
+        'Telefonia › Linha móvel','b3','Bruno Lima',null,2880,210,{tags:['telefonia'],
+        desc:'Aparelho sem 4G desde ontem à noite.',frozen:210*MIN,
+        comments:[{who:'Bruno Lima',at:now-1440*MIN,vis:'public',body:'Operadora abriu OS 77213. Prazo: 48h.'}]}),
+      t(1048,'Impressora do faturamento não responde','high','open',
+        'Infraestrutura › Rede / Internet','b1',null,'Carla Dias',95,12,{target:360,tfr:30,
+        tags:['hardware'],desc:'Fila de impressão travada; reiniciar o spooler não resolveu.'}),
+      t(1049,'Acesso ao compartilhamento financeiro negado','high','triage',
+        'Acessos › Reset de senha','b5',null,'Carla Dias',40,415,{target:480,tfr:60,
+        tags:['acesso'],desc:'Três usuários perderam acesso após mudança de grupo no AD.'}),
+      t(1046,'Instalar VPN no notebook novo','medium','open','Sistemas › ERP','b1',
+        null,'Carla Dias',22,1385,{tags:['vpn'],source:'bitrix24',externalId:'9002',
+        desc:'Criado automaticamente a partir da tarefa 9002 do Bitrix24.',
+        history:[{at:now-22*MIN,field:'Criação',val:'via integração Bitrix24 #9002',src:'Integração'}]}),
+      t(1047,'Nobreak do rack emitindo alarme sonoro','high','in_progress',
+        'Infraestrutura › Servidores','b2','Ana Souza',null,320,55,{target:360,tfr:30,
+        tags:['datacenter'],desc:'Alarme intermitente; bateria possivelmente no fim da vida.'}),
+      t(1050,'Troca de chip — linha Campinas','low','assigned','Telefonia › Linha móvel','b2',
+        'Bruno Lima',null,610,1980,{tags:['telefonia'],desc:'Chip danificado; pedir segunda via.'}),
+      t(1051,'Onboarding — 3 estações para o novo turno','medium','assigned','Sistemas › ERP','b2',
+        'Ana Souza',null,2100,640,{tags:['onboarding'],desc:'Preparar imagem padrão e acessos.'}),
+      t(1052,'Prontuário lento na Enfermagem','critical','open','Sistemas › ERP','b4',
+        null,'Carla Dias',65,22,{target:240,tfr:15,tags:['assistencial'],
+        areaId:areaOf('b4','Enfermagem'),
+        desc:'Equipe de Enfermagem relata lentidão ao abrir prontuário do paciente.'}),
+      t(1043,'Solicitação de reset de senha','low','open','Acessos › Reset de senha','b1',
+        null,'Carla Dias',20,2860,{tags:['acesso'],desc:'Usuário bloqueado após tentativas.'}),
+      t(1040,'Troca de notebook — colaborador novo','low','resolved','Sistemas › ERP','b1',
+        'Ana Souza','Carla Dias',5760,400,{tags:['hardware'],desc:'Preparar equipamento com imagem padrão.',
+        resolvedAt:now-200*MIN,firstResponseAt:now-5000*MIN})
+    ];
+
+    const mkAsset = (tag, sn, type, model, status, branchId, areaName, user, warranty, cost) => ({
+      id:nid('a'), tag, sn, type, model, status, branchId,
+      areaId:areaOf(branchId, areaName), user, warranty, cost,
+      attachments:[], custody:[]
+    });
+
+    const assets = [
+      mkAsset('PAT-001042','SN-DELL-77A1','Notebook','Dell Latitude 5450','active','b1','Administração','Carla Dias','2028-04-10',6890),
+      mkAsset('PAT-001043','SN-DELL-77A2','Notebook','Dell Latitude 5450','active','b1','TI','Ana Souza','2028-04-10',6890),
+      mkAsset('PAT-002001','SN-HPE-DL380','Servidor','HPE ProLiant DL380 Gen11','active','b2','TI','','2029-08-01',48200),
+      mkAsset('PAT-003011','SN-SAM-A55','Smartphone','Samsung Galaxy A55','active','b3','Enfermagem','Bruno Lima','2026-11-20',2199),
+      mkAsset('PAT-004002','','Licença','M365 Business Premium','active','b1','TI','','2027-01-01',0),
+      mkAsset('PAT-001099','SN-LEN-T14','Notebook','Lenovo ThinkPad T14','maintenance','b2','Logística','','2026-02-15',5400),
+      mkAsset('PAT-005001','SN-ELG-REC','Impressora','Elgin i9 Recepção','active','b4','Recepção','','2027-06-30',1450),
+      mkAsset('PAT-005002','SN-DELL-ENF','Notebook','Dell Vostro 3520','active','b4','Enfermagem','','2027-09-15',4200)
+    ];
+    // Um ativo em uso sem responsável: alimenta o alerta de governança e o
+    // marcador vermelho do mapa de inventário.
+    assets[6].user = '';
+
+    const mkLine = (num, carrier, plan, type, status, branchId, areaName, user, cost, loyalty, extra={}) =>
+      Object.assign({ id:nid('l'), num, carrier, plan, type, status, branchId,
+        areaId:areaOf(branchId, areaName), user, cost, loyalty,
+        contractNumber:'', contractStart:'', contractEnd:'', attachments:[] }, extra);
+
+    const lines = [
+      mkLine('+55 11 98800-1001','Vivo','Controle 20GB','Controle','active','b1','Administração','Ana Souza',79.90,'2026-06-01',
+        {contractNumber:'VIVO-2026-001',contractStart:'2025-06-01',contractEnd:'2027-06-01'}),
+      mkLine('+55 11 98800-1002','Vivo','Pós 50GB','Pós-pago','active','b1','Diretoria','',129.90,'2026-06-01'),
+      mkLine('+55 19 98800-2001','Claro','Pós 30GB','Pós-pago','active','b2','Logística','',99.90,''),
+      mkLine('+55 92 98800-3001','TIM','Pós 100GB','Pós-pago','active','b3','Enfermagem','Bruno Lima',189.90,'2027-11-20',
+        {contractNumber:'TIM-2025-441',contractStart:'2025-11-20',contractEnd:'2026-09-30'}),
+      mkLine('+55 92 98800-3002','TIM','Pré','Pré-pago','suspended','b3','Recepção','',0,''),
+      mkLine('+55 81 98800-5001','Claro','Pós 40GB','Pós-pago','active','b4','Enfermagem','',119.90,'2027-02-10'),
+      mkLine('+55 31 98800-4001','Claro','Pós 20GB','Pós-pago','cancelled','b5','Administração','',89.90,'')
+    ];
+
+    const mkLink = (contract, carrier, tech, down, up, guaranteed, ip, cpe, status, branchId, cost, state, extra={}) =>
+      Object.assign({ id:nid('k'), contractNumber:contract, carrier, tech, down, up, guaranteed,
+        staticIp:ip, cpeBrand:cpe[0], cpeModel:cpe[1], cpeSerial:cpe[2], status, branchId,
+        areaId:areaOf(branchId,'TI'), cost, state, stateAt:Date.now(),
+        activatedOn:'', contractStart:'', contractEnd:'', loyalty:'',
+        monitoringHost:'', attachments:[], events:[] }, extra);
+
+    const links = [
+      mkLink('NL-LINK-001','NetLink Telecom','fiber',500,500,250,'200.150.10.2',
+        ['Huawei','EG8145V5','HW-0091'],'active','b1',4800,'up',
+        {activatedOn:'2026-01-01',contractStart:'2026-01-01',contractEnd:'2027-01-01',monitoringHost:'200.150.10.2',
+         attachments:[{id:nid('at'),kind:'contract',name:'contrato-nl-link-001.pdf',mime:'application/pdf',size:184320,at:Date.now(),by:'Administrador IAR'}]}),
+      mkLink('NL-LINK-002','NetLink Telecom','fiber',300,300,150,'',
+        ['Intelbras','WiFiber 1200R','IB-2231'],'active','b2',2200,'up',
+        {activatedOn:'2026-02-15',contractStart:'2026-02-15',contractEnd:'2026-10-30',monitoringHost:'10.20.0.1'}),
+      mkLink('NL-LINK-003','StarNet','satellite',100,20,50,'',
+        ['Starlink','Gen3','SL-7781'],'active','b3',1900,'down',
+        {activatedOn:'2026-03-01',contractStart:'2026-03-01',contractEnd:'2027-03-01',monitoringHost:'10.30.0.1',
+         events:[{id:nid('ev'),state:'down',startedAt:Date.now()-35*MIN,endedAt:null,source:'zabbix',
+                  note:'Perda de sinal reportada pelo Zabbix.'}]}),
+      mkLink('NL-LINK-004','Claro Empresas','radio',200,100,100,'',
+        ['Mimosa','C5x','MM-4410'],'active','b4',1450,'unknown',
+        {activatedOn:'2026-04-10',contractStart:'2026-04-10',contractEnd:'2027-04-10'})
+    ];
+
+    /* Integração: endpoint, autenticação e mapeamento agora editáveis. */
+    const integration = {
+      id:'int1', name:'Bitrix24 — Tarefas', slug:'bitrix24-tarefas', source:'bitrix24',
+      direction:'bidirectional', status:'active', authType:'webhook_token',
+      endpoint:'https://SEU-PROJETO.supabase.co/functions/v1/bitrix24-webhook?integracao=bitrix24-tarefas',
+      pollingEndpoint:'', authHeaderName:'', secretRef:'BITRIX24_INBOUND_WEBHOOK_URL',
+      reverseSync:false, requests:1284, errors:3, lastSyncAt:Date.now()-2*MIN,
+      lastTestAt:null, lastTestOk:null,
+      mappings:[
+        {id:nid('m'),source:'TITLE',target:'title',transform:'direct',map:{},def:'',required:true},
+        {id:nid('m'),source:'DESCRIPTION',target:'description',transform:'html_to_text',map:{},def:'',required:false},
+        {id:nid('m'),source:'PRIORITY',target:'priority_key',transform:'value_map',
+          map:{'2':'high','1':'medium','0':'low'},def:'medium',required:false},
+        {id:nid('m'),source:'STATUS',target:'status',transform:'value_map',
+          map:{'2':'open','3':'in_progress','4':'waiting_third_party','5':'resolved','6':'waiting_requester','7':'closed'},def:'',required:false},
+        {id:nid('m'),source:'RESPONSIBLE_ID',target:'assignee_id',transform:'user_by_external_id',map:{},def:'',required:false},
+        {id:nid('m'),source:'CREATED_DATE',target:'created_at',transform:'datetime',map:{},def:'',required:false},
+        {id:nid('m'),source:'TAGS',target:'tags',transform:'direct',map:{},def:'',required:false}
+      ],
+      versions:[], logs:[
+        {when:'2 min atrás',dir:'inbound',ep:'bitrix24-webhook',http:200,ms:412,outcome:'ok'},
+        {when:'14 min atrás',dir:'inbound',ep:'bitrix24-webhook',http:200,ms:388,outcome:'duplicate'},
+        {when:'38 min atrás',dir:'outbound',ep:'tasks.task.update',http:200,ms:233,outcome:'ok'},
+        {when:'41 min atrás',dir:'inbound',ep:'bitrix24-webhook',http:200,ms:25,outcome:'skipped_echo'},
+        {when:'2h atrás',dir:'inbound',ep:'bitrix24-webhook',http:502,ms:7014,outcome:'error'}
+      ]
+    };
+
+    return { branches, areas, queues, slaDefs, tickets, assets, lines, links,
+             integration, nextTicket:1053, uid };
+  }
+
+  let db;
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p && Array.isArray(p.tickets) && p.tickets.length && Array.isArray(p.links)) {
+          uid = p.uid || 5000;
+          return p;
+        }
+      }
+    } catch { /* storage indisponível ou corrompido: cai no seed */ }
+    return seed();
+  }
+  function save() {
+    db.uid = uid;
+    try { localStorage.setItem(KEY, JSON.stringify(db)); }
+    catch { toast('Não foi possível gravar — armazenamento do navegador cheio'); }
+  }
+  db = load();
+
+  /* ===================== Consultas e regras ===================== */
+  const branchById = id => db.branches.find(b => b.id === id);
+  const areaById   = id => db.areas.find(a => a.id === id);
+  const queueBySlug = s => db.queues.find(q => q.slug === s) || db.queues[0];
+  const areasOf = branchId => db.areas.filter(a => a.branchId === branchId && a.active)
+                                      .sort((x,y) => x.order - y.order);
+  const openTickets = () => db.tickets.filter(t => IS_OPEN(t.status));
+  const isPaused = t => t.frozen !== null && t.frozen !== undefined;
+  const remainingMs = t => isPaused(t) ? t.frozen : t.dueAt - Date.now();
+
+  /** Semáforo — espelha app.sla_state(), limiares 75% e 90%. */
+  function slaState(t) {
+    if (t.resolvedAt) return remainingMs(t) >= 0 ? 'met' : 'breached';
+    const rem = remainingMs(t);
+    if (rem < 0) return 'breached';
+    const consumed = 1 - rem / (t.target * MIN);
+    if (consumed >= 0.90) return 'critical';
+    if (consumed >= 0.75) return 'warning';
+    return 'ok';
+  }
+
+  /** Score de fila — criticidade + urgência de prazo + espera, normalizados. */
+  function score(t) {
+    const q = queueBySlug(t.queue);
+    const [wc, wd, wa] = q.w;
+    const rem = remainingMs(t);
+    const urgency = rem < 0 ? 1 : Math.min(Math.max(1 - rem / (t.target * MIN), 0), 1);
+    const age = Math.min((Date.now() - t.createdAt) / (72 * 3600 * 1000), 1);
+    return wc * (PRIORITIES[t.prio].weight / 100) + wd * urgency + wa * age;
+  }
+
+  /** Ordena pelo score e desempata pelo critério configurado na fila. */
+  function orderQueue(list) {
+    return [...list].sort((a, b) => {
+      const d = score(b) - score(a);
+      if (Math.abs(d) > 1e-9) return d;
+      const tb = queueBySlug(a.queue).tiebreaker;
+      if (tb === 'lifo') return b.createdAt - a.createdAt;
+      if (tb === 'menor_prazo_restante') return remainingMs(a) - remainingMs(b);
+      if (tb === 'maior_tempo_espera') return a.createdAt - b.createdAt;
+      return a.createdAt - b.createdAt;                 // FIFO
+    });
+  }
+
+  /** Precedência de SLA: contrato+categoria → contrato → padrão do tenant. */
+  function resolveSla(prio, cat) {
+    const cands = db.slaDefs.filter(d => d.active && d.priority === prio &&
+      (d.category === null || (cat || '').startsWith(d.category)));
+    const rank = d => d.contract && d.category ? 1 : d.contract ? 3 : 5;
+    return cands.sort((a, b) => rank(a) - rank(b))[0] || null;
+  }
+
+  /** Tickets em aberto medidos por uma definição — o preview de impacto. */
+  function slaImpact(defId) {
+    const def = db.slaDefs.find(d => d.id === defId);
+    if (!def) return { open:0, atRisk:0, breached:0 };
+    const hit = db.tickets.filter(t => resolveSla(t.prio, t.cat)?.id === def.id);
+    const open = hit.filter(t => IS_OPEN(t.status));
+    return {
+      open: open.length,
+      atRisk: open.filter(t => ['warning','critical'].includes(slaState(t))).length,
+      breached: open.filter(t => slaState(t) === 'breached').length
+    };
+  }
+
+  /* ===================== Mutações ===================== */
+  const logH = (t, field, val, src='Painel') => t.history.unshift({ at:Date.now(), field, val, src });
+
+  function changeStatus(t, next) {
+    if (!(TRANSITIONS[t.status] || []).includes(next))
+      return `Transição inválida: ${STATUS[t.status].label} → ${STATUS[next].label}.`;
+    const prev = t.status;
+    // Entrar em espera congela o relógio; sair empurra o vencimento.
+    if (PAUSES(next) && !PAUSES(prev)) t.frozen = t.dueAt - Date.now();
+    if (!PAUSES(next) && PAUSES(prev) && isPaused(t)) { t.dueAt = Date.now() + t.frozen; t.frozen = null; }
+    if (next === 'resolved') t.resolvedAt = Date.now();
+    if (IS_OPEN(next) && !IS_OPEN(prev)) { t.reopened++; t.resolvedAt = null; }
+    t.status = next;
+    logH(t, 'Status', `${STATUS[prev].label} → ${STATUS[next].label}`);
+    save(); return null;
+  }
+
+  function assign(t, who) {
+    if (t.assignee === (who || null)) return;
+    logH(t, 'Atendente', `${t.assignee || '—'} → ${who || '—'}`);
+    t.assignee = who || null; save();
+  }
+
+  function transfer(t, slug, reason) {
+    if (!reason || reason.trim().length < 3) return 'Descreva o motivo da transferência.';
+    const q = db.queues.find(x => x.slug === slug);
+    if (!q) return 'Fila inválida.';
+    logH(t, 'Fila', `${queueBySlug(t.queue).name} → ${q.name}`);
+    logH(t, 'Motivo da transferência', reason.trim());
+    t.queue = slug; save(); return null;
+  }
+
+  /** Transferência em massa: move todos ou nenhum, com motivo em cada ticket. */
+  function bulkTransfer(ids, slug, reason) {
+    if (!reason || reason.trim().length < 3) return { error:'Descreva o motivo da transferência.' };
+    const q = db.queues.find(x => x.slug === slug);
+    if (!q) return { error:'Fila inválida.' };
+    let moved = 0;
+    ids.forEach(id => {
+      const t = db.tickets.find(x => x.id === id);
+      if (!t || t.queue === slug) return;
+      logH(t, 'Fila', `${queueBySlug(t.queue).name} → ${q.name}`);
+      logH(t, 'Motivo da transferência', reason.trim());
+      t.queue = slug; moved++;
+    });
+    save(); return { moved };
+  }
+
+  function comment(t, body, vis) {
+    if (!body || !body.trim()) return 'Escreva um comentário.';
+    t.comments.push({ who:ME, at:Date.now(), vis, body:body.trim() });
+    if (vis === 'public' && !t.firstResponseAt) {
+      t.firstResponseAt = Date.now();
+      logH(t, 'Primeira resposta', 'registrada', 'Sistema');
+    }
+    save(); return null;
+  }
+
+  function createTicket(f) {
+    const title = (f.title || '').trim();
+    if (title.length < 4) return { error:'O título precisa ter ao menos 4 caracteres.' };
+    const prio = PRIORITIES[f.prio] ? f.prio : 'medium';
+    const cat = f.cat || CATEGORIES[0];
+    const branchId = f.branchId || db.branches[0].id;
+    const def = resolveSla(prio, cat);
+    const target = def ? def.res : PRIORITIES[prio].res;
+    const now = Date.now();
+    const t = {
+      id:nid('t'), n:db.nextTicket++, title, desc:(f.desc || '').trim(), prio, status:'open',
+      cat, branchId, client:branchById(branchId).client,
+      queue:f.queue || routeQueue(cat), areaId:f.areaId || null,
+      assignee:f.assignee || null, requester:'Carla Dias',
+      createdAt:now, target, tfr:def ? def.tfr : PRIORITIES[prio].tfr,
+      dueAt:now + target*MIN, frozen:null, firstResponseAt:null, resolvedAt:null, reopened:0,
+      tags:(f.tags || '').split(',').map(s => s.trim()).filter(Boolean),
+      comments:[], attachments:[],
+      history:[{ at:now, field:'Criação',
+        val:`Aberto na fila ${queueBySlug(f.queue || routeQueue(cat)).name}` +
+            (def ? ` · SLA "${def.name}" (${def.res} min)` : ' · sem SLA aplicável'), src:'Painel' }]
+    };
+    db.tickets.push(t); save(); return { ticket:t };
+  }
+
+  /* --- Áreas (Módulo 2) --- */
+  function createArea(branchId, name, kind) {
+    const n = (name || '').trim();
+    if (n.length < 2) return 'Informe o nome da área.';
+    if (db.areas.some(a => a.branchId === branchId && a.name.toLowerCase() === n.toLowerCase()))
+      return 'Já existe uma área com este nome nesta filial.';
+    const order = Math.max(0, ...db.areas.filter(a => a.branchId === branchId).map(a => a.order)) + 10;
+    db.areas.push({ id:nid('ar'), branchId, name:n, kind:kind || 'administrativa', active:true, order });
+    save(); return null;
+  }
+  function toggleArea(id) {
+    const a = areaById(id); if (!a) return;
+    a.active = !a.active; save();
+  }
+  /** Área com itens vinculados não pode ser removida — desativar é o caminho. */
+  function areaUsage(id) {
+    return db.assets.filter(x => x.areaId === id).length +
+           db.lines.filter(x => x.areaId === id).length +
+           db.links.filter(x => x.areaId === id).length;
+  }
+  function deleteArea(id) {
+    if (areaUsage(id) > 0) return 'Área com ativos, linhas ou links vinculados não pode ser excluída. Desative-a.';
+    db.areas = db.areas.filter(a => a.id !== id); save(); return null;
+  }
+
+  /* --- Custódia (Módulo 4) --- */
+  function changeCustody(asset, user, branchId, areaId, reason, note) {
+    const prevUser = asset.user, prevBranch = asset.branchId, prevArea = asset.areaId;
+    const changed = prevUser !== user || prevBranch !== branchId || prevArea !== areaId;
+    if (!changed) return 'Nada mudou.';
+    if (areaId && !db.areas.some(a => a.id === areaId && a.branchId === branchId))
+      return 'A área informada pertence a outra filial.';
+    asset.user = user; asset.branchId = branchId; asset.areaId = areaId;
+    // clock real e não horário fixo: dois eventos no mesmo instante perderiam a ordem.
+    asset.custody.unshift({
+      id:nid('c'), at:Date.now() + asset.custody.length,
+      prevUser, user, prevBranch, branchId, prevArea, areaId,
+      reason: reason || (!user && prevUser ? 'devolucao' : prevBranch !== branchId ? 'realocacao' : 'outro'),
+      note:(note || '').trim(), by:ME
+    });
+    save(); return null;
+  }
+  function setAssetStatus(asset, status) {
+    if (asset.status === status) return;
+    const prev = asset.status; asset.status = status;
+    if (['maintenance','retired','lost'].includes(status)) {
+      asset.custody.unshift({ id:nid('c'), at:Date.now(), prevUser:asset.user, user:asset.user,
+        prevBranch:asset.branchId, branchId:asset.branchId, prevArea:asset.areaId, areaId:asset.areaId,
+        reason: status === 'maintenance' ? 'manutencao' : status === 'retired' ? 'baixa' : 'perda',
+        note:`Status: ${ASSET_STATUS[prev].label} → ${ASSET_STATUS[status].label}`, by:ME });
+    }
+    save();
+  }
+
+  /* --- Cadastros --- */
+  function createAsset(f) {
+    if (!(f.model || '').trim()) return 'Informe marca e modelo.';
+    if (!f.areaId) return 'A área da filial é obrigatória.';
+    const tag = (f.tag || '').trim();
+    if (tag && db.assets.some(a => a.tag.toUpperCase() === tag.toUpperCase()))
+      return 'Já existe um ativo com este patrimônio.';
+    const area = areaById(f.areaId);
+    if (!area || area.branchId !== f.branchId) return 'A área informada pertence a outra filial.';
+    db.assets.push({ id:nid('a'), tag, sn:(f.sn || '').trim(), type:f.type || 'Notebook',
+      model:f.model.trim(), status:f.status || 'in_stock', branchId:f.branchId,
+      areaId:f.areaId, user:(f.user || '').trim(), warranty:f.warranty || '',
+      cost:Number(f.cost) || 0, attachments:[], custody:[] });
+    save(); return null;
+  }
+
+  function createLine(f) {
+    const num = (f.num || '').trim();
+    if (num.length < 8) return 'Informe o número da linha.';
+    if (!(f.carrier || '').trim()) return 'Informe a operadora.';
+    if (!f.areaId) return 'A área da empresa é obrigatória.';
+    if (db.lines.some(l => l.num === num)) return 'Este número já está cadastrado.';
+    if (f.status === 'cancelled' && !f.cancelledOn) return 'Linha cancelada exige a data de cancelamento.';
+    const area = areaById(f.areaId);
+    if (!area || area.branchId !== f.branchId) return 'A área informada pertence a outra filial.';
+    db.lines.push({ id:nid('l'), num, carrier:f.carrier.trim(), plan:(f.plan || '').trim(),
+      type:f.type || 'Pós-pago', status:f.status || 'active', branchId:f.branchId, areaId:f.areaId,
+      user:(f.user || '').trim(), cost:Number(f.cost) || 0, loyalty:f.loyalty || '',
+      contractNumber:(f.contractNumber || '').trim(), contractStart:f.contractStart || '',
+      contractEnd:f.contractEnd || '', attachments:[] });
+    save(); return null;
+  }
+
+  function createLink(f) {
+    if (!(f.carrier || '').trim()) return 'Informe a operadora.';
+    if (!f.areaId) return 'A área da filial é obrigatória.';
+    if (f.staticIp === '' && f.hasStaticIp) return 'IP fixo exige o endereço informado.';
+    const c = (f.contractNumber || '').trim();
+    if (c && db.links.some(k => (k.contractNumber || '').toUpperCase() === c.toUpperCase()))
+      return 'Já existe um link com este número de contrato.';
+    if (f.status === 'cancelled' && !f.cancelledOn) return 'Link cancelado exige a data de cancelamento.';
+    const area = areaById(f.areaId);
+    if (!area || area.branchId !== f.branchId) return 'A área informada pertence a outra filial.';
+    db.links.push({ id:nid('k'), contractNumber:c, carrier:f.carrier.trim(),
+      tech:f.tech || 'fiber', down:Number(f.down) || null, up:Number(f.up) || null,
+      guaranteed:Number(f.guaranteed) || null, staticIp:(f.staticIp || '').trim(),
+      cpeBrand:(f.cpeBrand || '').trim(), cpeModel:(f.cpeModel || '').trim(),
+      cpeSerial:(f.cpeSerial || '').trim(), status:f.status || 'active',
+      branchId:f.branchId, areaId:f.areaId, cost:Number(f.cost) || 0,
+      // Sem host monitorado o estado é "não monitorado" — nunca "fora do ar".
+      state:(f.monitoringHost || '').trim() ? 'up' : 'unknown', stateAt:Date.now(),
+      activatedOn:f.activatedOn || '', contractStart:f.contractStart || '',
+      contractEnd:f.contractEnd || '', loyalty:f.loyalty || '',
+      monitoringHost:(f.monitoringHost || '').trim(), attachments:[], events:[] });
+    save(); return null;
+  }
+
+  /** Simula o webhook de monitoração: alterna o estado e fecha/abre o evento. */
+  function toggleLinkState(link) {
+    if (!link.monitoringHost) return 'Link sem host monitorado — configure a monitoração primeiro.';
+    const goingDown = link.state !== 'down';
+    link.state = goingDown ? 'down' : 'up';
+    link.stateAt = Date.now();
+    if (goingDown) {
+      link.events.unshift({ id:nid('ev'), state:'down', startedAt:Date.now(), endedAt:null,
+        source:'zabbix', note:'Queda detectada pela monitoração.' });
+    } else {
+      const open = link.events.find(e => !e.endedAt);
+      if (open) open.endedAt = Date.now();
+    }
+    save(); return null;
+  }
+
+  /* ===================== Formatação ===================== */
+  function fmtMs(ms) {
+    if (ms === null || ms === undefined || Number.isNaN(ms)) return '—';
+    const total = Math.round(Math.abs(ms) / MIN);
+    const d = Math.floor(total/1440), h = Math.floor((total%1440)/60), m = total%60;
+    const p = [];
+    if (d) p.push(d + 'd');
+    if (h) p.push(h + 'h');
+    if (m && !d) p.push(m + 'min');
+    return p.length ? p.join(' ') : '0min';
+  }
+  const fmtMin = m => fmtMs(m * MIN);
+  const brl = v => (v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+  const esc = s => String(s ?? '').replace(/[&<>"']/g,
+    c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const fmtDate = iso => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+  const fmtWhen = ms => new Date(ms).toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' });
+  const ago = ms => fmtMs(Date.now() - ms);
+  const kb = b => b >= 1048576 ? (b/1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b/1024)) + ' KB';
+  const pill = (l, t) => `<span class="pill" data-tone="${t}"><span class="dot"></span>${esc(l)}</span>`;
+  const prioTag = p => `<span class="prio" style="color:${PRIORITIES[p].color}"><span class="dot"></span>${PRIORITIES[p].label}</span>`;
+  const areaName = id => areaById(id)?.name ?? '—';
+  const branchName = id => branchById(id)?.name ?? '—';
+  const branchShort = id => branchById(id)?.short ?? '—';
+
+  function dueCell(t) {
+    if (isPaused(t)) return `<span class="countdown muted" data-due="${t.id}">pausado</span>`;
+    const rem = remainingMs(t), late = rem < 0;
+    return `<span class="countdown" data-late="${late}" data-due="${t.id}">${late?'-':''}${fmtMs(rem)}</span>`;
+  }
+
+  /* ===================== Anexos (Módulos 3, 5, 7, 8) ===================== */
+  // Limites por tipo, iguais aos da especificação.
+  const LIMITS = { image:10, audio:25, video:50, document:10 };
+  const kindOf = mime => mime.startsWith('image/') ? 'image'
+    : mime.startsWith('audio/') ? 'audio'
+    : mime.startsWith('video/') ? 'video' : 'document';
+  const KIND_ICON = { image:'🖼️', audio:'🎧', video:'🎬', document:'📄' };
+
+  // Blobs vivem só na sessão: o navegador não retém o arquivo entre recargas.
+  // No sistema real o binário fica no Supabase Storage.
+  const BLOBS = new Map();
+
+  /** Comprime imagem para caber no armazenamento local sem perder a leitura. */
+  function compressImage(file, maxPx = 640) {
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * scale));
+        c.height = Math.max(1, Math.round(img.height * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        try { resolve({ thumb:c.toDataURL('image/jpeg', 0.72), w:c.width, h:c.height }); }
+        catch { resolve({ thumb:null, w:img.width, h:img.height }); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve({ thumb:null }); };
+      img.src = url;
+    });
+  }
+
+  async function makeAttachment(file, docKind) {
+    const kind = kindOf(file.type || 'application/octet-stream');
+    const limit = LIMITS[kind];
+    if (file.size > limit * 1048576)
+      return { error:`"${file.name}" tem ${kb(file.size)} — o limite para ${kind === 'image' ? 'imagem' : kind === 'audio' ? 'áudio' : kind === 'video' ? 'vídeo' : 'documento'} é ${limit} MB.` };
+
+    const att = { id:nid('at'), name:file.name, mime:file.type || 'application/octet-stream',
+      size:file.size, kind, at:Date.now(), by:ME, primary:false,
+      docKind:docKind || (kind === 'image' ? 'photo_other' : 'other') };
+
+    if (kind === 'image') {
+      const { thumb, w, h } = await compressImage(file);
+      att.thumb = thumb; att.w = w; att.h = h;
+    }
+    BLOBS.set(att.id, URL.createObjectURL(file));
+    return { att };
+  }
+
+  const attachQuotaUsed = t => (t.attachments || []).reduce((s, a) => s + a.size, 0);
+  const QUOTA_MB = 500;
+
+  async function addAttachments(owner, files, docKind, isTicket) {
+    const errors = [];
+    for (const file of files) {
+      if (isTicket && attachQuotaUsed(owner) + file.size > QUOTA_MB * 1048576) {
+        errors.push(`Cota de ${QUOTA_MB} MB do ticket excedida.`); break;
+      }
+      const r = await makeAttachment(file, docKind);
+      if (r.error) { errors.push(r.error); continue; }
+      owner.attachments = owner.attachments || [];
+      // Primeira foto do ativo vira a principal automaticamente.
+      if (r.att.kind === 'image' && !owner.attachments.some(a => a.primary && a.kind === 'image'))
+        r.att.primary = true;
+      owner.attachments.push(r.att);
+    }
+    save();
+    return errors;
+  }
+  function setPrimary(owner, id) {
+    // Uma única foto principal: marcar uma desmarca a anterior.
+    owner.attachments.forEach(a => { if (a.kind === 'image') a.primary = a.id === id; });
+    save();
+  }
+  function removeAttachment(owner, id) {
+    owner.attachments = owner.attachments.filter(a => a.id !== id);
+    const u = BLOBS.get(id); if (u) { URL.revokeObjectURL(u); BLOBS.delete(id); }
+    save();
+  }
+  const primaryPhoto = owner => (owner.attachments || []).find(a => a.primary && a.thumb);
+
+  function attCard(a, ownerKey) {
+    const url = BLOBS.get(a.id);
+    const media = a.kind === 'image' && a.thumb
+      ? `<img class="att-thumb" src="${a.thumb}" alt="${esc(a.name)}">`
+      : `<div class="att-ph">${KIND_ICON[a.kind]}</div>`;
+    return `<div class="att">
+      ${media}
+      <div class="att-meta">
+        <div class="att-name" title="${esc(a.name)}">${esc(a.name)}</div>
+        <div class="dim">${DOC_KIND[a.docKind] || KIND_ICON[a.kind]} · ${kb(a.size)}</div>
+        <div class="dim">${fmtWhen(a.at)} · ${esc(a.by)}</div>
+      </div>
+      <div class="att-actions">
+        ${a.kind === 'image' ? `<button type="button" class="att-star" data-primary="${a.id}"
+          data-owner="${ownerKey}" data-on="${!!a.primary}" title="Definir como foto principal">
+          ${a.primary ? '★ principal' : '☆ principal'}</button>` : ''}
+        ${url ? `<a class="dim" href="${url}" target="_blank" rel="noopener">abrir</a>` : `<span class="dim">não retido</span>`}
+        <button type="button" class="att-star" data-del-att="${a.id}" data-owner="${ownerKey}"
+          style="margin-left:auto" title="Remover">✕</button>
+      </div>
+    </div>`;
+  }
+
+  function attPlayer(a) {
+    const url = BLOBS.get(a.id);
+    if (!url) return `<div class="att-row"><span>${KIND_ICON[a.kind]}</span>
+      <span class="strong">${esc(a.name)}</span>
+      <span class="dim">${kb(a.size)} · arquivo não retido após recarregar — no sistema real fica no Supabase Storage</span></div>`;
+    if (a.kind === 'audio') return `<div><div class="dim">${esc(a.name)}</div><audio controls src="${url}"></audio></div>`;
+    if (a.kind === 'video') return `<div><div class="dim">${esc(a.name)}</div><video controls src="${url}"></video></div>`;
+    return `<div class="att-row"><span>${KIND_ICON[a.kind]}</span>
+      <span class="strong">${esc(a.name)}</span><span class="dim">${kb(a.size)}</span>
+      <a class="dim" style="margin-left:auto" href="${url}" target="_blank" rel="noopener">abrir</a></div>`;
+  }
+
+  function dropZone(id, hint) {
+    return `<div class="drop" data-drop="${id}">
+      <input type="file" id="file-${id}" multiple style="display:none">
+      <label for="file-${id}" style="cursor:pointer;font-weight:600;color:var(--brand-ink)">Escolher arquivos</label>
+      ou arraste aqui<div class="dim" style="margin-top:.2rem">${esc(hint)}</div></div>`;
+  }
+
+  /* ===================== Mapa (Módulo 11) ===================== */
+  // Contorno simplificado do Brasil em [lng, lat]. O MESMO projetor é usado
+  // para o contorno e para os marcadores, então eles não podem divergir.
+  const BR = [[-51.8,4.4],[-49.9,1.0],[-48.5,-1.4],[-44.3,-2.5],[-42.8,-2.7],[-38.5,-3.7],
+    [-35.2,-5.8],[-34.8,-7.1],[-37.0,-11.0],[-38.5,-13.0],[-39.0,-17.9],[-40.0,-20.3],
+    [-43.2,-22.9],[-46.3,-23.9],[-48.5,-25.5],[-48.6,-28.5],[-50.0,-30.0],[-52.3,-31.8],
+    [-53.4,-33.7],[-57.6,-30.2],[-56.0,-27.4],[-54.6,-25.6],[-54.3,-24.0],[-58.2,-20.0],
+    [-57.6,-18.0],[-60.0,-16.3],[-62.6,-13.0],[-65.3,-11.0],[-68.7,-11.0],[-70.6,-9.8],
+    [-72.9,-9.4],[-73.0,-7.5],[-70.8,-4.2],[-69.4,-1.1],[-69.6,0.6],[-67.9,1.8],[-66.9,1.2],
+    [-64.0,4.1],[-62.1,4.1],[-60.7,5.2],[-60.0,4.5],[-59.8,3.9],[-58.9,1.3],[-56.5,2.0],
+    [-55.0,2.6],[-54.2,2.2]];
+  const MAP_W = 820, MAP_H = 800;
+  const LNG0 = -74.5, LNG1 = -33.5, LAT0 = 6.0, LAT1 = -34.5;
+  const px = lng => (lng - LNG0) / (LNG1 - LNG0) * MAP_W;
+  const py = lat => (LAT0 - lat) / (LAT0 - LAT1) * MAP_H;
+  const BR_PATH = BR.map((p, i) => `${i ? 'L' : 'M'}${px(p[0]).toFixed(1)},${py(p[1]).toFixed(1)}`).join(' ') + ' Z';
+
+  /**
+   * Mapa por domínio. `rows` traz { branchId, count, state } e o popup detalha
+   * por área — que é o motivo de a tabela de áreas existir.
+   */
+  function renderMap(domain, rows) {
+    const withGeo = rows.filter(r => branchById(r.branchId)?.lat !== null);
+    const without = rows.filter(r => branchById(r.branchId)?.lat === null && r.count > 0);
+    const max = Math.max(1, ...withGeo.map(r => r.count));
+
+    const markers = withGeo.map(r => {
+      const b = branchById(r.branchId);
+      const x = px(b.lng), y = py(b.lat);
+      const rad = 13 + 15 * Math.sqrt(r.count / max);
+      return `<g class="mk" data-mk="${r.branchId}" data-domain="${domain}" data-state="${r.state}"
+        tabindex="0" role="button" aria-label="${esc(b.name)}: ${r.count}">
+        <circle class="mk-circle" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rad.toFixed(1)}"></circle>
+        <text class="mk-count" x="${x.toFixed(1)}" y="${y.toFixed(1)}">${r.count}</text>
+        <text class="mk-label" x="${x.toFixed(1)}" y="${(y + rad + 12).toFixed(1)}">${esc(b.short)}</text>
+      </g>`;
+    }).join('');
+
+    return `<div class="map-wrap" data-map="${domain}">
+      <svg class="map-svg" viewBox="0 0 ${MAP_W} ${MAP_H}" role="img"
+        aria-label="Mapa do Brasil com marcadores por filial">
+        <path class="map-land" d="${BR_PATH}"></path>
+        ${markers}
+      </svg>
+      <div class="map-legend">
+        <span><span class="dot" style="background:var(--ok-ink)"></span>normal</span>
+        <span><span class="dot" style="background:var(--warn-ink)"></span>atenção</span>
+        <span><span class="dot" style="background:var(--breach-ink)"></span>crítico</span>
+        <span class="dim">tamanho do marcador proporcional à quantidade · clique para detalhar por área</span>
+      </div>
+      ${without.length ? `<div class="alert" data-kind="warn" style="margin-top:.6rem">
+        ${without.length} filial(is) sem coordenada não aparecem no mapa:
+        ${without.map(r => esc(branchName(r.branchId))).join(', ')}.
+        Cadastre a localização para incluí-las — sumir sem aviso faria o mapa parecer completo.
+      </div>` : ''}
+    </div>`;
+  }
+
+  /** Dados de marcador por domínio, com o semáforo calculado aqui — uma regra só. */
+  function mapRows(domain) {
+    return db.branches.map(b => {
+      if (domain === 'tickets') {
+        const list = openTickets().filter(t => t.branchId === b.id);
+        const crit = list.filter(t => PRIORITIES[t.prio].weight >= 80 || slaState(t) === 'breached').length;
+        const risk = list.filter(t => ['warning','critical'].includes(slaState(t))).length;
+        return { branchId:b.id, count:list.length, state: crit ? 'red' : risk ? 'amber' : 'green' };
+      }
+      if (domain === 'assets') {
+        const list = db.assets.filter(a => a.branchId === b.id);
+        const noOwner = list.filter(a => a.status === 'active' && !a.user).length;
+        const maint = list.filter(a => a.status === 'maintenance').length;
+        return { branchId:b.id, count:list.length, state: noOwner ? 'red' : maint ? 'amber' : 'green' };
+      }
+      if (domain === 'telecom') {
+        const list = db.lines.filter(l => l.branchId === b.id);
+        const active = list.filter(l => l.status === 'active');
+        const susp = list.filter(l => l.status === 'suspended').length;
+        const noUser = active.filter(l => !l.user).length;
+        return { branchId:b.id, count:active.length, state: susp ? 'red' : noUser ? 'amber' : 'green' };
+      }
+      const list = db.links.filter(k => k.branchId === b.id && k.status === 'active');
+      const down = list.filter(k => k.state === 'down').length;
+      const unk = list.filter(k => k.state === 'unknown').length;
+      return { branchId:b.id, count:list.length, state: down ? 'red' : unk ? 'amber' : 'green' };
+    });
+  }
+
+  /** Quebra por área para o popup do marcador. */
+  function areaBreakdown(branchId, domain) {
+    return areasOf(branchId).map(a => {
+      let count = 0;
+      if (domain === 'assets')  count = db.assets.filter(x => x.areaId === a.id).length;
+      if (domain === 'telecom') count = db.lines.filter(x => x.areaId === a.id && x.status === 'active').length;
+      if (domain === 'internet')count = db.links.filter(x => x.areaId === a.id && x.status === 'active').length;
+      if (domain === 'tickets') count = openTickets().filter(t => t.branchId === branchId && t.areaId === a.id).length;
+      return { name:a.name, kind:a.kind, count };
+    }).filter(x => x.count > 0);
+  }
+
+  /* ===================== Métricas ===================== */
+  function metrics() {
+    const open = openTickets();
+    const today = new Date().toDateString();
+    const solved = db.tickets.filter(t => t.resolvedAt);
+    return {
+      open:open.length,
+      novos:open.filter(t => t.status === 'open').length,
+      andamento:open.filter(t => ['assigned','in_progress'].includes(t.status)).length,
+      esperando:open.filter(t => PAUSES(t.status)).length,
+      criticos:open.filter(t => PRIORITIES[t.prio].weight >= 80).length,
+      risco:open.filter(t => ['warning','critical'].includes(slaState(t))).length,
+      estourado:open.filter(t => slaState(t) === 'breached').length,
+      resolvedToday:db.tickets.filter(t => t.resolvedAt && new Date(t.resolvedAt).toDateString() === today).length,
+      createdToday:db.tickets.filter(t => new Date(t.createdAt).toDateString() === today).length,
+      tmr: solved.length ? Math.round(solved.reduce((s, t) => s + (t.resolvedAt - t.createdAt), 0) / solved.length / MIN) : null,
+      semResponsavel:db.assets.filter(a => a.status === 'active' && !a.user).length,
+      linksDown:db.links.filter(k => k.status === 'active' && k.state === 'down').length
+    };
+  }
+
+  /* ===================== Componentes ===================== */
+  const tile = (label, value, hint, tone) => `<div class="tile"${tone?` data-tone="${tone}"`:''}>
+    <div class="tile-label">${esc(label)}</div>
+    <div class="tile-value">${esc(String(value))}</div>
+    ${hint?`<div class="tile-hint">${esc(hint)}</div>`:''}</div>`;
+
+  function ticketTable(list, opts = {}) {
+    if (!list.length) return `<div class="card"><p class="empty">Nenhum ticket nesta seleção.</p></div>`;
+    const sel = opts.selectable;
+    return `<div class="table-wrap"><table>
+      <thead><tr>
+        ${sel?`<th style="width:2.2rem"><input type="checkbox" id="sel-all" aria-label="Selecionar todos"></th>`:''}
+        <th>#</th><th>Título</th><th>Status</th><th>Prioridade</th><th>Fila</th>
+        <th>Filial</th><th>Atendente</th><th>SLA</th><th>Prazo</th>
+      </tr></thead>
+      <tbody>${list.map(t => {
+        const s = slaState(t);
+        return `<tr ${sel?'':'data-clickable'} data-ticket="${t.id}" tabindex="0">
+          ${sel?`<td><input type="checkbox" class="sel-t" value="${t.id}" aria-label="Selecionar ${t.n}"></td>`:''}
+          <td class="mono muted">#${t.n}</td>
+          <td><div class="strong" data-open-t="${t.id}" style="cursor:pointer">${esc(t.title)}</div>
+            <div class="dim">${esc(t.cat)} · aberto há ${ago(t.createdAt)}${t.source?' · via '+esc(t.source):''}
+            ${(t.attachments||[]).length?` · 📎 ${t.attachments.length}`:''}</div></td>
+          <td>${pill(STATUS[t.status].label, STATUS[t.status].tone)}</td>
+          <td>${prioTag(t.prio)}</td>
+          <td class="muted">${esc(queueBySlug(t.queue).name)}</td>
+          <td class="muted">${esc(branchShort(t.branchId))}</td>
+          <td class="muted">${t.assignee?esc(t.assignee):'Não atribuído'}</td>
+          <td>${pill(SLA_STATE[s].label, SLA_STATE[s].tone)}</td>
+          <td>${dueCell(t)}</td></tr>`;
+      }).join('')}</tbody></table></div>`;
+  }
+
+  const viewToggle = (mode, target) => `<div class="seg" style="margin:0 0 1rem">
+    <button type="button" data-vmode="lista" data-vtarget="${target}" aria-pressed="${mode==='lista'}">Lista</button>
+    <button type="button" data-vmode="mapa" data-vtarget="${target}" aria-pressed="${mode==='mapa'}">Mapa</button>
+  </div>`;
+
+  /* ===================== Novidades ===================== */
+  const IMPROVEMENTS = [
+    { n:1, t:'SLA e filas editáveis', go:'sla',
+      d:'Listar, criar, editar TFR/TR e calendário, ativar/desativar sem excluir, e ver quantos tickets em aberto uma mudança afeta antes de salvar. Filas com pesos e critério de desempate ajustáveis.' },
+    { n:2, t:'Área da Filial no inventário', go:'inventario',
+      d:'Cada filial tem suas áreas (Recepção, Enfermagem, TI…). Campo obrigatório no ativo, filtro próprio e agrupamento por área na listagem.' },
+    { n:3, t:'Nota de compra e foto do equipamento', go:'inventario',
+      d:'Abas Documentos e Fotos na ficha do ativo. Múltiplos anexos, uma foto principal que vira thumbnail na listagem.' },
+    { n:4, t:'Histórico de responsável', go:'inventario',
+      d:'Timeline de custódia com responsável anterior, novo, quem alterou, quando e o motivo. Alerta de ativos em uso sem responsável.' },
+    { n:5, t:'Anexos em tickets: imagem, áudio e vídeo', go:'novo',
+      d:'Anexar na abertura e nos comentários, com preview de imagem e player de áudio e vídeo. Limite por tipo e cota por ticket.' },
+    { n:6, t:'Filtros e dashboard de telefonia', go:'telefonia',
+      d:'Filtros por filial, operadora, área, status, tipo e busca livre. Indicadores e gráficos que reagem aos filtros.' },
+    { n:7, t:'Contrato da linha telefônica', go:'telefonia',
+      d:'Anexo de contrato, adendo e termo de fidelidade, com vigência e alerta de vencimento. Filtro de linhas sem contrato.' },
+    { n:8, t:'Módulo de Links de Internet', go:'links',
+      d:'Novo módulo: tecnologia, banda, IP fixo, CPE, contrato, custo e monitoração ON/OFF com histórico de indisponibilidade.' },
+    { n:9, t:'Área da empresa na telefonia', go:'telefonia',
+      d:'Mesmo cadastro de áreas do inventário aplicado às linhas, com filtro e distribuição por área.' },
+    { n:10, t:'Edição de integrações e mapeamento', go:'integracoes',
+      d:'Editar endpoint e autenticação, adicionar/remover mapeamentos, testar com payload real sem gravar nada, e versões com rollback.' },
+    { n:11, t:'Mapas por filial com detalhamento por área', go:'mapas',
+      d:'Mapa em Tickets, Inventário, Telefonia e Links. Marcador dimensionado pela quantidade, cor por criticidade e popup com quebra por área.' }
+  ];
+
+  const views = {};
+
+  views.novidades = () => `
+    <div class="page-head"><div>
+      <p class="eyebrow">Entrega</p>
+      <h1>As 11 melhorias solicitadas</h1>
+      <p class="lede">Cada cartão abre a tela onde a melhoria está funcionando. Tudo é editável e
+      gravado neste navegador — abra um ticket, mude um SLA, anexe uma foto.</p>
+    </div></div>
+
+    <div class="alert" data-kind="info" style="margin-bottom:1.25rem">
+      <strong>Onde cada coisa vive.</strong> Esta página é a ferramenta navegável.
+      A camada de banco (37 → 44 tabelas, 114 asserções) e a especificação dos 11 módulos
+      estão no repositório, em <span class="mono">supabase/migrations/0013</span> e
+      <span class="mono">docs/06-lacunas-e-roadmap.md</span>.
+    </div>
+
+    <div class="news">${IMPROVEMENTS.map(i => `
+      <article class="news-card">
+        <span class="news-n">${String(i.n).padStart(2,'0')}</span>
+        <h2>${esc(i.t)}</h2>
+        <p>${esc(i.d)}</p>
+        <footer><button type="button" class="btn btn-sm" data-go="${i.go}">Abrir</button></footer>
+      </article>`).join('')}</div>`;
+
+  /* ===================== Painel ===================== */
+  views.painel = () => {
+    const m = metrics();
+    const atencao = orderQueue(openTickets().filter(t => ['breached','critical','warning'].includes(slaState(t))));
+    const meus = orderQueue(openTickets().filter(t => t.assignee === ME));
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Operação</p><h1>Olá, Ana</h1>
+        <p class="lede">Visão geral do atendimento. Os prazos correm em tempo real.</p></div>
+        <button type="button" class="btn" data-go="novo">Abrir ticket</button>
+      </div>
+      <div class="tiles">
+        ${tile('Em aberto', m.open, m.novos + ' aguardando triagem')}
+        ${tile('Em andamento', m.andamento, null, 'ok')}
+        ${tile('Críticos', m.criticos, null, 'crit')}
+        ${tile('SLA estourado', m.estourado, null, 'breach')}
+        ${tile('SLA em risco', m.risco, null, 'warn')}
+        ${tile('Aguardando terceiros', m.esperando, 'relógio pausado')}
+        ${tile('Ativos sem responsável', m.semResponsavel, 'governança', m.semResponsavel?'crit':'ok')}
+        ${tile('Links fora do ar', m.linksDown, 'conectividade', m.linksDown?'breach':'ok')}
+      </div>
+      <h2 style="margin-bottom:.6rem">Atenção imediata — SLA em risco ou estourado</h2>
+      ${ticketTable(atencao)}
+      <h2 style="margin:1.75rem 0 .6rem">Meus tickets</h2>
+      ${ticketTable(meus)}`;
+  };
+
+  /* ===================== Tickets ===================== */
+  let filters = { status:'abertos', queue:'', prio:'', q:'', branch:'' };
+  let ticketMode = 'lista';
+  let selected = new Set();
+
+  views.tickets = () => {
+    let list = db.tickets.filter(t => {
+      if (filters.status === 'abertos') { if (!IS_OPEN(t.status)) return false; }
+      else if (filters.status !== 'todos' && t.status !== filters.status) return false;
+      if (filters.queue && t.queue !== filters.queue) return false;
+      if (filters.prio && t.prio !== filters.prio) return false;
+      if (filters.branch && t.branchId !== filters.branch) return false;
+      if (filters.q && !t.title.toLowerCase().includes(filters.q.toLowerCase())) return false;
+      return true;
+    });
+    list = orderQueue(list);
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Atendimento</p><h1>Tickets</h1>
+        <p class="lede">Ordenados por score: criticidade, urgência de prazo e espera —
+        o desempate segue o critério configurado em cada fila.</p></div>
+        <button type="button" class="btn" data-go="novo">Abrir ticket</button>
+      </div>
+      ${viewToggle(ticketMode, 'tickets')}
+      <div class="filters">
+        <div class="field" style="flex:1;min-width:12rem"><label for="f-q">Buscar por título</label>
+          <input type="search" id="f-q" value="${esc(filters.q)}" placeholder="ex.: internet, prontuário…"></div>
+        <div class="field"><label for="f-status">Status</label><select id="f-status">
+          <option value="abertos"${filters.status==='abertos'?' selected':''}>Em aberto</option>
+          <option value="todos"${filters.status==='todos'?' selected':''}>Todos</option>
+          ${Object.entries(STATUS).map(([k,v])=>`<option value="${k}"${filters.status===k?' selected':''}>${v.label}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="f-queue">Fila</label><select id="f-queue"><option value="">Todas</option>
+          ${db.queues.map(q=>`<option value="${q.slug}"${filters.queue===q.slug?' selected':''}>${q.name}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="f-prio">Prioridade</label><select id="f-prio"><option value="">Todas</option>
+          ${Object.entries(PRIORITIES).map(([k,v])=>`<option value="${k}"${filters.prio===k?' selected':''}>${v.label}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="f-branch">Filial</label><select id="f-branch"><option value="">Todas</option>
+          ${db.branches.map(b=>`<option value="${b.id}"${filters.branch===b.id?' selected':''}>${b.short}</option>`).join('')}
+        </select></div>
+      </div>
+      ${ticketMode === 'mapa' ? renderMap('tickets', mapRows('tickets')) : `
+        ${selected.size ? `<div class="sel-bar">
+          <strong>${selected.size} ticket(s) selecionado(s)</strong>
+          <button type="button" class="btn btn-sm" id="bulk-open">Transferir de fila</button>
+          <button type="button" class="btn btn-sm" data-variant="ghost" id="bulk-clear">Limpar seleção</button>
+        </div>` : `<p class="dim" style="margin:0 0 .6rem">${list.length} ticket(s) ·
+          marque as caixas para transferir em massa · clique no título para abrir</p>`}
+        ${ticketTable(list, { selectable:true })}`}`;
+  };
+
+  views.novo = () => {
+    const b0 = db.branches[0];
+    return `
+    <div class="page-head"><div><p class="eyebrow">Atendimento</p><h1>Abrir ticket</h1>
+      <p class="lede">A fila vem da categoria e o prazo vem do SLA resolvido pela prioridade.
+      Anexe imagem, áudio ou vídeo para evidenciar a necessidade.</p></div></div>
+    <div class="card" style="max-width:54rem"><div class="card-body">
+      <form id="form-ticket" class="form-grid">
+        <div class="field form-full"><label for="t-title">Título <span class="req">*</span></label>
+          <input type="text" id="t-title" name="title" required minlength="4"
+            placeholder="ex.: Prontuário lento na Enfermagem"></div>
+        <div class="field form-full"><label for="t-desc">Descrição</label>
+          <textarea id="t-desc" name="desc" placeholder="Quando começou, quem é afetado, o que já foi tentado."></textarea></div>
+        <div class="field"><label for="t-prio">Prioridade <span class="req">*</span></label>
+          <select id="t-prio" name="prio">${Object.entries(PRIORITIES).map(([k,v])=>
+            `<option value="${k}"${k==='medium'?' selected':''}>${v.label}</option>`).join('')}</select></div>
+        <div class="field"><label for="t-cat">Categoria</label>
+          <select id="t-cat" name="cat">${CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></div>
+        <div class="field"><label for="t-branch">Filial</label>
+          <select id="t-branch" name="branchId" data-area-src="t-area">
+            ${db.branches.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div>
+        <div class="field"><label for="t-area">Área da filial</label>
+          <select id="t-area" name="areaId"><option value="">Não informada</option>
+            ${areasOf(b0.id).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}</select></div>
+        <div class="field"><label for="t-queue">Fila</label>
+          <select id="t-queue" name="queue"><option value="">Automática (pela categoria)</option>
+            ${db.queues.map(q=>`<option value="${q.slug}">${q.name}</option>`).join('')}</select></div>
+        <div class="field"><label for="t-assignee">Atendente</label>
+          <select id="t-assignee" name="assignee"><option value="">Não atribuir agora</option>
+            ${AGENTS.map(a=>`<option>${a}</option>`).join('')}</select></div>
+        <div class="field form-full"><label for="t-tags">Tags</label>
+          <input type="text" id="t-tags" name="tags" placeholder="rede, urgente"></div>
+        <div class="form-full">
+          <label class="dim" style="display:block;margin-bottom:.35rem">Anexos</label>
+          ${dropZone('newticket','Imagem até 10 MB · áudio até 25 MB · vídeo até 50 MB · documento até 10 MB')}
+          <div id="newticket-list" class="att-grid" style="margin-top:.6rem"></div>
+        </div>
+        <div class="form-full" id="ticket-msg"></div>
+        <div class="form-full" style="display:flex;justify-content:flex-end">
+          <button type="submit" class="btn">Abrir ticket</button></div>
+      </form>
+    </div></div>`;
+  };
+
+  /* ===================== SLA (Módulo 1) ===================== */
+  views.sla = () => {
+    const byQueue = db.queues.map(q => {
+      const all = db.tickets.filter(t => t.queue === q.slug);
+      const br = all.filter(t => slaState(t) === 'breached').length;
+      return { q, total:all.length, br, pct: all.length ? +(100*(all.length-br)/all.length).toFixed(1) : null };
+    });
+    return `
+      <div class="page-head"><div><p class="eyebrow">Contratos</p><h1>SLA</h1>
+        <p class="lede">Clique em uma definição para editar prazos, calendário e situação.
+        Antes de salvar, o sistema mostra quantos tickets em aberto usam aquela régua.</p></div>
+        <button type="button" class="btn" id="sla-new">Nova definição</button></div>
+
+      <h2 style="margin-bottom:.6rem">Definições vigentes</h2>
+      <div class="table-wrap" style="margin-bottom:1.75rem"><table>
+        <thead><tr><th>Nome</th><th>Contrato</th><th>Categoria</th><th>Prioridade</th>
+          <th>1ª resposta</th><th>Resolução</th><th>Calendário</th><th>Situação</th><th></th></tr></thead>
+        <tbody>${db.slaDefs.map(d => {
+          const im = slaImpact(d.id);
+          return `<tr>
+            <td class="strong">${esc(d.name)}</td>
+            <td class="muted">${d.contract?esc(d.contract):'Padrão do tenant'}</td>
+            <td class="muted">${d.category?esc(d.category):'Todas'}</td>
+            <td>${prioTag(d.priority)}</td>
+            <td class="num">${fmtMin(d.tfr)}</td>
+            <td class="num">${fmtMin(d.res)}</td>
+            <td class="muted">${esc(d.calendar)}</td>
+            <td>${d.active?pill('Ativa','ok'):pill('Inativa','neutral')}</td>
+            <td class="row-actions">
+              <button type="button" class="btn btn-sm" data-variant="ghost" data-sla-edit="${d.id}">Editar</button>
+              ${im.open?`<span class="dim">${im.open} em aberto</span>`:''}
+            </td></tr>`;
+        }).join('')}</tbody></table></div>
+
+      <h2 style="margin-bottom:.6rem">Filas</h2>
+      <p class="dim" style="margin:0 0 .6rem">Pesos e desempate alteram a ordenação na hora —
+      o score é calculado a cada leitura, não armazenado.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(19rem,1fr));gap:.85rem;margin-bottom:1.75rem">
+        ${db.queues.map(q => {
+          const inQ = openTickets().filter(t => t.queue === q.slug);
+          return `<div class="card"><div class="card-body">
+            <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start">
+              <h2>${esc(q.name)}</h2>${q.isDefault?pill('Padrão','info'):''}</div>
+            <p class="dim" style="margin:.25rem 0 .6rem">${esc(q.desc)}</p>
+            <p class="num" style="font-size:1.6rem;font-weight:750;margin:0">${inQ.length}
+              <span style="font-size:.78rem;font-weight:500;color:var(--ink-3)">em aberto</span></p>
+            <dl class="kv" style="margin-top:.6rem">
+              <dt>Criticidade / prazo / espera</dt><dd class="num">${q.w[0]} · ${q.w[1]} · ${q.w[2]}</dd>
+              <dt>Desempate</dt><dd>${TIEBREAKERS[q.tiebreaker]}</dd>
+              <dt>Membros</dt><dd>${q.members.length?esc(q.members.join(', ')):'—'}</dd>
+            </dl>
+            <div style="margin-top:.7rem"><button type="button" class="btn btn-sm" data-variant="ghost"
+              data-queue-edit="${q.slug}">Editar fila</button></div>
+          </div></div>`;
+        }).join('')}
+      </div>
+
+      <h2 style="margin-bottom:.6rem">Compliance por fila</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fila</th><th>Tickets</th><th>Violações</th><th>Compliance</th></tr></thead>
+        <tbody>${byQueue.map(r=>`<tr><td class="strong">${esc(r.q.name)}</td>
+          <td class="num">${r.total}</td><td class="num muted">${r.br}</td>
+          <td>${r.pct===null?'<span class="muted">—</span>':pill(r.pct+'%',r.pct>=95?'ok':r.pct>=85?'warn':'breach')}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+  };
+
+  /* ===================== Inventário (Módulos 2, 3, 4) ===================== */
+  let invFilters = { branch:'', area:'', status:'', type:'', group:'nenhum' };
+  let invMode = 'lista';
+
+  function invList() {
+    return db.assets.filter(a => {
+      if (invFilters.branch && a.branchId !== invFilters.branch) return false;
+      if (invFilters.area && a.areaId !== invFilters.area) return false;
+      if (invFilters.status && a.status !== invFilters.status) return false;
+      if (invFilters.type && a.type !== invFilters.type) return false;
+      return true;
+    });
+  }
+
+  function assetRow(a) {
+    const ph = primaryPhoto(a);
+    return `<tr data-clickable data-asset="${a.id}" tabindex="0">
+      <td>${ph?`<img src="${ph.thumb}" alt="" style="width:2.6rem;height:2rem;object-fit:cover;border-radius:5px">`
+        :`<span class="dim">—</span>`}</td>
+      <td class="mono">${esc(a.tag)||'—'}</td>
+      <td><div class="strong">${esc(a.model)}</div><div class="dim">${esc(a.type)}</div></td>
+      <td class="muted">${esc(branchShort(a.branchId))}</td>
+      <td>${a.areaId?pill(areaName(a.areaId),'info'):pill('sem área','warn')}</td>
+      <td>${pill(ASSET_STATUS[a.status].label, ASSET_STATUS[a.status].tone)}</td>
+      <td class="muted">${a.user?esc(a.user):'<span style="color:var(--breach-ink)">sem responsável</span>'}</td>
+      <td class="dim">${(a.attachments||[]).length?'📎 '+a.attachments.length:'—'}</td>
+      <td class="muted num">${fmtDate(a.warranty)}</td></tr>`;
+  }
+
+  views.inventario = () => {
+    const list = invList();
+    const total = list.reduce((s,a)=>s+(a.cost||0),0);
+    const in90 = Date.now() + 90*86400000;
+    const venc = list.filter(a => a.warranty &&
+      new Date(a.warranty+'T00:00:00').getTime() <= in90 && a.status !== 'retired').length;
+    const semArea = db.assets.filter(a => !a.areaId).length;
+    const areaOptions = invFilters.branch ? areasOf(invFilters.branch) : db.areas.filter(a => a.active);
+
+    let body;
+    if (invMode === 'mapa') body = renderMap('assets', mapRows('assets'));
+    else if (invFilters.group === 'area') {
+      const groups = {};
+      list.forEach(a => { const k = a.areaId ? areaName(a.areaId) : 'Sem área'; (groups[k] ||= []).push(a); });
+      body = `<div class="table-wrap"><table>
+        <thead><tr><th>Foto</th><th>Patrimônio</th><th>Equipamento</th><th>Filial</th><th>Área</th>
+          <th>Status</th><th>Responsável</th><th>Anexos</th><th>Garantia</th></tr></thead>
+        <tbody>${Object.keys(groups).sort().map(k => `
+          <tr class="group-head"><td colspan="9">${esc(k)} — ${groups[k].length} ativo(s) ·
+            ${brl(groups[k].reduce((s,a)=>s+(a.cost||0),0))}</td></tr>
+          ${groups[k].map(assetRow).join('')}`).join('')}</tbody></table></div>`;
+    } else if (invFilters.group === 'filial') {
+      const groups = {};
+      list.forEach(a => { (groups[branchName(a.branchId)] ||= []).push(a); });
+      body = `<div class="table-wrap"><table>
+        <thead><tr><th>Foto</th><th>Patrimônio</th><th>Equipamento</th><th>Filial</th><th>Área</th>
+          <th>Status</th><th>Responsável</th><th>Anexos</th><th>Garantia</th></tr></thead>
+        <tbody>${Object.keys(groups).sort().map(k => `
+          <tr class="group-head"><td colspan="9">${esc(k)} — ${groups[k].length} ativo(s)</td></tr>
+          ${groups[k].map(assetRow).join('')}`).join('')}</tbody></table></div>`;
+    } else {
+      body = list.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Foto</th><th>Patrimônio</th><th>Equipamento</th><th>Filial</th><th>Área</th>
+          <th>Status</th><th>Responsável</th><th>Anexos</th><th>Garantia</th></tr></thead>
+        <tbody>${list.map(assetRow).join('')}</tbody></table></div>`
+        : `<div class="card"><p class="empty">Nenhum ativo nesta seleção.</p></div>`;
+    }
+
+    return `
+      <div class="page-head"><div><p class="eyebrow">Patrimônio</p><h1>Inventário de TI</h1>
+        <p class="lede">Clique num ativo para ver documentos, fotos e a timeline de custódia.</p></div>
+        <div class="row-actions">
+          <button type="button" class="btn" data-variant="ghost" id="areas-open">Gerenciar áreas</button>
+          <button type="button" class="btn" id="asset-new">Novo ativo</button></div></div>
+      ${viewToggle(invMode,'inventario')}
+      <div class="tiles">
+        ${tile('Ativos', list.length)}
+        ${tile('Em uso', list.filter(a=>a.status==='active').length, null, 'ok')}
+        ${tile('Sem responsável', db.assets.filter(a=>a.status==='active'&&!a.user).length,
+          'alerta de governança', db.assets.some(a=>a.status==='active'&&!a.user)?'crit':'ok')}
+        ${tile('Sem área', semArea, 'classificar', semArea?'warn':'ok')}
+        ${tile('Garantia vencendo', venc, 'próximos 90 dias', venc?'warn':undefined)}
+        ${tile('Valor de aquisição', brl(total))}
+      </div>
+      <div class="filters">
+        <div class="field"><label for="i-branch">Filial</label><select id="i-branch"><option value="">Todas</option>
+          ${db.branches.map(b=>`<option value="${b.id}"${invFilters.branch===b.id?' selected':''}>${b.short}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="i-area">Área da filial</label><select id="i-area"><option value="">Todas</option>
+          ${areaOptions.map(a=>`<option value="${a.id}"${invFilters.area===a.id?' selected':''}>${a.name}${invFilters.branch?'':' · '+branchShort(a.branchId)}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="i-status">Status</label><select id="i-status"><option value="">Todos</option>
+          ${Object.entries(ASSET_STATUS).map(([k,v])=>`<option value="${k}"${invFilters.status===k?' selected':''}>${v.label}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="i-type">Tipo</label><select id="i-type"><option value="">Todos</option>
+          ${ASSET_TYPES.map(t=>`<option${invFilters.type===t?' selected':''}>${t}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="i-group">Agrupar por</label><select id="i-group">
+          <option value="nenhum"${invFilters.group==='nenhum'?' selected':''}>Nenhum</option>
+          <option value="filial"${invFilters.group==='filial'?' selected':''}>Filial</option>
+          <option value="area"${invFilters.group==='area'?' selected':''}>Área da filial</option>
+        </select></div>
+      </div>
+      ${body}`;
+  };
+
+  /* ===================== Telefonia (Módulos 6, 7, 9) ===================== */
+  let telFilters = { branch:'', carrier:'', area:'', status:'', type:'', q:'', noContract:false };
+  let telMode = 'lista';
+
+  function telList() {
+    return db.lines.filter(l => {
+      if (telFilters.branch && l.branchId !== telFilters.branch) return false;
+      if (telFilters.carrier && l.carrier !== telFilters.carrier) return false;
+      if (telFilters.area && l.areaId !== telFilters.area) return false;
+      if (telFilters.status && l.status !== telFilters.status) return false;
+      if (telFilters.type && l.type !== telFilters.type) return false;
+      if (telFilters.noContract && (l.attachments||[]).some(a => a.kind === 'document' || a.docKind === 'contract')) return false;
+      if (telFilters.q) {
+        const q = telFilters.q.toLowerCase();
+        if (!l.num.toLowerCase().includes(q) && !(l.user||'').toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }
+  const hasContract = l => (l.attachments || []).some(a => a.docKind === 'contract');
+
+  views.telefonia = () => {
+    const list = telList();
+    const active = list.filter(l => l.status === 'active');
+    const totalAtivo = active.reduce((s,l)=>s+(l.cost||0),0);
+    const carriers = [...new Set(db.lines.map(l => l.carrier))].sort();
+    const areaOptions = telFilters.branch ? areasOf(telFilters.branch) : db.areas.filter(a => a.active);
+    const byBranch = {}, byCarrier = {}, byArea = {}, byType = {};
+    active.forEach(l => {
+      byBranch[branchShort(l.branchId)] = (byBranch[branchShort(l.branchId)]||0) + (l.cost||0);
+      byCarrier[l.carrier] = (byCarrier[l.carrier]||0) + 1;
+      byArea[areaName(l.areaId)] = (byArea[areaName(l.areaId)]||0) + 1;
+      byType[l.type] = (byType[l.type]||0) + 1;
+    });
+    const semContrato = db.lines.filter(l => l.status !== 'cancelled' && !hasContract(l)).length;
+    const in90 = Date.now() + 90*86400000;
+    const vencendo = db.lines.filter(l => l.contractEnd && l.status !== 'cancelled' &&
+      new Date(l.contractEnd+'T00:00:00').getTime() <= in90).length;
+    const bars = (obj, fmt) => {
+      const max = Math.max(1, ...Object.values(obj));
+      return Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`
+        <div style="display:grid;grid-template-columns:7rem 1fr auto;gap:.7rem;align-items:center;margin-bottom:.45rem">
+          <span class="strong" style="font-size:.8rem">${esc(k)}</span>
+          <span class="bar" style="width:${(v/max*100).toFixed(1)}%"></span>
+          <span class="num" style="font-size:.8rem">${fmt(v)}</span></div>`).join('') || '<p class="dim">Sem dados.</p>';
+    };
+
+    return `
+      <div class="page-head"><div><p class="eyebrow">Telecom</p><h1>Telefonia</h1>
+        <p class="lede">Filtros combináveis por filial, operadora e área. Os indicadores e gráficos
+        reagem à seleção. Clique numa linha para ver contrato e documentos.</p></div>
+        <button type="button" class="btn" id="line-new">Nova linha</button></div>
+      ${viewToggle(telMode,'telefonia')}
+      <div class="tiles">
+        ${tile('Linhas na seleção', list.length)}
+        ${tile('Ativas', active.length, null, 'ok')}
+        ${tile('Custo mensal', brl(totalAtivo), 'somente ativas')}
+        ${tile('Custo médio/linha', active.length?brl(totalAtivo/active.length):'—')}
+        ${tile('Sem usuário', active.filter(l=>!l.user).length, 'alerta', active.some(l=>!l.user)?'warn':'ok')}
+        ${tile('Sem contrato', semContrato, 'governança contratual', semContrato?'crit':'ok')}
+        ${tile('Contratos vencendo', vencendo, 'próximos 90 dias', vencendo?'warn':'ok')}
+        ${tile('Livres p/ cancelar', active.filter(l=>!l.loyalty||new Date(l.loyalty)<new Date()).length, 'sem fidelidade')}
+      </div>
+      <div class="filters">
+        <div class="field" style="flex:1;min-width:11rem"><label for="tl-q">Busca</label>
+          <input type="search" id="tl-q" value="${esc(telFilters.q)}" placeholder="número ou usuário"></div>
+        <div class="field"><label for="tl-branch">Filial</label><select id="tl-branch"><option value="">Todas</option>
+          ${db.branches.map(b=>`<option value="${b.id}"${telFilters.branch===b.id?' selected':''}>${b.short}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="tl-carrier">Operadora</label><select id="tl-carrier"><option value="">Todas</option>
+          ${carriers.map(c=>`<option${telFilters.carrier===c?' selected':''}>${c}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="tl-area">Área da empresa</label><select id="tl-area"><option value="">Todas</option>
+          ${areaOptions.map(a=>`<option value="${a.id}"${telFilters.area===a.id?' selected':''}>${a.name}${telFilters.branch?'':' · '+branchShort(a.branchId)}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="tl-status">Status</label><select id="tl-status"><option value="">Todos</option>
+          ${Object.entries(LINE_STATUS).map(([k,v])=>`<option value="${k}"${telFilters.status===k?' selected':''}>${v.label}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="tl-type">Plano</label><select id="tl-type"><option value="">Todos</option>
+          ${['Pós-pago','Pré-pago','Controle'].map(t=>`<option${telFilters.type===t?' selected':''}>${t}</option>`).join('')}
+        </select></div>
+        <label style="display:flex;gap:.35rem;align-items:center;font-size:.8rem" class="muted">
+          <input type="checkbox" id="tl-nc"${telFilters.noContract?' checked':''}> Só sem contrato</label>
+      </div>
+      ${telMode === 'mapa' ? renderMap('telecom', mapRows('telecom')) : `
+        <div class="table-wrap" style="margin-bottom:1.25rem"><table>
+          <thead><tr><th>Número</th><th>Operadora / plano</th><th>Tipo</th><th>Status</th>
+            <th>Filial</th><th>Área</th><th>Responsável</th><th>Contrato</th><th>Custo</th></tr></thead>
+          <tbody>${list.length?list.map(l=>`<tr data-clickable data-line="${l.id}" tabindex="0">
+            <td class="mono strong">${esc(l.num)}</td>
+            <td><div class="strong">${esc(l.carrier)}</div><div class="dim">${esc(l.plan)||'—'}</div></td>
+            <td class="muted">${esc(l.type)}</td>
+            <td>${pill(LINE_STATUS[l.status].label, LINE_STATUS[l.status].tone)}</td>
+            <td class="muted">${esc(branchShort(l.branchId))}</td>
+            <td>${l.areaId?pill(areaName(l.areaId),'info'):pill('sem área','warn')}</td>
+            <td class="muted">${esc(l.user)||'—'}</td>
+            <td>${hasContract(l)?pill('anexado','ok'):pill('faltando','crit')}</td>
+            <td class="num">${brl(l.cost)}</td></tr>`).join('')
+            :`<tr><td colspan="9"><p class="empty">Nenhuma linha nesta seleção.</p></td></tr>`}</tbody></table></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));gap:1rem">
+          <div class="card"><div class="card-body"><h2 style="margin-bottom:.8rem">Custo por filial</h2>
+            ${bars(byBranch, brl)}</div></div>
+          <div class="card"><div class="card-body"><h2 style="margin-bottom:.8rem">Linhas por operadora</h2>
+            ${bars(byCarrier, v=>v+' linha(s)')}</div></div>
+          <div class="card"><div class="card-body"><h2 style="margin-bottom:.8rem">Linhas por área</h2>
+            ${bars(byArea, v=>v+' linha(s)')}</div></div>
+          <div class="card"><div class="card-body"><h2 style="margin-bottom:.8rem">Por tipo de plano</h2>
+            ${bars(byType, v=>v+' linha(s)')}</div></div>
+        </div>`}`;
+  };
+
+  /* ===================== Links de Internet (Módulo 8) ===================== */
+  let linkFilters = { branch:'', carrier:'', tech:'', status:'', state:'' };
+  let linkMode = 'lista';
+
+  function linkList() {
+    return db.links.filter(k => {
+      if (linkFilters.branch && k.branchId !== linkFilters.branch) return false;
+      if (linkFilters.carrier && k.carrier !== linkFilters.carrier) return false;
+      if (linkFilters.tech && k.tech !== linkFilters.tech) return false;
+      if (linkFilters.status && k.status !== linkFilters.status) return false;
+      if (linkFilters.state && k.state !== linkFilters.state) return false;
+      return true;
+    });
+  }
+  const linkHasContract = k => (k.attachments || []).some(a => a.kind === 'contract' || a.docKind === 'contract');
+
+  views.links = () => {
+    const list = linkList();
+    const active = list.filter(k => k.status === 'active');
+    const carriers = [...new Set(db.links.map(k => k.carrier))].sort();
+    const totalCost = active.reduce((s,k)=>s+(k.cost||0),0);
+    const in90 = Date.now() + 90*86400000;
+    const vencendo = db.links.filter(k => k.contractEnd && k.status !== 'cancelled' &&
+      new Date(k.contractEnd+'T00:00:00').getTime() <= in90).length;
+    const semContrato = db.links.filter(k => k.status !== 'cancelled' && !linkHasContract(k)).length;
+
+    // Custo consolidado de conectividade: telefonia + links por filial.
+    const consolidated = db.branches.map(b => {
+      const tel = db.lines.filter(l => l.branchId === b.id && l.status === 'active');
+      const net = db.links.filter(k => k.branchId === b.id && k.status === 'active');
+      return { b, telCount:tel.length, telCost:tel.reduce((s,l)=>s+(l.cost||0),0),
+        netCount:net.length, netCost:net.reduce((s,k)=>s+(k.cost||0),0) };
+    }).filter(r => r.telCount || r.netCount);
+
+    return `
+      <div class="page-head"><div><p class="eyebrow">Conectividade</p><h1>Links de Internet</h1>
+        <p class="lede">Módulo novo. Contrato, banda, IP, CPE e monitoração ON/OFF por filial.
+        Link sem host monitorado aparece como <em>não monitorado</em> — nunca como fora do ar.</p></div>
+        <button type="button" class="btn" id="link-new">Novo link</button></div>
+      ${viewToggle(linkMode,'links')}
+      <div class="tiles">
+        ${tile('Links na seleção', list.length)}
+        ${tile('Ativos', active.length, null, 'ok')}
+        ${tile('Fora do ar', active.filter(k=>k.state==='down').length, 'agora',
+          active.some(k=>k.state==='down')?'breach':'ok')}
+        ${tile('Não monitorados', active.filter(k=>k.state==='unknown').length, 'sem host', 
+          active.some(k=>k.state==='unknown')?'warn':'ok')}
+        ${tile('Custo mensal', brl(totalCost))}
+        ${tile('Sem contrato', semContrato, 'governança', semContrato?'crit':'ok')}
+        ${tile('Contratos vencendo', vencendo, 'próximos 90 dias', vencendo?'warn':'ok')}
+      </div>
+      <div class="filters">
+        <div class="field"><label for="k-branch">Filial</label><select id="k-branch"><option value="">Todas</option>
+          ${db.branches.map(b=>`<option value="${b.id}"${linkFilters.branch===b.id?' selected':''}>${b.short}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="k-carrier">Operadora</label><select id="k-carrier"><option value="">Todas</option>
+          ${carriers.map(c=>`<option${linkFilters.carrier===c?' selected':''}>${c}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="k-tech">Tecnologia</label><select id="k-tech"><option value="">Todas</option>
+          ${Object.entries(TECH).map(([k,v])=>`<option value="${k}"${linkFilters.tech===k?' selected':''}>${v}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="k-status">Status</label><select id="k-status"><option value="">Todos</option>
+          ${Object.entries(LINK_STATUS).map(([k,v])=>`<option value="${k}"${linkFilters.status===k?' selected':''}>${v.label}</option>`).join('')}
+        </select></div>
+        <div class="field"><label for="k-state">Monitoração</label><select id="k-state"><option value="">Todas</option>
+          ${Object.entries(LINK_STATE).map(([k,v])=>`<option value="${k}"${linkFilters.state===k?' selected':''}>${v.label}</option>`).join('')}
+        </select></div>
+      </div>
+      ${linkMode === 'mapa' ? renderMap('internet', mapRows('internet')) : `
+        <div class="table-wrap" style="margin-bottom:1.25rem"><table>
+          <thead><tr><th>Contrato</th><th>Operadora</th><th>Tecnologia</th><th>Banda</th>
+            <th>Filial</th><th>Área</th><th>Status</th><th>Monitoração</th><th>Contrato anexo</th><th>Custo</th></tr></thead>
+          <tbody>${list.length?list.map(k=>`<tr data-clickable data-link="${k.id}" tabindex="0">
+            <td class="mono strong">${esc(k.contractNumber)||'—'}</td>
+            <td class="muted">${esc(k.carrier)}</td>
+            <td class="muted">${TECH[k.tech]}</td>
+            <td class="num">${k.down?k.down+'/'+(k.up||'—')+' Mbps':'—'}</td>
+            <td class="muted">${esc(branchShort(k.branchId))}</td>
+            <td>${k.areaId?pill(areaName(k.areaId),'info'):pill('sem área','warn')}</td>
+            <td>${pill(LINK_STATUS[k.status].label, LINK_STATUS[k.status].tone)}</td>
+            <td>${pill(LINK_STATE[k.state].label, LINK_STATE[k.state].tone)}</td>
+            <td>${linkHasContract(k)?pill('anexado','ok'):pill('faltando','crit')}</td>
+            <td class="num">${brl(k.cost)}</td></tr>`).join('')
+            :`<tr><td colspan="10"><p class="empty">Nenhum link nesta seleção.</p></td></tr>`}</tbody></table></div>
+        <h2 style="margin-bottom:.6rem">Custo de conectividade por filial</h2>
+        <p class="dim" style="margin:0 0 .6rem">Telefonia e links consolidados — é o número que
+        sustenta negociação com operadora.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Filial</th><th>Linhas</th><th>Telefonia</th><th>Links</th><th>Internet</th><th>Total mensal</th></tr></thead>
+          <tbody>${consolidated.map(r=>`<tr>
+            <td class="strong">${esc(r.b.name)}</td>
+            <td class="num">${r.telCount}</td><td class="num">${brl(r.telCost)}</td>
+            <td class="num">${r.netCount}</td><td class="num">${brl(r.netCost)}</td>
+            <td class="num strong">${brl(r.telCost + r.netCost)}</td></tr>`).join('')}
+            <tr class="group-head"><td>Total</td>
+              <td class="num">${consolidated.reduce((s,r)=>s+r.telCount,0)}</td>
+              <td class="num">${brl(consolidated.reduce((s,r)=>s+r.telCost,0))}</td>
+              <td class="num">${consolidated.reduce((s,r)=>s+r.netCount,0)}</td>
+              <td class="num">${brl(consolidated.reduce((s,r)=>s+r.netCost,0))}</td>
+              <td class="num">${brl(consolidated.reduce((s,r)=>s+r.telCost+r.netCost,0))}</td></tr>
+          </tbody></table></div>`}`;
+  };
+
+  /* ===================== Mapas (visão dedicada) ===================== */
+  let mapDomain = 'tickets';
+  const MAP_LABEL = { tickets:'Tickets em aberto', assets:'Ativos de TI',
+    telecom:'Linhas ativas', internet:'Links ativos' };
+
+  views.mapas = () => `
+    <div class="page-head"><div><p class="eyebrow">Visualização</p><h1>Mapas por filial</h1>
+      <p class="lede">Marcador dimensionado pela quantidade e colorido por criticidade.
+      Clique num marcador para ver a quebra por área da filial.</p></div></div>
+    <div class="seg" style="margin:0 0 1rem;display:inline-flex">
+      ${Object.entries(MAP_LABEL).map(([k,v])=>
+        `<button type="button" data-mapdomain="${k}" aria-pressed="${mapDomain===k}">${v}</button>`).join('')}
+    </div>
+    ${renderMap(mapDomain, mapRows(mapDomain))}
+    <p class="dim" style="margin-top:.8rem">
+      No sistema real este mapa usa Leaflet com OpenStreetMap — recomendado por não cobrar
+      por carregamento, o que importa num painel aberto o dia inteiro. Aqui o contorno é SVG
+      embutido, porque a página é autocontida e não pode buscar tiles externos.
+    </p>`;
+
+  /* ===================== Integrações (Módulo 10) ===================== */
+  const TRANSFORMS = { direct:'Direto', value_map:'Mapa de valores', datetime:'Data/hora',
+    html_to_text:'HTML → texto', user_by_external_id:'Usuário por ID externo',
+    user_by_email:'Usuário por e-mail', constant:'Constante' };
+  const TARGET_FIELDS = ['title','description','status','priority_key','assignee_id',
+    'requester_id','queue_id','tags','created_at','external_id'];
+  const REQUIRED_TARGETS = ['title'];
+
+  /* Motor de mapeamento — mesma semântica de src/lib/integrations/mapping.ts. */
+  function htmlToText(s) {
+    return String(s).replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n')
+      .replace(/<[^>]+>/g,'').replace(/\[\/?[A-Za-z][^\]]*\]/g,'')
+      .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<')
+      .replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/\n{3,}/g,'\n\n').trim();
+  }
+  function getByPath(src, path) {
+    if (!path) return undefined;
+    let cur = src;
+    for (const seg of path.split('.')) {
+      if (cur === null || cur === undefined) return undefined;
+      if (Array.isArray(cur)) { const i = Number(seg); if (!Number.isInteger(i)) return undefined; cur = cur[i]; continue; }
+      if (typeof cur !== 'object') return undefined;
+      cur = cur[seg];
+    }
+    return cur;
+  }
+  function applyMapping(payload, rules) {
+    const fields = {}, lookups = [], errors = [];
+    for (const r of rules) {
+      if (r.transform === 'constant') { if (r.def) fields[r.target] = r.def; continue; }
+      const raw = getByPath(payload, r.source);
+      if (raw === undefined || raw === null || raw === '') {
+        if (r.def) fields[r.target] = r.def;
+        else if (r.required) errors.push(`Campo obrigatório ausente no payload: ${r.source}`);
+        continue;
+      }
+      if (r.transform === 'direct') fields[r.target] = Array.isArray(raw) ? raw.map(String) : String(raw);
+      else if (r.transform === 'html_to_text') fields[r.target] = htmlToText(raw);
+      else if (r.transform === 'datetime') {
+        const d = new Date(String(raw));
+        if (Number.isNaN(d.getTime())) errors.push(`Data inválida em ${r.source}: ${raw}`);
+        else fields[r.target] = d.toISOString();
+      } else if (r.transform === 'value_map') {
+        const v = r.map?.[String(raw)];
+        if (v !== undefined) fields[r.target] = v;
+        else if (r.def) fields[r.target] = r.def;
+        // Valor novo na origem não derruba a carga: avisa e segue.
+        else errors.push(`Valor não mapeado para ${r.target}: "${raw}"`);
+      } else lookups.push({ target:r.target, kind:r.transform, value:String(raw) });
+    }
+    return { fields, lookups, errors };
+  }
+
+  function snapshotMapping(note) {
+    const i = db.integration;
+    i.versions.unshift({ v:i.versions.length + 1, at:Date.now(), by:ME, note:note || '',
+      snapshot:JSON.parse(JSON.stringify(i.mappings)) });
+    save();
+  }
+  function validateMapping() {
+    const missing = REQUIRED_TARGETS.filter(t =>
+      !db.integration.mappings.some(m => m.target === t && (m.source || m.def)));
+    return missing;
+  }
+
+  let intTab = 'config';
+  let dryResult = null;
+
+  views.integracoes = () => {
+    const i = db.integration;
+    const missing = validateMapping();
+    const OUT = { ok:['Sucesso','ok'], error:['Erro','breach'], retry:['Retentativa','warn'],
+      skipped_echo:['Eco descartado','neutral'], duplicate:['Duplicado','neutral'] };
+
+    const cfg = `<div class="card"><div class="card-body">
+      <form id="form-int" class="form-grid">
+        <div class="field form-full"><label for="in-ep">Endpoint receptor <span class="req">*</span></label>
+          <input type="text" id="in-ep" name="endpoint" value="${esc(i.endpoint)}"></div>
+        <div class="field form-full"><label for="in-poll">Endpoint de polling (opcional)</label>
+          <input type="text" id="in-poll" name="pollingEndpoint" value="${esc(i.pollingEndpoint)}"
+            placeholder="usar apenas quando a origem não suporta webhook"></div>
+        <div class="field"><label for="in-auth">Autenticação</label><select id="in-auth" name="authType">
+          ${['webhook_token','api_key','oauth2','hmac','none'].map(a=>
+            `<option value="${a}"${i.authType===a?' selected':''}>${a}</option>`).join('')}</select></div>
+        <div class="field"><label for="in-hdr">Nome do header</label>
+          <input type="text" id="in-hdr" name="authHeaderName" value="${esc(i.authHeaderName)}"
+            placeholder="X-Webhook-Token"></div>
+        <div class="field"><label for="in-secret">Referência do segredo</label>
+          <input type="text" id="in-secret" name="secretRef" value="${esc(i.secretRef)}"></div>
+        <div class="field"><label for="in-status">Situação</label><select id="in-status" name="status">
+          <option value="active"${i.status==='active'?' selected':''}>Ativa</option>
+          <option value="paused"${i.status==='paused'?' selected':''}>Pausada</option></select></div>
+        <div class="form-full"><label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem" class="muted">
+          <input type="checkbox" name="reverseSync"${i.reverseSync?' checked':''}>
+          Sincronização reversa (SaaS → Bitrix24), com supressão de eco</label></div>
+        <div class="form-full alert" data-kind="info">
+          O valor do segredo nunca fica no banco — só o <strong>nome</strong> da variável de ambiente.
+          A rotação troca a referência e só promove após o teste de conexão passar.
+        </div>
+        <div class="form-full" id="int-msg"></div>
+        <div class="form-full row-actions" style="justify-content:flex-end">
+          <button type="button" class="btn" data-variant="ghost" id="int-test">Testar conexão</button>
+          <button type="submit" class="btn">Salvar configuração</button></div>
+      </form></div></div>`;
+
+    const mapRowsHtml = i.mappings.map(m => `<tr>
+      <td><input type="text" data-m-src="${m.id}" value="${esc(m.source)}" style="min-width:8rem"></td>
+      <td><select data-m-tgt="${m.id}">${TARGET_FIELDS.map(f=>
+        `<option${m.target===f?' selected':''}>${f}</option>`).join('')}</select></td>
+      <td><select data-m-tr="${m.id}">${Object.entries(TRANSFORMS).map(([k,v])=>
+        `<option value="${k}"${m.transform===k?' selected':''}>${v}</option>`).join('')}</select></td>
+      <td><input type="text" data-m-map="${m.id}" value="${esc(Object.entries(m.map||{}).map(([k,v])=>k+'='+v).join(', '))}"
+        placeholder="2=high, 1=medium" style="min-width:9rem"></td>
+      <td><input type="text" data-m-def="${m.id}" value="${esc(m.def)}" style="min-width:5rem"></td>
+      <td><input type="checkbox" data-m-req="${m.id}"${m.required?' checked':''}></td>
+      <td><button type="button" class="btn btn-sm" data-variant="danger" data-m-del="${m.id}">✕</button></td>
+    </tr>`).join('');
+
+    const mapTab = `
+      ${missing.length?`<div class="alert" data-kind="error" style="margin-bottom:.8rem">
+        Campo obrigatório do ticket sem origem mapeada: <strong>${missing.join(', ')}</strong>.
+        A próxima carga falharia em produção.</div>`
+        :`<div class="alert" data-kind="ok" style="margin-bottom:.8rem">
+        Mapeamento válido: todos os campos obrigatórios do ticket têm origem.</div>`}
+      <div class="table-wrap" style="margin-bottom:.8rem"><table>
+        <thead><tr><th>Campo na origem</th><th>Campo do ticket</th><th>Transformação</th>
+          <th>Mapa de valores</th><th>Padrão</th><th>Obrig.</th><th></th></tr></thead>
+        <tbody>${mapRowsHtml}</tbody></table></div>
+      <div class="row-actions" style="margin-bottom:1.25rem">
+        <button type="button" class="btn btn-sm" id="m-add">Adicionar mapeamento</button>
+        <button type="button" class="btn btn-sm" data-variant="ghost" id="m-save">Salvar mapeamento</button>
+      </div>
+      <div class="card"><div class="card-body">
+        <h2 style="margin-bottom:.5rem">Testar mapeamento (dry run)</h2>
+        <p class="dim" style="margin:0 0 .6rem">Cole um payload e veja o ticket que <em>seria</em>
+        criado. Nada é gravado.</p>
+        <textarea id="dry-payload" rows="7" class="mono">${esc(JSON.stringify({
+          TITLE:'Prontuário fora do ar na Enfermagem',
+          DESCRIPTION:'<p>Equipe <b>não consegue</b> abrir o prontuário.</p>',
+          PRIORITY:'2', STATUS:'3', RESPONSIBLE_ID:'7',
+          CREATED_DATE:'2026-08-09T14:30:00+03:00', TAGS:['assistencial','urgente']
+        }, null, 2))}</textarea>
+        <div class="row-actions" style="margin-top:.6rem"><button type="button" class="btn" id="dry-run">Executar teste</button></div>
+        <div id="dry-out" style="margin-top:.8rem">${dryResult || ''}</div>
+      </div></div>`;
+
+    const verTab = i.versions.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Versão</th><th>Quando</th><th>Autor</th><th>Campos</th><th></th></tr></thead>
+        <tbody>${i.versions.map(v=>`<tr>
+          <td class="mono strong">v${v.v}</td><td class="muted num">${fmtWhen(v.at)}</td>
+          <td class="muted">${esc(v.by)}</td><td class="num">${v.snapshot.length}</td>
+          <td><button type="button" class="btn btn-sm" data-variant="ghost" data-restore="${v.v}">Restaurar</button></td>
+        </tr>`).join('')}</tbody></table></div>`
+      : `<div class="card"><p class="empty">Nenhuma versão ainda. Salve uma alteração de mapeamento para gerar a primeira.</p></div>`;
+
+    const logTab = `<div class="table-wrap"><table>
+      <thead><tr><th>Quando</th><th>Direção</th><th>Endpoint</th><th>HTTP</th><th>Duração</th><th>Resultado</th></tr></thead>
+      <tbody>${i.logs.map(l=>`<tr><td class="muted num">${esc(l.when)}</td>
+        <td class="muted">${esc(l.dir)}</td><td class="mono">${esc(l.ep)}</td>
+        <td class="num">${l.http}</td><td class="num">${l.ms}ms</td>
+        <td>${pill(OUT[l.outcome][0], OUT[l.outcome][1])}</td></tr>`).join('')}</tbody></table></div>`;
+
+    return `
+      <div class="page-head"><div><p class="eyebrow">Integration Hub</p><h1>${esc(i.name)}</h1>
+        <p class="lede">Endpoint, autenticação e mapeamento agora editáveis, com teste sem efeito
+        colateral e versões para rollback.</p></div>
+        ${i.status==='active'?pill('Ativa','ok'):pill('Pausada','neutral')}</div>
+      <div class="tiles">
+        ${tile('Requisições', i.requests.toLocaleString('pt-BR'))}
+        ${tile('Erros', i.errors, null, i.errors?'breach':'ok')}
+        ${tile('Último sync', ago(i.lastSyncAt) + ' atrás')}
+        ${tile('Mapeamentos', i.mappings.length)}
+        ${tile('Versões', i.versions.length)}
+      </div>
+      <div class="tabs" role="tablist">
+        ${[['config','Configuração'],['map','Mapeamento'],['ver','Versões'],['log','Log']].map(([k,l])=>
+          `<button type="button" role="tab" data-inttab="${k}" aria-selected="${intTab===k}">${l}</button>`).join('')}
+      </div>
+      ${intTab==='config'?cfg:intTab==='map'?mapTab:intTab==='ver'?verTab:logTab}`;
+  };
+
+  /* ===================== Painel lateral: ticket ===================== */
+  let openDrawer = null;
+
+  function drawerTicket(id) {
+    const t = db.tickets.find(x => x.id === id); if (!t) return closeDrawer();
+    openDrawer = { kind:'ticket', id };
+    const s = slaState(t), rem = remainingMs(t);
+    const nexts = TRANSITIONS[t.status] || [];
+    const used = attachQuotaUsed(t);
+
+    document.getElementById('drawer-root').innerHTML = `
+      <div class="backdrop" data-close></div>
+      <aside class="drawer" role="dialog" aria-modal="true" aria-label="Ticket ${t.n}">
+        <div class="drawer-head"><div style="flex:1;min-width:0">
+          <p class="mono dim" style="margin:0">#${t.n}</p>
+          <h2 style="font-size:1.15rem;margin:.15rem 0 .5rem">${esc(t.title)}</h2>
+          <div style="display:flex;flex-wrap:wrap;gap:.35rem">
+            ${pill(STATUS[t.status].label,STATUS[t.status].tone)}${prioTag(t.prio)}
+            ${pill(SLA_STATE[s].label,SLA_STATE[s].tone)}
+            ${isPaused(t)?pill('Relógio pausado','warn'):''}
+            ${t.areaId?pill(areaName(t.areaId),'info'):''}
+            ${t.source?pill('via '+t.source+' #'+t.externalId,'info'):''}</div>
+        </div><button type="button" class="icon-btn" data-close>Fechar</button></div>
+        <div class="drawer-body">
+          ${t.desc?`<section><p class="eyebrow" style="margin:0 0 .35rem">Descrição</p>
+            <p style="margin:0;font-size:.88rem;white-space:pre-wrap">${esc(t.desc)}</p></section>`:''}
+
+          <section class="card"><div class="card-body">
+            <p class="eyebrow" style="margin:0 0 .5rem">SLA</p>
+            <dl class="kv">
+              <dt>Prazo de resolução</dt><dd>${fmtMin(t.target)}</dd>
+              <dt>Primeira resposta</dt><dd>${t.firstResponseAt?'registrada '+fmtWhen(t.firstResponseAt):'meta '+fmtMin(t.tfr)}</dd>
+              <dt>Tempo restante</dt><dd style="font-weight:700;color:${s==='breached'?'var(--breach-ink)':'inherit'}">
+                ${isPaused(t)?'Pausado — '+fmtMs(rem)+' guardados':(rem<0?'atrasado ':'')+fmtMs(rem)}</dd>
+            </dl></div></section>
+
+          <section><p class="eyebrow" style="margin:0 0 .5rem">Ações</p>
+            <div class="row-actions" style="margin-bottom:.7rem">
+              ${nexts.length?nexts.map(x=>`<button type="button" class="btn"
+                data-variant="${x==='resolved'?'':'ghost'}" data-status="${x}">${STATUS[x].label}</button>`).join('')
+                :'<span class="dim">Nenhuma transição disponível.</span>'}</div>
+            <div class="form-grid">
+              <div class="field"><label for="d-assignee">Atendente</label><select id="d-assignee">
+                <option value=""${!t.assignee?' selected':''}>Não atribuído</option>
+                ${AGENTS.map(a=>`<option${t.assignee===a?' selected':''}>${a}</option>`).join('')}</select></div>
+              <div class="field"><label for="d-queue">Transferir para</label><select id="d-queue">
+                ${db.queues.map(x=>`<option value="${x.slug}"${t.queue===x.slug?' selected':''}>${x.name}</option>`).join('')}</select></div>
+              <div class="field form-full"><label for="d-reason">Motivo da transferência <span class="req">*</span></label>
+                <input type="text" id="d-reason" placeholder="ex.: demanda de infraestrutura"></div>
+              <div class="form-full" id="drawer-msg"></div>
+              <div class="form-full row-actions" style="justify-content:flex-end">
+                <button type="button" class="btn" data-variant="ghost" id="do-transfer">Transferir</button></div>
+            </div></section>
+
+          <section><p class="eyebrow" style="margin:0 0 .5rem">Anexos (${(t.attachments||[]).length})
+            <span class="dim" style="font-weight:400">· ${kb(used)} de ${QUOTA_MB} MB</span></p>
+            ${dropZone('tk-'+t.id,'Imagem, áudio, vídeo ou documento')}
+            <div class="att-grid" style="margin-top:.6rem">
+              ${(t.attachments||[]).filter(a=>a.kind==='image').map(a=>attCard(a,'ticket:'+t.id)).join('')}</div>
+            <div class="att-list" style="margin-top:.6rem">
+              ${(t.attachments||[]).filter(a=>a.kind!=='image').map(a=>attPlayer(a)).join('')}</div>
+          </section>
+
+          <section><p class="eyebrow" style="margin:0 0 .5rem">Comentários (${t.comments.length})</p>
+            <div class="thread">${t.comments.length?t.comments.map(c=>`
+              <div class="msg" data-internal="${c.vis==='internal'}">
+                <div class="msg-head"><span class="strong" style="font-size:.82rem">${esc(c.who)}</span>
+                  ${c.vis==='internal'?pill('Interno','warn'):''}
+                  <span class="dim">${fmtWhen(c.at)}</span></div>
+                <div class="msg-body">${esc(c.body)}</div></div>`).join('')
+              :'<p class="dim" style="margin:0">Nenhum comentário ainda.</p>'}</div>
+            <div style="margin-top:.8rem;display:flex;flex-direction:column;gap:.5rem">
+              <label class="dim" for="d-comment">Novo comentário</label>
+              <textarea id="d-comment" placeholder="Escreva a atualização do atendimento…"></textarea>
+              <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:center;flex-wrap:wrap">
+                <div style="display:flex;gap:.9rem;font-size:.8rem" class="muted">
+                  <label style="display:flex;gap:.3rem;align-items:center"><input type="radio" name="vis" value="public" checked> Público</label>
+                  <label style="display:flex;gap:.3rem;align-items:center"><input type="radio" name="vis" value="internal"> Interno</label>
+                </div><button type="button" class="btn" id="do-comment">Publicar</button></div>
+            </div></section>
+
+          <section><p class="eyebrow" style="margin:0 0 .5rem">Histórico</p>
+            <ol class="timeline">${t.history.length?t.history.map(h=>`<li>
+              <span class="tl-mark"></span><span>
+              <span class="dim num">${fmtWhen(h.at)}</span> <span class="strong">${esc(h.field)}</span>
+              <span class="muted">${esc(h.val)}</span> ${pill(h.src,'neutral')}</span></li>`).join('')
+              :'<li class="dim">Sem alterações registradas.</li>'}</ol></section>
+
+          <section class="card"><div class="card-body"><p class="eyebrow" style="margin:0 0 .5rem">Detalhes</p>
+            <dl class="kv">
+              <dt>Fila</dt><dd>${esc(queueBySlug(t.queue).name)}</dd>
+              <dt>Categoria</dt><dd>${esc(t.cat)}</dd>
+              <dt>Cliente</dt><dd>${esc(t.client)}</dd>
+              <dt>Filial</dt><dd>${esc(branchName(t.branchId))}</dd>
+              <dt>Área</dt><dd>${t.areaId?esc(areaName(t.areaId)):'—'}</dd>
+              <dt>Solicitante</dt><dd>${esc(t.requester)||'—'}</dd>
+              <dt>Aberto em</dt><dd>${fmtWhen(t.createdAt)}</dd>
+              ${t.tags.length?`<dt>Tags</dt><dd>${t.tags.map(esc).join(', ')}</dd>`:''}
+            </dl></div></section>
+        </div></aside>`;
+    document.body.style.overflow = 'hidden';
+    document.querySelector('.drawer .icon-btn')?.focus();
+  }
+
+  function closeDrawer() {
+    openDrawer = null;
+    document.getElementById('drawer-root').innerHTML = '';
+    document.body.style.overflow = '';
+  }
+  function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+  function drawerMsg(text, kind) {
+    const el = document.getElementById('drawer-msg');
+    if (el) el.innerHTML = `<div class="alert" data-kind="${kind}">${esc(text)}</div>`;
+  }
+  let toastTimer;
+  function toast(msg) {
+    const r = document.getElementById('toast-root');
+    if (!r) return;
+    r.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { r.innerHTML = ''; }, 2600);
+  }
+
+  /* ===================== Painel lateral: ativo (Módulos 3 e 4) ===================== */
+  let assetTab = 'dados';
+
+  function drawerAsset(id) {
+    const a = db.assets.find(x => x.id === id); if (!a) return closeDrawer();
+    openDrawer = { kind:'asset', id };
+    const docs = (a.attachments||[]).filter(x => x.kind !== 'image');
+    const photos = (a.attachments||[]).filter(x => x.kind === 'image');
+
+    const dados = `<section class="card"><div class="card-body">
+        <dl class="kv">
+          <dt>Patrimônio</dt><dd class="mono">${esc(a.tag)||'—'}</dd>
+          <dt>Nº de série</dt><dd class="mono">${esc(a.sn)||'—'}</dd>
+          <dt>Tipo</dt><dd>${esc(a.type)}</dd>
+          <dt>Garantia até</dt><dd>${fmtDate(a.warranty)}</dd>
+          <dt>Valor de aquisição</dt><dd>${brl(a.cost)}</dd>
+        </dl></div></section>
+      <section><p class="eyebrow" style="margin:0 0 .5rem">Custódia e localização</p>
+        <div class="form-grid">
+          <div class="field"><label for="as-user">Responsável</label><select id="as-user">
+            <option value=""${!a.user?' selected':''}>Sem responsável</option>
+            ${AGENTS.concat(['Carla Dias']).map(x=>`<option${a.user===x?' selected':''}>${x}</option>`).join('')}</select></div>
+          <div class="field"><label for="as-branch">Filial</label><select id="as-branch" data-area-src="as-area">
+            ${db.branches.map(b=>`<option value="${b.id}"${a.branchId===b.id?' selected':''}>${b.name}</option>`).join('')}</select></div>
+          <div class="field"><label for="as-area">Área da filial <span class="req">*</span></label><select id="as-area">
+            ${areasOf(a.branchId).map(x=>`<option value="${x.id}"${a.areaId===x.id?' selected':''}>${x.name}</option>`).join('')}</select></div>
+          <div class="field"><label for="as-reason">Motivo da mudança</label><select id="as-reason">
+            ${Object.entries(CUSTODY_REASON).map(([k,v])=>`<option value="${k}"${k==='realocacao'?' selected':''}>${v}</option>`).join('')}</select></div>
+          <div class="field form-full"><label for="as-note">Observação</label>
+            <input type="text" id="as-note" placeholder="opcional"></div>
+          <div class="field"><label for="as-status">Status</label><select id="as-status">
+            ${Object.entries(ASSET_STATUS).map(([k,v])=>`<option value="${k}"${a.status===k?' selected':''}>${v.label}</option>`).join('')}</select></div>
+          <div class="form-full" id="drawer-msg"></div>
+          <div class="form-full row-actions" style="justify-content:flex-end">
+            <button type="button" class="btn" id="as-save">Salvar mudança</button></div>
+        </div></section>`;
+
+    const documentos = `<section>
+        <p class="eyebrow" style="margin:0 0 .5rem">Documentos (${docs.length})</p>
+        <div class="field" style="max-width:14rem;margin-bottom:.5rem">
+          <label for="as-dockind">Tipo do próximo anexo</label><select id="as-dockind">
+          ${['nfe','cte','receipt','contract','warranty','other'].map(k=>
+            `<option value="${k}">${DOC_KIND[k]}</option>`).join('')}</select></div>
+        ${dropZone('asdoc-'+a.id,'PDF, XML ou imagem, até 10 MB')}
+        <div class="att-grid" style="margin-top:.6rem">${docs.map(x=>attCard(x,'asset:'+a.id)).join('')
+          || '<p class="dim">Nenhum documento anexado.</p>'}</div>
+        <div class="field" style="max-width:18rem;margin-top:.8rem">
+          <label for="as-invoice">Chave / número da NF-e</label>
+          <input type="text" id="as-invoice" value="${esc(a.invoiceRef||'')}" placeholder="somente referência">
+        </div>
+        <p class="dim" style="margin-top:.35rem">Não existe módulo fiscal na plataforma ainda,
+        então a NF é referenciada por número — sem vínculo forte.</p></section>`;
+
+    const fotos = `<section><p class="eyebrow" style="margin:0 0 .5rem">Fotos (${photos.length})</p>
+        <div class="field" style="max-width:14rem;margin-bottom:.5rem">
+          <label for="as-photokind">Tipo da próxima foto</label><select id="as-photokind">
+          ${['photo_front','photo_back','photo_tag','photo_serial','photo_other'].map(k=>
+            `<option value="${k}">${DOC_KIND[k]||k.replace('photo_','')}</option>`).join('')}</select></div>
+        ${dropZone('asphoto-'+a.id,'JPG, PNG ou WebP — comprimimos no navegador antes de guardar')}
+        <div class="att-grid" style="margin-top:.6rem">${photos.map(x=>attCard(x,'asset:'+a.id)).join('')
+          || '<p class="dim">Nenhuma foto. A primeira que você anexar vira a principal.</p>'}</div></section>`;
+
+    const custodia = `<section><p class="eyebrow" style="margin:0 0 .5rem">Timeline de custódia</p>
+        <ol class="timeline">${a.custody.length?a.custody.map(c=>`<li>
+          <span class="tl-mark" style="background:${c.reason==='baixa'||c.reason==='perda'?'var(--breach-ink)':'var(--brand)'}"></span>
+          <span><span class="dim num">${fmtWhen(c.at)}</span>
+            ${pill(CUSTODY_REASON[c.reason]||c.reason,'neutral')}<br>
+            <span class="muted">Responsável: ${esc(c.prevUser)||'—'} → <strong>${esc(c.user)||'—'}</strong></span>
+            ${c.prevBranch!==c.branchId?`<br><span class="muted">Filial: ${esc(branchShort(c.prevBranch))} → ${esc(branchShort(c.branchId))}</span>`:''}
+            ${c.prevArea!==c.areaId?`<br><span class="muted">Área: ${c.prevArea?esc(areaName(c.prevArea)):'—'} → ${c.areaId?esc(areaName(c.areaId)):'—'}</span>`:''}
+            ${c.note?`<br><span class="dim">${esc(c.note)}</span>`:''}
+            <br><span class="dim">por ${esc(c.by)}</span></span></li>`).join('')
+          :'<li class="dim">Nenhuma mudança registrada. Altere o responsável na aba Dados para gerar o primeiro evento.</li>'}</ol>
+        <p class="dim" style="margin-top:.6rem">O histórico é imutável: não há edição nem exclusão de evento.</p></section>`;
+
+    document.getElementById('drawer-root').innerHTML = `
+      <div class="backdrop" data-close></div>
+      <aside class="drawer" role="dialog" aria-modal="true" aria-label="Ativo ${esc(a.tag)}">
+        <div class="drawer-head"><div style="flex:1;min-width:0">
+          <p class="mono dim" style="margin:0">${esc(a.tag)||'sem patrimônio'}</p>
+          <h2 style="font-size:1.15rem;margin:.15rem 0 .5rem">${esc(a.model)}</h2>
+          <div style="display:flex;flex-wrap:wrap;gap:.35rem">
+            ${pill(ASSET_STATUS[a.status].label,ASSET_STATUS[a.status].tone)}
+            ${pill(esc(branchShort(a.branchId)),'neutral')}
+            ${a.areaId?pill(areaName(a.areaId),'info'):pill('sem área','warn')}
+            ${!a.user&&a.status==='active'?pill('sem responsável','breach'):''}</div>
+        </div><button type="button" class="icon-btn" data-close>Fechar</button></div>
+        <div class="drawer-body">
+          <div class="tabs" role="tablist">
+            ${[['dados','Dados'],['doc','Documentos'],['fotos','Fotos'],['cust','Custódia']].map(([k,l])=>
+              `<button type="button" role="tab" data-assettab="${k}" aria-selected="${assetTab===k}">${l}</button>`).join('')}
+          </div>
+          ${assetTab==='dados'?dados:assetTab==='doc'?documentos:assetTab==='fotos'?fotos:custodia}
+        </div></aside>`;
+    document.body.style.overflow = 'hidden';
+  }
+
+  /* ===================== Painel lateral: linha (Módulo 7) ===================== */
+  function drawerLine(id) {
+    const l = db.lines.find(x => x.id === id); if (!l) return closeDrawer();
+    openDrawer = { kind:'line', id };
+    const docs = l.attachments || [];
+    const venc = l.contractEnd ? new Date(l.contractEnd+'T00:00:00').getTime() : null;
+    const dias = venc ? Math.round((venc - Date.now())/86400000) : null;
+
+    document.getElementById('drawer-root').innerHTML = `
+      <div class="backdrop" data-close></div>
+      <aside class="drawer" role="dialog" aria-modal="true" aria-label="Linha ${esc(l.num)}">
+        <div class="drawer-head"><div style="flex:1;min-width:0">
+          <p class="dim" style="margin:0">${esc(l.carrier)} · ${esc(l.plan)||'sem plano'}</p>
+          <h2 class="mono" style="font-size:1.15rem;margin:.15rem 0 .5rem">${esc(l.num)}</h2>
+          <div style="display:flex;flex-wrap:wrap;gap:.35rem">
+            ${pill(LINE_STATUS[l.status].label,LINE_STATUS[l.status].tone)}
+            ${pill(esc(branchShort(l.branchId)),'neutral')}
+            ${l.areaId?pill(areaName(l.areaId),'info'):pill('sem área','warn')}
+            ${docs.some(d=>d.docKind==='contract')?pill('contrato anexado','ok'):pill('sem contrato','crit')}</div>
+        </div><button type="button" class="icon-btn" data-close>Fechar</button></div>
+        <div class="drawer-body">
+          <section class="card"><div class="card-body"><dl class="kv">
+            <dt>Tipo</dt><dd>${esc(l.type)}</dd>
+            <dt>Responsável</dt><dd>${esc(l.user)||'—'}</dd>
+            <dt>Custo mensal</dt><dd>${brl(l.cost)}</dd>
+            <dt>Fidelidade até</dt><dd>${fmtDate(l.loyalty)}</dd>
+            <dt>Nº do contrato</dt><dd class="mono">${esc(l.contractNumber)||'—'}</dd>
+            <dt>Vigência</dt><dd>${fmtDate(l.contractStart)} → ${fmtDate(l.contractEnd)}</dd>
+          </dl></div></section>
+          ${dias !== null && dias <= 90 ? `<div class="alert" data-kind="${dias<0?'error':'warn'}">
+            ${dias<0?`Contrato vencido há ${Math.abs(dias)} dia(s).`:`Contrato vence em ${dias} dia(s).`}
+            Fidelidade e vigência são coisas distintas: fidelidade limita o cancelamento sem multa.
+          </div>`:''}
+          <section><p class="eyebrow" style="margin:0 0 .5rem">Documentos (${docs.length})</p>
+            <div class="field" style="max-width:15rem;margin-bottom:.5rem">
+              <label for="ln-dockind">Tipo do próximo anexo</label><select id="ln-dockind">
+              ${['contract','amendment','loyalty_term','cancellation','invoice','other'].map(k=>
+                `<option value="${k}">${DOC_KIND[k]}</option>`).join('')}</select></div>
+            ${dropZone('lndoc-'+l.id,'Contrato, adendo ou termo — PDF, DOCX ou imagem')}
+            <div class="att-grid" style="margin-top:.6rem">${docs.map(x=>attCard(x,'line:'+l.id)).join('')
+              || '<p class="dim">Nenhum documento anexado — a linha aparece no alerta de governança contratual.</p>'}</div>
+          </section>
+        </div></aside>`;
+    document.body.style.overflow = 'hidden';
+  }
+
+  /* ===================== Painel lateral: link (Módulo 8) ===================== */
+  function drawerLink(id) {
+    const k = db.links.find(x => x.id === id); if (!k) return closeDrawer();
+    openDrawer = { kind:'link', id };
+    const docs = k.attachments || [];
+    const closed = k.events.filter(e => e.endedAt);
+    const totalDown = closed.reduce((s,e) => s + (e.endedAt - e.startedAt), 0);
+    const open = k.events.find(e => !e.endedAt);
+
+    document.getElementById('drawer-root').innerHTML = `
+      <div class="backdrop" data-close></div>
+      <aside class="drawer" role="dialog" aria-modal="true" aria-label="Link ${esc(k.contractNumber)}">
+        <div class="drawer-head"><div style="flex:1;min-width:0">
+          <p class="dim" style="margin:0">${esc(k.carrier)} · ${TECH[k.tech]}</p>
+          <h2 class="mono" style="font-size:1.15rem;margin:.15rem 0 .5rem">${esc(k.contractNumber)||'sem contrato'}</h2>
+          <div style="display:flex;flex-wrap:wrap;gap:.35rem">
+            ${pill(LINK_STATUS[k.status].label,LINK_STATUS[k.status].tone)}
+            ${pill(LINK_STATE[k.state].label,LINK_STATE[k.state].tone)}
+            ${pill(esc(branchShort(k.branchId)),'neutral')}
+            ${k.areaId?pill(areaName(k.areaId),'info'):''}</div>
+        </div><button type="button" class="icon-btn" data-close>Fechar</button></div>
+        <div class="drawer-body">
+          <section class="card"><div class="card-body"><dl class="kv">
+            <dt>Banda contratada</dt><dd class="num">${k.down||'—'} / ${k.up||'—'} Mbps</dd>
+            <dt>Banda garantida</dt><dd class="num">${k.guaranteed?k.guaranteed+' Mbps':'—'}</dd>
+            <dt>IP fixo</dt><dd class="mono">${esc(k.staticIp)||'não'}</dd>
+            <dt>CPE</dt><dd>${esc(k.cpeBrand)} ${esc(k.cpeModel)}${k.cpeSerial?' · '+esc(k.cpeSerial):''}</dd>
+            <dt>Custo mensal</dt><dd>${brl(k.cost)}</dd>
+            <dt>Vigência</dt><dd>${fmtDate(k.contractStart)} → ${fmtDate(k.contractEnd)}</dd>
+            <dt>Host monitorado</dt><dd class="mono">${esc(k.monitoringHost)||'—'}</dd>
+          </dl></div></section>
+
+          <section><p class="eyebrow" style="margin:0 0 .5rem">Disponibilidade</p>
+            ${k.monitoringHost ? `
+              <div class="row-actions" style="margin-bottom:.6rem">
+                <button type="button" class="btn btn-sm" data-variant="${k.state==='down'?'':'danger'}"
+                  id="link-toggle">${k.state==='down'?'Simular retorno do link':'Simular queda do link'}</button>
+                <span class="dim">Reproduz o evento que o Zabbix enviaria ao webhook.</span></div>
+              ${open?`<div class="alert" data-kind="error" style="margin-bottom:.6rem">
+                Fora do ar desde ${fmtWhen(open.startedAt)} — ${fmtMs(Date.now()-open.startedAt)} de indisponibilidade.
+              </div>`:''}
+              <dl class="kv" style="margin-bottom:.6rem">
+                <dt>Quedas registradas</dt><dd class="num">${k.events.length}</dd>
+                <dt>Indisponibilidade acumulada</dt><dd class="num">${totalDown?fmtMs(totalDown):'—'}</dd>
+              </dl>
+              <ol class="timeline">${k.events.length?k.events.map(e=>`<li>
+                <span class="tl-mark" style="background:var(--breach-ink)"></span>
+                <span><span class="dim num">${fmtWhen(e.startedAt)}</span>
+                  ${e.endedAt?pill('resolvida em '+fmtMs(e.endedAt-e.startedAt),'ok'):pill('em aberto','breach')}
+                  <span class="dim"> · ${esc(e.source)}</span>
+                  ${e.note?`<br><span class="dim">${esc(e.note)}</span>`:''}</span></li>`).join('')
+                :'<li class="dim">Nenhuma queda registrada.</li>'}</ol>`
+            : `<div class="alert" data-kind="info">Link sem host monitorado. Informe o host no
+                cadastro para acompanhar disponibilidade — sem isso o estado é
+                <strong>não monitorado</strong>, e não "fora do ar".</div>`}
+          </section>
+
+          <section><p class="eyebrow" style="margin:0 0 .5rem">Documentos (${docs.length})</p>
+            <div class="field" style="max-width:15rem;margin-bottom:.5rem">
+              <label for="lk-dockind">Tipo do próximo anexo</label><select id="lk-dockind">
+              ${['contract','amendment','loyalty_term','cancellation','installation_report','other'].map(x=>
+                `<option value="${x}">${DOC_KIND[x]}</option>`).join('')}</select></div>
+            ${dropZone('lkdoc-'+k.id,'Contrato ou laudo — PDF, DOCX ou imagem')}
+            <div class="att-grid" style="margin-top:.6rem">${docs.map(x=>attCard(x,'link:'+k.id)).join('')
+              || '<p class="dim">Nenhum documento anexado.</p>'}</div>
+          </section>
+        </div></aside>`;
+    document.body.style.overflow = 'hidden';
+  }
+
+  function refreshDrawer() {
+    if (!openDrawer) return;
+    const { kind, id } = openDrawer;
+    if (kind === 'ticket') drawerTicket(id);
+    else if (kind === 'asset') drawerAsset(id);
+    else if (kind === 'line') drawerLine(id);
+    else if (kind === 'link') drawerLink(id);
+  }
+
+  /* ===================== Parede de TV ===================== */
+  const TV = { ok:'var(--tv-ok)', warning:'var(--tv-warn)', critical:'var(--tv-crit)',
+    breached:'var(--tv-breach)', met:'var(--tv-ok)', no_sla:'var(--tv-ink-2)' };
+
+  function renderWall() {
+    const m = metrics(), list = orderQueue(openTickets());
+    document.getElementById('wall-metrics').innerHTML = [
+      ['Em aberto', m.open, 'var(--tv-ink)', false],
+      ['Em andamento', m.andamento, 'var(--tv-ink)', false],
+      ['Críticos', m.criticos, 'var(--tv-crit)', false],
+      ['SLA em risco', m.risco, 'var(--tv-warn)', false],
+      ['SLA estourado', m.estourado, 'var(--tv-breach)', m.estourado > 0],
+      ['Links fora do ar', m.linksDown, 'var(--tv-breach)', m.linksDown > 0]
+    ].map(([l,v,c,p]) => `<div class="wall-metric">
+      <div class="wall-metric-label">${esc(l)}</div>
+      <div class="wall-metric-value${p?' pulse':''}" style="color:${c}">${esc(String(v))}</div></div>`).join('');
+
+    const row = (t, dup) => {
+      const s = slaState(t), c = TV[s], rem = remainingMs(t), late = rem < 0;
+      return `<li class="wall-row"${dup?' aria-hidden="true"':''}>
+        <span class="wall-bar${s==='breached'?' pulse':''}" style="background:${c}"></span>
+        <span class="wall-num">#${t.n}</span>
+        <span class="wall-title-cell">${esc(t.title)}</span>
+        <span class="wall-cell" style="color:${PRIORITIES[t.prio].color};font-weight:650">${PRIORITIES[t.prio].label}</span>
+        <span class="wall-cell">${esc(branchShort(t.branchId))}</span>
+        <span class="wall-cell">${t.assignee?esc(t.assignee):'Não atribuído'}</span>
+        <span class="wall-cell">${STATUS[t.status].label}</span>
+        <span class="wall-due${late?' pulse':''}" style="color:${c}">
+          ${isPaused(t)?'pausado':(late?'-':'')+fmtMs(rem)}</span></li>`;
+    };
+    const track = document.getElementById('wall-track');
+    track.innerHTML = list.map(t => row(t,false)).join('') + list.map(t => row(t,true)).join('');
+    track.style.setProperty('--dur', Math.max(list.length*4.5,24) + 's');
+    requestAnimationFrame(() => {
+      const box = track.parentElement;
+      track.dataset.scroll = String(track.scrollHeight/2 > box.clientHeight + 2);
+    });
+    document.getElementById('wall-agents').textContent =
+      new Set(openTickets().map(t=>t.assignee).filter(Boolean)).size + ' atendentes com tickets ativos';
+  }
+  function tickClock() {
+    const el = document.getElementById('wall-clock');
+    if (el) el.textContent = new Intl.DateTimeFormat('pt-BR',
+      { hour:'2-digit', minute:'2-digit', second:'2-digit' }).format(new Date());
+  }
+
+  /* ===================== Modais ===================== */
+  function modal(title, bodyHtml, opts = {}) {
+    document.getElementById('modal-root').innerHTML = `
+      <div class="backdrop" data-close-modal></div>
+      <div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="modal-head"><h2>${esc(title)}</h2>
+          <button type="button" class="icon-btn" data-close-modal>Fechar</button></div>
+        <div class="modal-body">${bodyHtml}
+          ${opts.noFooter?'':`<div class="row-actions" style="justify-content:flex-end">
+            <button type="button" class="btn" data-variant="ghost" data-close-modal>Cancelar</button>
+            <button type="button" class="btn" id="modal-save">${esc(opts.save || 'Salvar')}</button></div>`}
+        </div></div>`;
+  }
+
+  function slaModal(id) {
+    const d = id ? db.slaDefs.find(x => x.id === id) : null;
+    const im = d ? slaImpact(d.id) : null;
+    modal(d ? 'Editar SLA' : 'Nova definição de SLA', `
+      <input type="hidden" id="sm-id" value="${d?d.id:''}">
+      <div class="form-grid">
+        <div class="field form-full"><label for="sm-name">Nome <span class="req">*</span></label>
+          <input type="text" id="sm-name" value="${d?esc(d.name):''}" placeholder="ex.: Meridiano — Infra crítica"></div>
+        <div class="field"><label for="sm-contract">Contrato</label>
+          <select id="sm-contract"><option value="">Padrão do tenant</option>
+            ${['Meridiano — Padrão','Meridiano — Manaus 24x7'].map(c=>
+              `<option${d&&d.contract===c?' selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="field"><label for="sm-cat">Categoria</label>
+          <select id="sm-cat"><option value="">Todas</option>
+            ${['Infraestrutura','Sistemas','Telefonia','Acessos'].map(c=>
+              `<option${d&&d.category===c?' selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="field"><label for="sm-prio">Prioridade <span class="req">*</span></label>
+          <select id="sm-prio">${Object.entries(PRIORITIES).map(([k,v])=>
+            `<option value="${k}"${d&&d.priority===k?' selected':''}>${v.label}</option>`).join('')}</select></div>
+        <div class="field"><label for="sm-cal">Horário de atendimento</label>
+          <select id="sm-cal">${['Comercial','24x7'].map(c=>
+            `<option${d&&d.calendar===c?' selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="field"><label for="sm-tfr">1ª resposta (min) <span class="req">*</span></label>
+          <input type="number" id="sm-tfr" min="1" value="${d?d.tfr:60}"></div>
+        <div class="field"><label for="sm-res">Resolução (min) <span class="req">*</span></label>
+          <input type="number" id="sm-res" min="1" value="${d?d.res:480}"></div>
+        <div class="form-full"><label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem" class="muted">
+          <input type="checkbox" id="sm-active"${!d||d.active?' checked':''}> Definição ativa
+          <span class="dim">— desativar não exclui nem altera tickets já medidos</span></label></div>
+        ${im?`<div class="form-full alert" data-kind="${im.breached?'warn':'info'}">
+          <strong>Impacto:</strong> ${im.open} ticket(s) em aberto usam esta régua
+          ${im.atRisk?`· ${im.atRisk} em risco`:''}${im.breached?` · ${im.breached} já estourado(s)`:''}.
+          A mudança vale para tickets criados a partir de agora — prazos já comunicados ao
+          cliente não são reescritos.</div>`:''}
+        <div class="form-full" id="sm-msg"></div>
+      </div>`, { save: d ? 'Salvar alterações' : 'Criar definição' });
+  }
+
+  function queueModal(slug) {
+    const q = db.queues.find(x => x.slug === slug); if (!q) return;
+    modal(`Editar fila — ${q.name}`, `
+      <input type="hidden" id="qm-slug" value="${q.slug}">
+      ${q.isDefault?`<div class="alert" data-kind="info">Fila padrão do sistema: nome e identificador
+        são bloqueados, mas membros e pesos podem ser ajustados.</div>`:''}
+      <div class="form-grid">
+        <div class="field form-full"><label for="qm-name">Nome</label>
+          <input type="text" id="qm-name" value="${esc(q.name)}"${q.isDefault?' disabled':''}></div>
+        <div class="field form-full"><label for="qm-desc">Descrição</label>
+          <input type="text" id="qm-desc" value="${esc(q.desc)}"></div>
+        <div class="field form-full"><label for="qm-w0">Peso da criticidade — <span id="qm-w0v">${q.w[0]}</span></label>
+          <input type="range" id="qm-w0" min="0" max="100" value="${q.w[0]}"></div>
+        <div class="field form-full"><label for="qm-w1">Peso do prazo de SLA — <span id="qm-w1v">${q.w[1]}</span></label>
+          <input type="range" id="qm-w1" min="0" max="100" value="${q.w[1]}"></div>
+        <div class="field form-full"><label for="qm-w2">Peso do tempo de espera — <span id="qm-w2v">${q.w[2]}</span></label>
+          <input type="range" id="qm-w2" min="0" max="100" value="${q.w[2]}"></div>
+        <div class="field form-full"><label for="qm-tb">Critério de desempate</label>
+          <select id="qm-tb">${Object.entries(TIEBREAKERS).map(([k,v])=>
+            `<option value="${k}"${q.tiebreaker===k?' selected':''}>${v}</option>`).join('')}</select></div>
+        <div class="form-full"><label class="dim" style="display:block;margin-bottom:.3rem">Membros</label>
+          <div style="border:1px solid var(--border);border-radius:9px;padding:.5rem">
+            ${AGENTS.map(a=>`<label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem;padding:.15rem 0" class="muted">
+              <input type="checkbox" class="qm-member" value="${esc(a)}"${q.members.includes(a)?' checked':''}> ${esc(a)}</label>`).join('')}
+          </div>
+          <p class="dim" style="margin:.35rem 0 0">Remover um atendente não desatribui os tickets dele —
+          apenas deixa de roteá-lo.</p></div>
+        <div class="form-full" id="qm-msg"></div>
+      </div>`, { save:'Salvar fila' });
+  }
+
+  function bulkModal() {
+    modal('Transferir tickets em massa', `
+      <p class="dim" style="margin:0">${selected.size} ticket(s) selecionado(s).
+      A operação move todos ou nenhum, e grava o motivo no histórico de cada um.</p>
+      <div class="form-grid">
+        <div class="field"><label for="bk-queue">Fila de destino</label>
+          <select id="bk-queue">${db.queues.map(q=>`<option value="${q.slug}">${q.name}</option>`).join('')}</select></div>
+        <div class="field form-full"><label for="bk-reason">Motivo <span class="req">*</span></label>
+          <input type="text" id="bk-reason" placeholder="ex.: consolidação da fila de telefonia"></div>
+        <div class="form-full" id="bk-msg"></div>
+      </div>`, { save:'Transferir' });
+  }
+
+  function areasModal() {
+    modal('Áreas por filial', `
+      <p class="dim" style="margin:0">A área é subdivisão da filial. Nome único por filial,
+      e área com itens vinculados não pode ser excluída — apenas desativada.</p>
+      <div class="field"><label for="am-branch">Filial</label>
+        <select id="am-branch">${db.branches.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div>
+      <div id="am-list"></div>
+      <div class="form-grid" style="border-top:1px solid var(--border);padding-top:.8rem">
+        <div class="field"><label for="am-name">Nova área</label>
+          <input type="text" id="am-name" placeholder="ex.: Fisioterapia"></div>
+        <div class="field"><label for="am-kind">Natureza</label>
+          <select id="am-kind">${Object.entries(AREA_KIND).map(([k,v])=>
+            `<option value="${k}">${v}</option>`).join('')}</select></div>
+        <div class="form-full" id="am-msg"></div>
+        <div class="form-full row-actions" style="justify-content:flex-end">
+          <button type="button" class="btn btn-sm" id="am-add">Adicionar área</button></div>
+      </div>`, { noFooter:true });
+    renderAreaList();
+  }
+  function renderAreaList() {
+    const branchId = document.getElementById('am-branch')?.value;
+    const el = document.getElementById('am-list'); if (!el) return;
+    const list = db.areas.filter(a => a.branchId === branchId).sort((x,y)=>x.order-y.order);
+    el.innerHTML = `<div class="att-list">${list.map(a => {
+      const use = areaUsage(a.id);
+      return `<div class="att-row">
+        <span class="strong">${esc(a.name)}</span>
+        ${pill(AREA_KIND[a.kind],'neutral')}
+        <span class="dim">${use} item(ns)</span>
+        <span style="margin-left:auto" class="row-actions">
+          <button type="button" class="btn btn-sm" data-variant="ghost" data-area-toggle="${a.id}">
+            ${a.active?'Desativar':'Ativar'}</button>
+          <button type="button" class="btn btn-sm" data-variant="danger" data-area-del="${a.id}">Excluir</button>
+        </span></div>`;
+    }).join('') || '<p class="dim">Nenhuma área nesta filial.</p>'}</div>`;
+  }
+
+  function assetModal() {
+    const b0 = db.branches[0];
+    modal('Novo ativo', `<div class="form-grid">
+      <div class="field"><label for="nm-type">Tipo</label>
+        <select id="nm-type">${ASSET_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+      <div class="field"><label for="nm-model">Marca e modelo <span class="req">*</span></label>
+        <input type="text" id="nm-model" placeholder="Dell Latitude 5450"></div>
+      <div class="field"><label for="nm-tag">Patrimônio</label><input type="text" id="nm-tag" placeholder="PAT-001100"></div>
+      <div class="field"><label for="nm-sn">Nº de série</label><input type="text" id="nm-sn"></div>
+      <div class="field"><label for="nm-branch">Filial</label>
+        <select id="nm-branch" data-area-src="nm-area">${db.branches.map(b=>
+          `<option value="${b.id}">${b.name}</option>`).join('')}</select></div>
+      <div class="field"><label for="nm-area">Área da filial <span class="req">*</span></label>
+        <select id="nm-area">${areasOf(b0.id).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}</select></div>
+      <div class="field"><label for="nm-status">Status</label>
+        <select id="nm-status">${Object.entries(ASSET_STATUS).map(([k,v])=>
+          `<option value="${k}"${k==='in_stock'?' selected':''}>${v.label}</option>`).join('')}</select></div>
+      <div class="field"><label for="nm-user">Responsável</label><input type="text" id="nm-user"></div>
+      <div class="field"><label for="nm-warranty">Garantia até</label><input type="date" id="nm-warranty"></div>
+      <div class="field"><label for="nm-cost">Valor</label><input type="number" id="nm-cost" step="0.01" min="0"></div>
+      <div class="form-full" id="nm-msg"></div>
+    </div>`, { save:'Cadastrar ativo' });
+  }
+
+  function lineModal() {
+    const b0 = db.branches[0];
+    modal('Nova linha telefônica', `<div class="form-grid">
+      <div class="field"><label for="nl-num">Número <span class="req">*</span></label>
+        <input type="text" id="nl-num" placeholder="+55 11 98800-0000"></div>
+      <div class="field"><label for="nl-carrier">Operadora <span class="req">*</span></label>
+        <input type="text" id="nl-carrier" placeholder="Vivo"></div>
+      <div class="field"><label for="nl-plan">Plano</label><input type="text" id="nl-plan"></div>
+      <div class="field"><label for="nl-type">Tipo</label>
+        <select id="nl-type"><option>Pós-pago</option><option>Pré-pago</option><option>Controle</option></select></div>
+      <div class="field"><label for="nl-branch">Filial</label>
+        <select id="nl-branch" data-area-src="nl-area">${db.branches.map(b=>
+          `<option value="${b.id}">${b.name}</option>`).join('')}</select></div>
+      <div class="field"><label for="nl-area">Área da empresa <span class="req">*</span></label>
+        <select id="nl-area">${areasOf(b0.id).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}</select></div>
+      <div class="field"><label for="nl-status">Status</label>
+        <select id="nl-status">${Object.entries(LINE_STATUS).map(([k,v])=>
+          `<option value="${k}"${k==='active'?' selected':''}>${v.label}</option>`).join('')}</select></div>
+      <div class="field"><label for="nl-user">Responsável</label><input type="text" id="nl-user"></div>
+      <div class="field"><label for="nl-cost">Custo mensal</label><input type="number" id="nl-cost" step="0.01" min="0"></div>
+      <div class="field"><label for="nl-contract">Nº do contrato</label><input type="text" id="nl-contract"></div>
+      <div class="field"><label for="nl-cstart">Início da vigência</label><input type="date" id="nl-cstart"></div>
+      <div class="field"><label for="nl-cend">Fim da vigência</label><input type="date" id="nl-cend"></div>
+      <div class="field"><label for="nl-loyalty">Fidelidade até</label><input type="date" id="nl-loyalty"></div>
+      <div class="field"><label for="nl-cancel">Cancelamento</label><input type="date" id="nl-cancel"></div>
+      <div class="form-full" id="nl-msg"></div>
+    </div>`, { save:'Cadastrar linha' });
+  }
+
+  function linkModal() {
+    const b0 = db.branches[0];
+    modal('Novo link de internet', `<div class="form-grid">
+      <div class="field"><label for="nk-contract">Nº do contrato</label><input type="text" id="nk-contract" placeholder="NL-LINK-005"></div>
+      <div class="field"><label for="nk-carrier">Operadora <span class="req">*</span></label><input type="text" id="nk-carrier"></div>
+      <div class="field"><label for="nk-tech">Tecnologia</label>
+        <select id="nk-tech">${Object.entries(TECH).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="field"><label for="nk-down">Download (Mbps)</label><input type="number" id="nk-down" min="1"></div>
+      <div class="field"><label for="nk-up">Upload (Mbps)</label><input type="number" id="nk-up" min="1"></div>
+      <div class="field"><label for="nk-guar">Banda garantida (Mbps)</label><input type="number" id="nk-guar" min="1"></div>
+      <div class="field"><label for="nk-ip">IP fixo</label><input type="text" id="nk-ip" placeholder="200.150.10.2"></div>
+      <div class="field"><label for="nk-branch">Filial</label>
+        <select id="nk-branch" data-area-src="nk-area">${db.branches.map(b=>
+          `<option value="${b.id}">${b.name}</option>`).join('')}</select></div>
+      <div class="field"><label for="nk-area">Área da filial <span class="req">*</span></label>
+        <select id="nk-area">${areasOf(b0.id).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}</select></div>
+      <div class="field"><label for="nk-cpeb">CPE — marca</label><input type="text" id="nk-cpeb"></div>
+      <div class="field"><label for="nk-cpem">CPE — modelo</label><input type="text" id="nk-cpem"></div>
+      <div class="field"><label for="nk-cpes">CPE — nº de série</label><input type="text" id="nk-cpes"></div>
+      <div class="field"><label for="nk-status">Status</label>
+        <select id="nk-status">${Object.entries(LINK_STATUS).map(([k,v])=>
+          `<option value="${k}"${k==='active'?' selected':''}>${v.label}</option>`).join('')}</select></div>
+      <div class="field"><label for="nk-cost">Custo mensal</label><input type="number" id="nk-cost" step="0.01" min="0"></div>
+      <div class="field"><label for="nk-act">Ativação</label><input type="date" id="nk-act"></div>
+      <div class="field"><label for="nk-cstart">Início da vigência</label><input type="date" id="nk-cstart"></div>
+      <div class="field"><label for="nk-cend">Fim da vigência</label><input type="date" id="nk-cend"></div>
+      <div class="field"><label for="nk-host">Host monitorado</label>
+        <input type="text" id="nk-host" placeholder="deixe vazio para não monitorar"></div>
+      <div class="field"><label for="nk-cancel">Cancelamento</label><input type="date" id="nk-cancel"></div>
+      <div class="form-full" id="nk-msg"></div>
+    </div>`, { save:'Cadastrar link' });
+  }
+
+  function mapPopup(branchId, domain, x, y) {
+    const b = branchById(branchId);
+    const rows = areaBreakdown(branchId, domain);
+    const wrap = document.querySelector(`[data-map="${domain}"]`); if (!wrap) return;
+    wrap.querySelector('.map-pop')?.remove();
+    const pop = document.createElement('div');
+    pop.className = 'map-pop';
+    pop.style.left = Math.min(Math.max(x - 128, 8), wrap.clientWidth - 264) + 'px';
+    pop.style.top = Math.max(y - 12, 8) + 'px';
+    pop.innerHTML = `<div style="display:flex;justify-content:space-between;gap:.5rem;align-items:start">
+        <strong>${esc(b.name)}</strong>
+        <button type="button" class="att-star" data-pop-close aria-label="Fechar">✕</button></div>
+      <div class="dim">${esc(b.city)} / ${esc(b.state)}</div>
+      <div style="margin-top:.5rem">${rows.length?rows.map(r=>`
+        <div style="display:flex;justify-content:space-between;gap:.5rem;padding:.12rem 0">
+          <span>${esc(r.name)}</span><span class="num strong">${r.count}</span></div>`).join('')
+        :'<span class="dim">Nada nesta filial para este domínio.</span>'}</div>
+      ${rows.length?`<div class="dim" style="margin-top:.4rem;border-top:1px solid var(--border);padding-top:.3rem">
+        Total: <strong>${rows.reduce((s,r)=>s+r.count,0)}</strong> · quebra por área da filial</div>`:''}`;
+    wrap.appendChild(pop);
+  }
+
+  /* ===================== Navegação ===================== */
+  const NAV = [
+    ['novidades','Novidades',true], ['painel','Painel',false], ['tickets','Tickets',false],
+    ['novo','Abrir ticket',false], ['sla','SLA e filas',true], ['inventario','Inventário',true],
+    ['telefonia','Telefonia',true], ['links','Links de Internet',true],
+    ['integracoes','Integrações',true], ['mapas','Mapas',true]
+  ];
+  let current = 'novidades';
+  const wallVisible = () => !document.getElementById('wall-stage').classList.contains('hidden');
+
+  function renderNav() {
+    document.getElementById('nav').innerHTML = NAV.map(([k,l,isNew]) =>
+      `<button type="button" data-view="${k}"${current===k?' aria-current="page"':''}>
+        ${esc(l)}${isNew?'<span class="tag-new">novo</span>':''}</button>`).join('');
+  }
+  function render() {
+    document.getElementById('view').innerHTML = (views[current] || views.novidades)();
+    renderNav();
+  }
+  function refresh() {
+    if (wallVisible()) renderWall(); else render();
+    refreshDrawer();
+  }
+  function setMode(wall) {
+    document.getElementById('console').classList.toggle('hidden', wall);
+    document.getElementById('wall-stage').classList.toggle('hidden', !wall);
+    document.getElementById('mode-console').setAttribute('aria-pressed', String(!wall));
+    document.getElementById('mode-wall').setAttribute('aria-pressed', String(wall));
+    if (wall) renderWall();
+  }
+
+  /** Recarrega o seletor de área quando a filial muda: a área é da filial. */
+  function syncAreaSelect(branchSelect) {
+    const targetId = branchSelect.dataset.areaSrc;
+    const target = document.getElementById(targetId); if (!target) return;
+    const keepEmpty = target.querySelector('option[value=""]') !== null;
+    const list = areasOf(branchSelect.value);
+    target.innerHTML = (keepEmpty ? '<option value="">Não informada</option>' : '') +
+      list.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+  }
+
+  const ownerOf = key => {
+    const [kind, id] = key.split(':');
+    if (kind === 'ticket') return db.tickets.find(x => x.id === id);
+    if (kind === 'asset')  return db.assets.find(x => x.id === id);
+    if (kind === 'line')   return db.lines.find(x => x.id === id);
+    if (kind === 'link')   return db.links.find(x => x.id === id);
+    return null;
+  };
+
+  /* Anexos pendentes do formulário de abertura de ticket. */
+  let pendingAtt = [];
+  function renderPending() {
+    const el = document.getElementById('newticket-list'); if (!el) return;
+    el.innerHTML = pendingAtt.map(a => attCard(a, 'pending')).join('');
+  }
+
+  async function handleFiles(zoneId, files) {
+    if (!files || !files.length) return;
+    if (zoneId === 'newticket') {
+      for (const f of files) {
+        const r = await makeAttachment(f);
+        if (r.error) { toast(r.error); continue; }
+        pendingAtt.push(r.att);
+      }
+      renderPending(); return;
+    }
+    const [prefix, id] = zoneId.split('-');
+    let owner = null, docKind = null, isTicket = false;
+    if (prefix === 'tk')    { owner = db.tickets.find(x => x.id === id); isTicket = true; }
+    if (prefix === 'asdoc') { owner = db.assets.find(x => x.id === id);
+      docKind = document.getElementById('as-dockind')?.value || 'other'; }
+    if (prefix === 'asphoto'){ owner = db.assets.find(x => x.id === id);
+      docKind = document.getElementById('as-photokind')?.value || 'photo_other'; }
+    if (prefix === 'lndoc') { owner = db.lines.find(x => x.id === id);
+      docKind = document.getElementById('ln-dockind')?.value || 'contract'; }
+    if (prefix === 'lkdoc') { owner = db.links.find(x => x.id === id);
+      docKind = document.getElementById('lk-dockind')?.value || 'contract'; }
+    if (!owner) return;
+    const errors = await addAttachments(owner, files, docKind, isTicket);
+    errors.forEach(toast);
+    if (!errors.length) toast(files.length > 1 ? 'Anexos adicionados' : 'Anexo adicionado');
+    refresh();
+  }
+
+  /* ===================== Eventos ===================== */
+  document.getElementById('mode-console').addEventListener('click', () => setMode(false));
+  document.getElementById('mode-wall').addEventListener('click', () => setMode(true));
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const r = document.documentElement;
+    const dark = r.getAttribute('data-theme') === 'dark' ||
+      (!r.hasAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+    r.setAttribute('data-theme', dark ? 'light' : 'dark');
+  });
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    if (!confirm('Restaurar os dados de exemplo? Tudo que você criou será apagado.')) return;
+    uid = 1; db = seed(); save(); closeDrawer(); closeModal(); selected.clear(); refresh();
+    toast('Dados de exemplo restaurados');
+  });
+  document.getElementById('wall-full').addEventListener('click', () => {
+    document.getElementById('wall').classList.toggle('is-full'); renderWall();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (document.querySelector('.modal')) closeModal();
+      else if (document.querySelector('.drawer')) closeDrawer();
+      else document.getElementById('wall').classList.remove('is-full');
+      return;
+    }
+    if (e.key === 'Enter') {
+      const el = e.target.closest && e.target.closest('[data-ticket],[data-asset],[data-line],[data-link],[data-mk]');
+      // dispatchEvent e não .click(): marcador do mapa é <g> SVG, e click()
+      // não está garantido em elemento SVG em todos os motores.
+      if (el && el.tagName !== 'INPUT') {
+        e.preventDefault();
+        el.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+      }
+    }
+  });
+
+  document.addEventListener('click', async e => {
+    const T = e.target;
+
+    const nav = T.closest('.side button');
+    if (nav) { current = nav.dataset.view; selected.clear(); render(); return; }
+    const go = T.closest('[data-go]');
+    if (go) { current = go.dataset.go; setMode(false); render();
+      window.scrollTo({ top:0, behavior:'smooth' }); return; }
+
+    if (T.closest('[data-close]')) { closeDrawer(); return; }
+    if (T.closest('[data-close-modal]')) { closeModal(); return; }
+    if (T.closest('[data-pop-close]')) { T.closest('.map-pop')?.remove(); return; }
+
+    // Alternância lista/mapa
+    const vm = T.closest('[data-vmode]');
+    if (vm) {
+      const m = vm.dataset.vmode, tgt = vm.dataset.vtarget;
+      if (tgt === 'tickets') ticketMode = m;
+      if (tgt === 'inventario') invMode = m;
+      if (tgt === 'telefonia') telMode = m;
+      if (tgt === 'links') linkMode = m;
+      render(); return;
+    }
+    const md = T.closest('[data-mapdomain]');
+    if (md) { mapDomain = md.dataset.mapdomain; render(); return; }
+
+    // Marcador do mapa → popup com quebra por área
+    const mk = T.closest('[data-mk]');
+    if (mk) {
+      const svg = mk.closest('svg'), box = svg.getBoundingClientRect();
+      const c = mk.querySelector('circle');
+      const sx = box.width / MAP_W, sy = box.height / MAP_H;
+      mapPopup(mk.dataset.mk, mk.dataset.domain,
+        Number(c.getAttribute('cx')) * sx, Number(c.getAttribute('cy')) * sy);
+      return;
+    }
+
+    // Abrir painéis
+    const ot = T.closest('[data-open-t]');
+    if (ot) { drawerTicket(ot.dataset.openT); return; }
+    if (T.closest('.sel-t') || T.tagName === 'INPUT') { /* segue para change */ }
+    const rowT = T.closest('[data-ticket]');
+    if (rowT && T.tagName !== 'INPUT') { drawerTicket(rowT.dataset.ticket); return; }
+    const rowA = T.closest('[data-asset]');
+    if (rowA) { assetTab = 'dados'; drawerAsset(rowA.dataset.asset); return; }
+    const rowL = T.closest('[data-line]');
+    if (rowL) { drawerLine(rowL.dataset.line); return; }
+    const rowK = T.closest('[data-link]');
+    if (rowK) { drawerLink(rowK.dataset.link); return; }
+
+    // Abas
+    const at = T.closest('[data-assettab]');
+    if (at) { assetTab = at.dataset.assettab; refreshDrawer(); return; }
+    const it = T.closest('[data-inttab]');
+    if (it) { intTab = it.dataset.inttab; render(); return; }
+
+    // Ticket: status, transferência, comentário
+    const st = T.closest('[data-status]');
+    if (st && openDrawer?.kind === 'ticket') {
+      const t = db.tickets.find(x => x.id === openDrawer.id);
+      const err = changeStatus(t, st.dataset.status);
+      if (err) drawerMsg(err, 'error'); else { toast('Status atualizado'); refresh(); }
+      return;
+    }
+    if (T.id === 'do-transfer' && openDrawer?.kind === 'ticket') {
+      const t = db.tickets.find(x => x.id === openDrawer.id);
+      const err = transfer(t, document.getElementById('d-queue').value,
+        document.getElementById('d-reason').value);
+      if (err) drawerMsg(err, 'error'); else { toast('Ticket transferido'); refresh(); }
+      return;
+    }
+    if (T.id === 'do-comment' && openDrawer?.kind === 'ticket') {
+      const t = db.tickets.find(x => x.id === openDrawer.id);
+      const vis = document.querySelector('input[name=vis]:checked').value;
+      const err = comment(t, document.getElementById('d-comment').value, vis);
+      if (err) drawerMsg(err, 'error'); else { toast('Comentário publicado'); refresh(); }
+      return;
+    }
+
+    // Anexos: foto principal e exclusão
+    const pr = T.closest('[data-primary]');
+    if (pr) { const o = ownerOf(pr.dataset.owner); if (o) { setPrimary(o, pr.dataset.primary);
+      toast('Foto principal definida'); refresh(); } return; }
+    const da = T.closest('[data-del-att]');
+    if (da) {
+      if (da.dataset.owner === 'pending') {
+        pendingAtt = pendingAtt.filter(a => a.id !== da.dataset.delAtt); renderPending(); return;
+      }
+      const o = ownerOf(da.dataset.owner);
+      if (o) { removeAttachment(o, da.dataset.delAtt); toast('Anexo removido'); refresh(); }
+      return;
+    }
+
+    // Ativo: salvar custódia
+    if (T.id === 'as-save' && openDrawer?.kind === 'asset') {
+      const a = db.assets.find(x => x.id === openDrawer.id);
+      const areaId = document.getElementById('as-area').value;
+      if (!areaId) { drawerMsg('A área da filial é obrigatória.', 'error'); return; }
+      setAssetStatus(a, document.getElementById('as-status').value);
+      const err = changeCustody(a, document.getElementById('as-user').value,
+        document.getElementById('as-branch').value, areaId,
+        document.getElementById('as-reason').value, document.getElementById('as-note').value);
+      if (err && err !== 'Nada mudou.') { drawerMsg(err, 'error'); return; }
+      toast(err ? 'Status atualizado' : 'Custódia registrada');
+      assetTab = 'cust'; refresh(); return;
+    }
+
+    // Link: simular queda/retorno (o que o Zabbix enviaria)
+    if (T.id === 'link-toggle' && openDrawer?.kind === 'link') {
+      const k = db.links.find(x => x.id === openDrawer.id);
+      const err = toggleLinkState(k);
+      if (err) toast(err); else toast(k.state === 'down' ? 'Queda registrada' : 'Link restabelecido');
+      refresh(); return;
+    }
+
+    // SLA e filas
+    if (T.id === 'sla-new') { slaModal(null); return; }
+    const se = T.closest('[data-sla-edit]');
+    if (se) { slaModal(se.dataset.slaEdit); return; }
+    const qe = T.closest('[data-queue-edit]');
+    if (qe) { queueModal(qe.dataset.queueEdit); return; }
+    if (T.id === 'areas-open') { areasModal(); return; }
+    if (T.id === 'asset-new') { assetModal(); return; }
+    if (T.id === 'line-new') { lineModal(); return; }
+    if (T.id === 'link-new') { linkModal(); return; }
+    if (T.id === 'bulk-open') { bulkModal(); return; }
+    if (T.id === 'bulk-clear') { selected.clear(); render(); return; }
+
+    // Áreas no modal
+    if (T.id === 'am-add') {
+      const err = createArea(document.getElementById('am-branch').value,
+        document.getElementById('am-name').value, document.getElementById('am-kind').value);
+      const msg = document.getElementById('am-msg');
+      if (err) { msg.innerHTML = `<div class="alert" data-kind="error">${esc(err)}</div>`; return; }
+      msg.innerHTML = ''; document.getElementById('am-name').value = '';
+      renderAreaList(); toast('Área criada'); return;
+    }
+    const atg = T.closest('[data-area-toggle]');
+    if (atg) { toggleArea(atg.dataset.areaToggle); renderAreaList(); return; }
+    const adl = T.closest('[data-area-del]');
+    if (adl) {
+      const err = deleteArea(adl.dataset.areaDel);
+      const msg = document.getElementById('am-msg');
+      if (err) msg.innerHTML = `<div class="alert" data-kind="error">${esc(err)}</div>`;
+      else { msg.innerHTML = ''; toast('Área excluída'); }
+      renderAreaList(); return;
+    }
+
+    // Mapeamento de integração
+    if (T.id === 'm-add') {
+      db.integration.mappings.push({ id:nid('m'), source:'', target:'title',
+        transform:'direct', map:{}, def:'', required:false });
+      save(); render(); return;
+    }
+    const mdl = T.closest('[data-m-del]');
+    if (mdl) {
+      db.integration.mappings = db.integration.mappings.filter(m => m.id !== mdl.dataset.mDel);
+      snapshotMapping('Mapeamento removido'); render(); toast('Mapeamento removido'); return;
+    }
+    if (T.id === 'm-save') { snapshotMapping('Alteração manual'); render(); toast('Mapeamento salvo — nova versão criada'); return; }
+    const rst = T.closest('[data-restore]');
+    if (rst) {
+      const v = db.integration.versions.find(x => x.v === Number(rst.dataset.restore));
+      if (v) { db.integration.mappings = JSON.parse(JSON.stringify(v.snapshot));
+        snapshotMapping(`Restauração da v${v.v}`); render(); toast(`Mapeamento restaurado da v${v.v}`); }
+      return;
+    }
+    if (T.id === 'int-test') {
+      const i = db.integration;
+      i.lastTestAt = Date.now();
+      const ep = document.getElementById('in-ep').value.trim();
+      // Endpoint precisa ser HTTPS e não pode apontar para rede interna: o campo
+      // seria um SSRF operado pela própria interface.
+      const internal = /localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\./.test(ep);
+      i.lastTestOk = ep.startsWith('https://') && !internal;
+      save();
+      document.getElementById('int-msg').innerHTML = i.lastTestOk
+        ? `<div class="alert" data-kind="ok">Conexão validada · HTTP 200 · 214 ms</div>`
+        : `<div class="alert" data-kind="error">Endpoint recusado: exige HTTPS e não pode apontar para rede interna.</div>`;
+      return;
+    }
+    if (T.id === 'dry-run') {
+      let payload;
+      try { payload = JSON.parse(document.getElementById('dry-payload').value); }
+      catch { document.getElementById('dry-out').innerHTML =
+        `<div class="alert" data-kind="error">JSON inválido.</div>`; return; }
+      const r = applyMapping(payload, db.integration.mappings);
+      dryResult = `<div class="alert" data-kind="${r.errors.length?'warn':'ok'}">
+          Nada foi gravado — este é o ticket que <em>seria</em> criado.</div>
+        <div class="table-wrap" style="margin-top:.6rem"><table>
+          <thead><tr><th>Campo do ticket</th><th>Valor resultante</th></tr></thead>
+          <tbody>${Object.entries(r.fields).map(([k,v])=>`<tr>
+            <td class="mono">${esc(k)}</td><td>${esc(Array.isArray(v)?v.join(', '):String(v))}</td></tr>`).join('')}
+          ${r.lookups.map(l=>`<tr><td class="mono">${esc(l.target)}</td>
+            <td class="dim">resolvido no servidor por ${esc(l.kind)} · valor "${esc(l.value)}"</td></tr>`).join('')}
+          </tbody></table></div>
+        ${r.errors.length?`<div class="alert" data-kind="warn" style="margin-top:.6rem">
+          ${r.errors.map(esc).join('<br>')}</div>`:''}`;
+      document.getElementById('dry-out').innerHTML = dryResult;
+      return;
+    }
+
+    // Salvar de modal
+    if (T.id === 'modal-save') {
+      if (document.getElementById('sm-name')) {
+        const id = document.getElementById('sm-id').value;
+        const name = document.getElementById('sm-name').value.trim();
+        const tfr = Number(document.getElementById('sm-tfr').value);
+        const res = Number(document.getElementById('sm-res').value);
+        const msg = document.getElementById('sm-msg');
+        const fail = m => { msg.innerHTML = `<div class="alert" data-kind="error">${esc(m)}</div>`; };
+        if (name.length < 3) return fail('Informe o nome da definição.');
+        if (!(tfr > 0) || !(res > 0)) return fail('Prazos precisam ser maiores que zero.');
+        if (res < tfr) return fail('A resolução não pode ser menor que a primeira resposta.');
+        const contract = document.getElementById('sm-contract').value || null;
+        const category = document.getElementById('sm-cat').value || null;
+        const priority = document.getElementById('sm-prio').value;
+        // Unicidade: contrato + categoria + prioridade não pode repetir.
+        const dup = db.slaDefs.find(d => d.id !== id && d.contract === contract &&
+          d.category === category && d.priority === priority);
+        if (dup) return fail(`Já existe a definição "${dup.name}" para esta combinação.`);
+        const payload = { name, contract, category, priority, tfr, res,
+          calendar:document.getElementById('sm-cal').value,
+          active:document.getElementById('sm-active').checked };
+        if (id) Object.assign(db.slaDefs.find(d => d.id === id), payload);
+        else db.slaDefs.push(Object.assign({ id:nid('sla') }, payload));
+        save(); closeModal(); render(); toast(id ? 'SLA atualizado' : 'SLA criado'); return;
+      }
+      if (document.getElementById('qm-slug')) {
+        const q = db.queues.find(x => x.slug === document.getElementById('qm-slug').value);
+        if (!q.isDefault) {
+          const n = document.getElementById('qm-name').value.trim();
+          if (n.length < 3) { document.getElementById('qm-msg').innerHTML =
+            `<div class="alert" data-kind="error">Informe o nome da fila.</div>`; return; }
+          q.name = n;
+        }
+        q.desc = document.getElementById('qm-desc').value.trim();
+        q.w = [0,1,2].map(i => Number(document.getElementById('qm-w'+i).value));
+        q.tiebreaker = document.getElementById('qm-tb').value;
+        q.members = [...document.querySelectorAll('.qm-member:checked')].map(x => x.value);
+        save(); closeModal(); render(); toast('Fila atualizada'); return;
+      }
+      if (document.getElementById('bk-reason')) {
+        const r = bulkTransfer([...selected], document.getElementById('bk-queue').value,
+          document.getElementById('bk-reason').value);
+        if (r.error) { document.getElementById('bk-msg').innerHTML =
+          `<div class="alert" data-kind="error">${esc(r.error)}</div>`; return; }
+        selected.clear(); closeModal(); render();
+        toast(`${r.moved} ticket(s) transferido(s)`); return;
+      }
+      if (document.getElementById('nm-model')) {
+        const err = createAsset({ type:document.getElementById('nm-type').value,
+          model:document.getElementById('nm-model').value, tag:document.getElementById('nm-tag').value,
+          sn:document.getElementById('nm-sn').value, branchId:document.getElementById('nm-branch').value,
+          areaId:document.getElementById('nm-area').value, status:document.getElementById('nm-status').value,
+          user:document.getElementById('nm-user').value, warranty:document.getElementById('nm-warranty').value,
+          cost:document.getElementById('nm-cost').value });
+        if (err) { document.getElementById('nm-msg').innerHTML =
+          `<div class="alert" data-kind="error">${esc(err)}</div>`; return; }
+        closeModal(); render(); toast('Ativo cadastrado'); return;
+      }
+      if (document.getElementById('nl-num')) {
+        const err = createLine({ num:document.getElementById('nl-num').value,
+          carrier:document.getElementById('nl-carrier').value, plan:document.getElementById('nl-plan').value,
+          type:document.getElementById('nl-type').value, branchId:document.getElementById('nl-branch').value,
+          areaId:document.getElementById('nl-area').value, status:document.getElementById('nl-status').value,
+          user:document.getElementById('nl-user').value, cost:document.getElementById('nl-cost').value,
+          contractNumber:document.getElementById('nl-contract').value,
+          contractStart:document.getElementById('nl-cstart').value,
+          contractEnd:document.getElementById('nl-cend').value,
+          loyalty:document.getElementById('nl-loyalty').value,
+          cancelledOn:document.getElementById('nl-cancel').value });
+        if (err) { document.getElementById('nl-msg').innerHTML =
+          `<div class="alert" data-kind="error">${esc(err)}</div>`; return; }
+        closeModal(); render(); toast('Linha cadastrada'); return;
+      }
+      if (document.getElementById('nk-carrier')) {
+        const ip = document.getElementById('nk-ip').value.trim();
+        const err = createLink({ contractNumber:document.getElementById('nk-contract').value,
+          carrier:document.getElementById('nk-carrier').value, tech:document.getElementById('nk-tech').value,
+          down:document.getElementById('nk-down').value, up:document.getElementById('nk-up').value,
+          guaranteed:document.getElementById('nk-guar').value, staticIp:ip, hasStaticIp:false,
+          branchId:document.getElementById('nk-branch').value, areaId:document.getElementById('nk-area').value,
+          cpeBrand:document.getElementById('nk-cpeb').value, cpeModel:document.getElementById('nk-cpem').value,
+          cpeSerial:document.getElementById('nk-cpes').value, status:document.getElementById('nk-status').value,
+          cost:document.getElementById('nk-cost').value, activatedOn:document.getElementById('nk-act').value,
+          contractStart:document.getElementById('nk-cstart').value,
+          contractEnd:document.getElementById('nk-cend').value,
+          monitoringHost:document.getElementById('nk-host').value,
+          cancelledOn:document.getElementById('nk-cancel').value });
+        if (err) { document.getElementById('nk-msg').innerHTML =
+          `<div class="alert" data-kind="error">${esc(err)}</div>`; return; }
+        closeModal(); render(); toast('Link cadastrado'); return;
+      }
+    }
+  });
+
+  /* Mudanças em selects, checkboxes e ranges */
+  document.addEventListener('change', async e => {
+    const T = e.target;
+    if (T.dataset && T.dataset.areaSrc) { syncAreaSelect(T); return; }
+
+    const map = {
+      'f-status':['filters','status'], 'f-queue':['filters','queue'], 'f-prio':['filters','prio'],
+      'f-branch':['filters','branch'],
+      'i-branch':['invFilters','branch'], 'i-area':['invFilters','area'],
+      'i-status':['invFilters','status'], 'i-type':['invFilters','type'], 'i-group':['invFilters','group'],
+      'tl-branch':['telFilters','branch'], 'tl-carrier':['telFilters','carrier'],
+      'tl-area':['telFilters','area'], 'tl-status':['telFilters','status'], 'tl-type':['telFilters','type'],
+      'k-branch':['linkFilters','branch'], 'k-carrier':['linkFilters','carrier'],
+      'k-tech':['linkFilters','tech'], 'k-status':['linkFilters','status'], 'k-state':['linkFilters','state']
+    };
+    if (map[T.id]) {
+      const [obj, key] = map[T.id];
+      const store = { filters, invFilters, telFilters, linkFilters }[obj];
+      store[key] = T.value;
+      // Trocar a filial invalida a área selecionada, que é da filial anterior.
+      if (key === 'branch') store.area = '';
+      render(); return;
+    }
+    if (T.id === 'tl-nc') { telFilters.noContract = T.checked; render(); return; }
+    if (T.id === 'am-branch') { renderAreaList(); return; }
+
+    if (T.id === 'd-assignee' && openDrawer?.kind === 'ticket') {
+      assign(db.tickets.find(x => x.id === openDrawer.id), T.value);
+      toast('Atribuição atualizada'); refresh(); return;
+    }
+    if (T.id === 'sel-all') {
+      document.querySelectorAll('.sel-t').forEach(c => { c.checked = T.checked;
+        if (T.checked) selected.add(c.value); else selected.delete(c.value); });
+      render(); return;
+    }
+    if (T.classList.contains('sel-t')) {
+      if (T.checked) selected.add(T.value); else selected.delete(T.value);
+      render(); return;
+    }
+    if (T.type === 'file') { await handleFiles(T.id.replace(/^file-/, ''), T.files); T.value = ''; return; }
+
+    // Mapeamento: edição inline
+    const ds = T.dataset || {};
+    const m = db.integration.mappings.find(x =>
+      x.id === (ds.mSrc || ds.mTgt || ds.mTr || ds.mMap || ds.mDef || ds.mReq));
+    if (m) {
+      if (ds.mSrc !== undefined) m.source = T.value.trim();
+      if (ds.mTgt !== undefined) m.target = T.value;
+      if (ds.mTr !== undefined) m.transform = T.value;
+      if (ds.mDef !== undefined) m.def = T.value.trim();
+      if (ds.mReq !== undefined) m.required = T.checked;
+      if (ds.mMap !== undefined) {
+        m.map = {};
+        T.value.split(',').map(s => s.trim()).filter(Boolean).forEach(pair => {
+          const [k, v] = pair.split('=').map(s => (s || '').trim());
+          if (k && v) m.map[k] = v;
+        });
+      }
+      save(); return;
+    }
+  });
+
+  document.addEventListener('input', e => {
+    const T = e.target;
+    if (['qm-w0','qm-w1','qm-w2'].includes(T.id)) {
+      document.getElementById(T.id + 'v').textContent = T.value; return;
+    }
+    const searches = { 'f-q':['filters','q'], 'tl-q':['telFilters','q'] };
+    if (searches[T.id]) {
+      const [obj, key] = searches[T.id];
+      ({ filters, telFilters })[obj][key] = T.value;
+      const pos = T.selectionStart, id = T.id;
+      render();
+      const again = document.getElementById(id);
+      if (again) { again.focus(); again.setSelectionRange(pos, pos); }
+    }
+  });
+
+  document.addEventListener('submit', e => {
+    e.preventDefault();
+    if (e.target.id !== 'form-ticket') return;
+    const f = Object.fromEntries(new FormData(e.target).entries());
+    const res = createTicket(f);
+    const msg = document.getElementById('ticket-msg');
+    if (res.error) { msg.innerHTML = `<div class="alert" data-kind="error">${esc(res.error)}</div>`; return; }
+    if (pendingAtt.length) { res.ticket.attachments = pendingAtt; pendingAtt = []; save(); }
+    toast('Ticket #' + res.ticket.n + ' aberto');
+    current = 'tickets'; render(); drawerTicket(res.ticket.id);
+  });
+
+  /* Arrastar e soltar nas zonas de anexo */
+  ['dragover','dragleave','drop'].forEach(evt =>
+    document.addEventListener(evt, async e => {
+      const zone = e.target.closest && e.target.closest('[data-drop]');
+      if (!zone) return;
+      e.preventDefault();
+      if (evt === 'dragover') zone.classList.add('is-over');
+      else zone.classList.remove('is-over');
+      if (evt === 'drop') await handleFiles(zone.dataset.drop, e.dataTransfer.files);
+    }));
+
+  /* Contagem regressiva ao vivo */
+  setInterval(() => {
+    document.querySelectorAll('[data-due]').forEach(el => {
+      const t = db.tickets.find(x => x.id === el.dataset.due);
+      if (!t || isPaused(t)) return;
+      const rem = remainingMs(t);
+      el.dataset.late = String(rem < 0);
+      el.textContent = (rem < 0 ? '-' : '') + fmtMs(rem);
+    });
+    if (wallVisible()) renderWall();
+  }, 15000);
+  setInterval(tickClock, 1000);
+
+  render();
+  tickClock();
+})();
+</script>
