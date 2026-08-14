@@ -422,7 +422,9 @@
 <script>
 (() => {
   'use strict';
-  const KEY = 'sti.helpdesk.v3';
+  // v4: o cadastro passou a ter endereço estruturado. Reaproveitar a chave antiga
+  // devolveria filiais sem logradouro e o fluxo cairia em [CAMPO AUSENTE] sempre.
+  const KEY = 'sti.helpdesk.v4';
   const MIN = 60000;
 
   /* ===================== Catálogos ===================== */
@@ -500,25 +502,37 @@
   function seed() {
     const now = Date.now();
 
+    // Endereço ESTRUTURADO: logradouro, número, bairro e CEP são os quatro
+    // campos que o fluxo de geolocalização exige. Cada filial cobre um caso:
+    // completo, completo em outra praça, sem número, e sem endereço nenhum.
     const branches = [
       { id:'b1', name:'Meridiano — Matriz São Paulo', short:'Matriz SP', client:'Grupo Meridiano Alimentos S.A.',
-        city:'São Paulo', state:'SP', lat:-23.55052, lng:-46.633308, precision:'rooftop',
-        address:'Av. Paulista, 1000 — Bela Vista, São Paulo - SP' },
+        street:'Avenida Paulista', number:'1578', complement:'Conjunto 12', district:'Bela Vista',
+        city:'São Paulo', state:'SP', cep:'01310-200',
+        lat:-23.55052, lng:-46.633308, precision:'manual', geoStatus:'ok', stale:false, geoReport:null,
+        address:'Avenida Paulista, 1578 - Conjunto 12, Bela Vista, São Paulo/SP, 01310-200' },
       { id:'b2', name:'Meridiano — CD Campinas', short:'CD Campinas', client:'Grupo Meridiano Alimentos S.A.',
-        city:'Campinas', state:'SP', lat:-22.909938, lng:-47.062633, precision:'manual',
-        address:'Rod. Anhanguera, km 98 — Campinas - SP' },
+        street:'Avenida Francisco Glicério', number:'935', complement:null, district:'Centro',
+        city:'Campinas', state:'SP', cep:'13012-100',
+        lat:-22.909938, lng:-47.062633, precision:'manual', geoStatus:'ok', stale:false, geoReport:null,
+        address:'Avenida Francisco Glicério, 935, Centro, Campinas/SP, 13012-100' },
+      // Sem número: o fluxo tem de barrar em [CAMPO AUSENTE].
       { id:'b3', name:'Meridiano — Filial Manaus', short:'Manaus', client:'Grupo Meridiano Alimentos S.A.',
-        city:'Manaus', state:'AM', lat:-3.119028, lng:-60.021731, precision:'rooftop',
-        address:'Av. Djalma Batista, 500 — Manaus - AM' },
+        street:'Avenida Djalma Batista', number:'', complement:null, district:'Chapada',
+        city:'Manaus', state:'AM', cep:'69050-010',
+        lat:-3.119028, lng:-60.021731, precision:'approximate', geoStatus:'low_precision', stale:false, geoReport:null,
+        address:'Avenida Djalma Batista, Chapada, Manaus/AM, 69050-010' },
       { id:'b4', name:'Meridiano — Filial Recife', short:'Recife', client:'Grupo Meridiano Alimentos S.A.',
-        city:'Recife', state:'PE', lat:-8.047562, lng:-34.877, precision:'approximate',
-        address:'Recife - PE' },
-      // Sem coordenada de propósito: exercita o aviso "filiais sem localização"
-      // em vez de a filial desaparecer do mapa em silêncio.
+        street:'Avenida Conselheiro Aguiar', number:'2333', complement:null, district:'Boa Viagem',
+        city:'Recife', state:'PE', cep:'51020-020',
+        lat:-8.047562, lng:-34.877, precision:'approximate', geoStatus:'low_precision', stale:false, geoReport:null,
+        address:'Avenida Conselheiro Aguiar, 2333, Boa Viagem, Recife/PE, 51020-020' },
+      // Sem coordenada e sem endereço, de propósito: exercita o aviso "filiais
+      // sem localização" em vez de a filial desaparecer do mapa em silêncio.
       { id:'b5', name:'Vertex — Sede', short:'Vertex BH', client:'Construtora Vertex Ltda.',
-        city:'Belo Horizonte', state:'MG', lat:null, lng:null, precision:null, address:null }
+        street:'', number:'', complement:null, district:'', city:'Belo Horizonte', state:'MG', cep:'',
+        lat:null, lng:null, precision:null, geoStatus:'pending', stale:false, geoReport:null, address:null }
     ];
-
     const areas = [];
     branches.forEach(b => DEFAULT_AREAS.forEach(([name, kind], i) =>
       areas.push({ id:nid('ar'), branchId:b.id, name, kind, active:true, order:(i+1)*10 })));
@@ -1220,7 +1234,169 @@
     const b = branchById(branchId);
     if (!b) return 'Filial não encontrada.';
     b.lat = c.lat; b.lng = c.lng; b.precision = 'manual';
+    // Coordenada colada do Maps é a mais confiável que temos: quem colou estava
+    // olhando o lugar. Ela também zera a pendência de endereço alterado.
+    b.stale = false; b.geoStatus = 'ok';
+    b.geoReport = geoReport(b, 'ok', '', 'coordenada informada pelo operador (Google Maps)');
     save(); return null;
+  }
+
+  /* ============ Endereço estruturado e fluxo de geolocalização ============ */
+  // Espelha src/lib/address.ts. As MESMAS regras do app: quatro campos
+  // obrigatórios, CEP normalizado, e nenhuma coordenada inventada quando o
+  // geocodificador não está disponível.
+  const REQUIRED_FIELDS = [
+    ['street','logradouro'], ['number','número'], ['district','bairro'], ['cep','CEP']
+  ];
+  const STATUS_TAG = {
+    ok:'[OK]', low_precision:'[BAIXA PRECISÃO]', missing_fields:'[CAMPO AUSENTE]',
+    inconsistent:'[INCONSISTÊNCIA DE ENDEREÇO]', multiple:'[MÚLTIPLAS CORRESPONDÊNCIAS]',
+    not_found:'[ENDEREÇO NÃO ENCONTRADO]', service_unavailable:'[SERVIÇO INDISPONÍVEL]',
+    pending:'[PENDENTE]'
+  };
+  const STATUS_LABEL = {
+    ok:'Localizado (exato)', low_precision:'Localizado com baixa precisão',
+    pending:'Aguardando geolocalização', missing_fields:'Endereço incompleto',
+    inconsistent:'Inconsistência de endereço', multiple:'Múltiplas correspondências',
+    not_found:'Endereço não encontrado', service_unavailable:'Serviço indisponível'
+  };
+  const STATUS_TONE = {
+    ok:'ok', low_precision:'warn', pending:'neutral', missing_fields:'warn',
+    inconsistent:'breach', multiple:'warn', not_found:'breach', service_unavailable:'breach'
+  };
+
+  /** Requisitos mínimos, exibidos quando a dependência não existe no ambiente. */
+  const SERVICE_REQUIREMENTS = [
+    'API de geocodificação com cobertura brasileira e nível de precisão no retorno',
+    'API de tiles com camada de satélite em zoom 16–18',
+    'Biblioteca de renderização com camadas, marcador, popup e alternância satélite/mapa',
+    'Consulta de CEP para validar consistência entre CEP, logradouro e bairro',
+    'Mecanismo de tempo real para reexecutar o fluxo quando o cadastro muda'
+  ];
+
+  const normCep = v => {
+    const d = String(v || '').replace(/\D/g, '');
+    return d.length === 8 ? d.slice(0,5) + '-' + d.slice(5) : null;
+  };
+  const missingFields = b =>
+    REQUIRED_FIELDS.filter(([k]) => !String(b[k] || '').trim()).map(([, label]) => label);
+
+  /** Endereço em uma linha, no padrão dos Correios. */
+  function fmtAddress(b) {
+    const head = [b.street, b.number].map(x => String(x || '').trim()).filter(Boolean).join(', ');
+    const withCompl = [head, String(b.complement || '').trim()].filter(Boolean).join(' - ');
+    const cityUf = [String(b.city || '').trim(), String(b.state || '').trim().toUpperCase()]
+      .filter(Boolean).join('/');
+    return [withCompl, String(b.district || '').trim(), cityUf, normCep(b.cep)].filter(Boolean).join(', ');
+  }
+
+  const zoomForPrecision = p =>
+    (p === 'rooftop' || p === 'manual') ? 18 : p === 'range_interpolated' ? 17 : 16;
+  const shouldRender = st => st === 'ok' || st === 'low_precision';
+
+  /**
+   * Bloco de saída técnica, no mesmo formato do app.
+   *
+   * `status` vem do fluxo; nada aqui adivinha coordenada. Nesta página não há
+   * geocodificador nem tile de satélite (o CSP bloqueia host externo), então o
+   * desfecho honesto de "Geolocalizar" é [SERVIÇO INDISPONÍVEL] com os
+   * requisitos — e não um ponto plausível tirado do nada.
+   */
+  function geoReport(b, status, message, provider) {
+    const missing = missingFields(b);
+    const value = v => (String(v || '').trim() || '[AUSENTE]');
+    const hasCoords = b.lat !== null && b.lng !== null;
+    const render = shouldRender(status) && hasCoords;
+    const lines = [
+      'ENDERECO DE ENTRADA:',
+      `- Logradouro: ${value(b.street)}`,
+      `- Número: ${value(b.number)}`,
+      `- Bairro: ${value(b.district)}`,
+      `- CEP: ${normCep(b.cep) || value(b.cep)}`,
+      `- Complemento: ${String(b.complement || '').trim() || 'não informado'}`,
+      '',
+      'VALIDACAO:',
+      `- Campos obrigatórios: ${missing.length ? 'INCOMPLETO — ausentes: ' + missing.join(', ') : 'COMPLETO'}`,
+      '- Consistência CEP/Logradouro: NÃO VERIFICADA — consulta de CEP indisponível nesta página',
+      '',
+      'GEOCODIFICACAO:',
+      hasCoords ? `- Coordenadas: ${fmtCoords(b.lat, b.lng)}`
+                : `- Coordenadas: ${STATUS_TAG[status] || ''} — não obtidas`,
+      `- Endereço formatado: ${hasCoords ? (fmtAddress(b) || '—') : '—'}`,
+      `- Nível de precisão: ${b.precision ? b.precision + ' (' + PRECISION_LABEL[b.precision] + ')' : '—'}`,
+      '- Correspondências múltiplas: não',
+      '',
+      'RENDERIZACAO:',
+      // Falha no fluxo NÃO apaga o pino anterior: dizer só "não renderizado"
+      // enquanto o marcador continua no mapa seria um relatório mentiroso.
+      `- Mapa: ${render ? 'renderizado — vetorial nesta página, satélite no app'
+        : hasCoords ? 'não renderizado por este fluxo — o mapa segue exibindo a coordenada anterior ('
+          + (PRECISION_LABEL[b.precision] || 'precisão desconhecida') + ')'
+        : 'NÃO renderizado'}`,
+      `- Zoom: ${render ? zoomForPrecision(b.precision) : '—'}`,
+      `- Marcador: ${render ? 'posicionado em ' + fmtCoords(b.lat, b.lng) : '—'}`,
+      `- Popup: ${render ? fmtAddress(b) + ' + ' + PRECISION_LABEL[b.precision] : '—'}`,
+      `- Alternância satélite/mapa: ${render ? 'no app (tiles do Google); indisponível nesta página' : 'não'}`,
+      '',
+      'LOG:',
+      `- Timestamp: ${new Date().toISOString()}`,
+      `- Serviço utilizado: ${provider || 'não disponível'}`,
+      `- Status: ${status === 'ok' ? 'SUCESSO' : (STATUS_TAG[status] || '') + ' — ' + (message || '')}`
+    ];
+    if (status === 'service_unavailable')
+      lines.push('', 'REQUISITOS MINIMOS:', ...SERVICE_REQUIREMENTS.map(r => '- ' + r));
+    return lines.join('\n');
+  }
+
+  /** Salva o endereço e invalida a coordenada anterior, como o trigger do banco. */
+  function saveAddress(branchId, patch) {
+    const b = branchById(branchId);
+    if (!b) return 'Filial não encontrada.';
+    if (patch.cep && !normCep(patch.cep)) return 'CEP inválido — informe 8 dígitos (99999-999).';
+
+    const changed = ['street','number','district','cep','city','state']
+      .some(k => String(b[k] || '') !== String(patch[k] !== undefined ? patch[k] : b[k] || ''));
+
+    Object.assign(b, patch, { cep: patch.cep ? normCep(patch.cep) : '' });
+    b.address = fmtAddress(b) || null;
+
+    // Mudou o endereço e a coordenada ficou onde estava: ela não vale mais.
+    if (changed && b.lat !== null) { b.stale = true; b.geoStatus = 'pending'; }
+
+    const missing = missingFields(b);
+    b.geoReport = geoReport(b, missing.length ? 'missing_fields' : (b.geoStatus || 'pending'),
+      missing.length ? 'Complete o cadastro antes de geolocalizar: ' + missing.join(', ') + '.'
+                     : 'Endereço salvo; falta executar a geocodificação.', null);
+    if (missing.length) b.geoStatus = 'missing_fields';
+    save();
+    return null;
+  }
+
+  /**
+   * "Geolocalizar pelo endereço" nesta página.
+   *
+   * Barra em [CAMPO AUSENTE] quando falta campo — igual ao app — e, quando o
+   * cadastro está completo, termina em [SERVIÇO INDISPONÍVEL], porque não existe
+   * geocodificador aqui. Interpolar coordenada seria o pior desfecho possível:
+   * um pino convincente e errado.
+   */
+  function geocodeFromAddress(branchId) {
+    const b = branchById(branchId);
+    if (!b) return 'Filial não encontrada.';
+    const missing = missingFields(b);
+    if (missing.length) {
+      b.geoStatus = 'missing_fields';
+      b.geoReport = geoReport(b, 'missing_fields',
+        'Complete o cadastro antes de geolocalizar: ' + missing.join(', ') + '.', null);
+      save();
+      return STATUS_TAG.missing_fields + ' faltam: ' + missing.join(', ') + '.';
+    }
+    b.geoStatus = 'service_unavailable';
+    b.geoReport = geoReport(b, 'service_unavailable',
+      'Esta página é autocontida e não pode chamar API externa (CSP). No app, a Geocoding API ' +
+      'resolve o endereço e devolve o nível de precisão.', null);
+    save();
+    return STATUS_TAG.service_unavailable + ' sem geocodificador nesta página — veja os requisitos no relatório.';
   }
 
   /* ===================== Mapa vetorial (Módulo 11) ===================== */
@@ -2158,6 +2334,76 @@
       aria-pressed="${mapExport}">Exportar</button>
   </div>`;
 
+  /**
+   * Cartão de endereço + geolocalização de uma filial.
+   *
+   * A ordem é a do fluxo: endereço, geocodificação, mapa, relatório. Colocar o
+   * botão de geolocalizar antes do endereço convidaria a geocodificar cadastro
+   * incompleto — que é o que o fluxo existe para barrar.
+   */
+  function addressCard(b) {
+    const missing = missingFields(b);
+    const st = b.geoStatus || 'pending';
+    const hasCoords = b.lat !== null && b.lng !== null;
+    const f = (label, key, req, ph) => `<div class="field" style="min-width:0">
+      <label for="ad-${key}-${b.id}">${label}${req ? ' <span class="req">*</span>' : ''}</label>
+      <input type="text" id="ad-${key}-${b.id}" data-addr="${b.id}" data-field="${key}"
+        value="${esc(b[key] || '')}"${ph ? ` placeholder="${ph}"` : ''}></div>`;
+
+    return `<div class="card" style="padding:1rem;margin-bottom:.7rem">
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-start;justify-content:space-between">
+        <div>
+          <h3>${esc(b.name)}</h3>
+          <div class="dim">${esc(b.client)}</div>
+        </div>
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap">
+          ${pill(STATUS_LABEL[st] || st, STATUS_TONE[st] || 'neutral')}
+          ${b.stale ? pill('coordenada desatualizada', 'warn') : ''}
+          ${missing.length ? pill(STATUS_TAG.missing_fields, 'warn') : ''}
+        </div>
+      </div>
+
+      <div class="form-grid" style="margin-top:.7rem">
+        ${f('Logradouro', 'street', true)}
+        ${f('Número', 'number', true)}
+        ${f('Complemento', 'complement', false)}
+        ${f('Bairro', 'district', true)}
+        ${f('Cidade', 'city', false)}
+        ${f('UF', 'state', false)}
+        ${f('CEP', 'cep', true, '99999-999')}
+      </div>
+
+      <div class="row-actions" style="margin-top:.7rem;align-items:center">
+        <button type="button" class="btn btn-sm" data-addr-save="${b.id}">Salvar endereço</button>
+        <button type="button" class="btn btn-sm" data-variant="ghost" data-geocode="${b.id}"
+          ${missing.length ? 'disabled' : ''}>Geolocalizar pelo endereço</button>
+        <input type="text" data-geo-input="${b.id}" style="max-width:19rem"
+          placeholder="…ou cole a URL do Google Maps do ponto exato">
+        <button type="button" class="btn btn-sm" data-variant="ghost" data-geo-save="${b.id}">Definir</button>
+      </div>
+      ${missing.length ? `<div class="dim" style="margin-top:.4rem;color:var(--warn-ink)">
+        ${STATUS_TAG.missing_fields} faltam <strong>${missing.join(', ')}</strong> — o botão de
+        geolocalizar fica desabilitado até os quatro campos estarem preenchidos.
+      </div>` : ''}
+
+      <div style="margin-top:.6rem;display:flex;gap:.9rem;flex-wrap:wrap;font-size:.78rem;align-items:baseline">
+        <span class="mono">${hasCoords ? fmtCoords(b.lat, b.lng) : 'sem coordenada'}</span>
+        ${hasCoords ? `<span class="dim" style="color:${isPreciseEnough(b.precision) ? 'var(--ok-ink)' : 'var(--warn-ink)'}">
+          ${esc(PRECISION_LABEL[b.precision] || 'precisão desconhecida')} · zoom ${zoomForPrecision(b.precision)}</span>` : ''}
+        ${b.address ? `<span class="dim">${esc(b.address)}</span>` : ''}
+        ${hasCoords ? `<a href="${gmapsUrl(b.lat, b.lng, b.name)}" target="_blank" rel="noopener">Ver no satélite (Google Maps)</a>
+          <a href="${gdirUrl(b.lat, b.lng)}" target="_blank" rel="noopener">Rota</a>` : ''}
+      </div>
+
+      ${b.geoReport ? `<details style="margin-top:.6rem">
+        <summary style="cursor:pointer;font-size:.78rem;font-weight:600;color:var(--brand-ink)">
+          Ver saída técnica do último fluxo</summary>
+        <pre style="margin:.5rem 0 0;padding:.7rem;background:var(--surface-2);border-radius:9px;
+          font-size:.7rem;line-height:1.5;overflow-x:auto">${esc(b.geoReport)}</pre>
+      </details>` : ''}
+    </div>`;
+  }
+
   views.mapas = () => {
     const rows = mapFilteredRows();
     const geoRows = rows.filter(r => branchById(r.branchId).lat !== null);
@@ -2207,40 +2453,24 @@
       </aside>
     </div>
 
-    <details class="card" style="margin-top:1rem;padding:1rem" ${semGeo || impreciso ? 'open' : ''}>
-      <summary style="cursor:pointer;font-weight:650">Localização exata das filiais
-        ${semGeo || impreciso ? `<span class="pill" data-tone="warn" style="margin-left:.4rem">
-          <span class="dot"></span>${semGeo + impreciso} pendente(s)</span>` : ''}</summary>
-      <p class="dim" style="margin:.6rem 0">
-        Cole a URL do Google Maps para fixar a coordenada exata: no Maps, clique com o botão
-        direito no local — a primeira linha do menu já traz o par de coordenadas. No app real a
-        Geocoding API resolve o endereço e devolve o nível de precisão
-        (<span class="mono">ROOFTOP</span>, <span class="mono">APPROXIMATE</span>…).
-      </p>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Filial</th><th>Cidade</th><th>Coordenada</th><th>Precisão</th>
-          <th>Definir pela URL do Google Maps</th><th></th></tr></thead>
-        <tbody>${db.branches.map(b => `<tr>
-          <td class="strong">${esc(b.name)}</td>
-          <td class="muted">${esc([b.city, b.state].filter(Boolean).join(' / ')) || '—'}</td>
-          <td class="mono">${b.lat !== null ? fmtCoords(b.lat, b.lng) : '<span class="dim">sem coordenada</span>'}</td>
-          <td>${b.lat === null ? pill('não localizada', 'breach')
-                : isPreciseEnough(b.precision) ? pill(PRECISION_LABEL[b.precision], 'ok')
-                : pill(PRECISION_LABEL[b.precision] || 'desconhecida', 'warn')}</td>
-          <td><div style="display:flex;gap:.35rem;min-width:17rem">
-            <input type="text" data-geo-input="${b.id}" placeholder="https://www.google.com/maps/@-23.55,-46.63,17z">
-            <button type="button" class="btn btn-sm" data-geo-save="${b.id}">Definir</button>
-          </div></td>
-          <td>${b.lat !== null ? `<div style="display:flex;gap:.6rem;font-size:.74rem;white-space:nowrap">
-            <a href="${gmapsUrl(b.lat, b.lng, b.name)}" target="_blank" rel="noopener">Ver no Maps</a>
-            <a href="${gdirUrl(b.lat, b.lng)}" target="_blank" rel="noopener">Rota</a></div>` : ''}</td>
-        </tr>`).join('')}</tbody></table></div>
-      <div id="geo-msg"></div>
-      ${impreciso ? `<div class="alert" data-kind="warn" style="margin-top:.6rem">
-        Há filial com coordenada <strong>aproximada</strong> — o marcador cai no centro da cidade.
-        Serve para o painel, não para despachar técnico ao endereço.
-      </div>` : ''}
-    </details>
+    <h2 style="margin:1.6rem 0 .3rem">Endereço e geolocalização das filiais</h2>
+    <p class="dim" style="margin:0 0 .7rem">
+      O fluxo roda sobre o endereço <strong>cadastrado</strong>: logradouro, número, bairro e CEP
+      são obrigatórios. Alterar qualquer um deles invalida a coordenada anterior — manter o pino
+      antigo com endereço novo é o defeito silencioso deste módulo.
+    </p>
+    ${db.branches.map(b => addressCard(b)).join('')}
+    <div id="geo-msg"></div>
+
+    <div class="alert" data-kind="warn" style="margin-top:.9rem">
+      <strong>${STATUS_TAG.service_unavailable} camada de satélite e geocodificação nesta página.</strong>
+      O CSP do artefato bloqueia host externo, então aqui não há como carregar tile de satélite nem
+      chamar API de geocodificação — e inventar coordenada seria pior do que avisar. No app real as
+      duas coisas existem: <span class="mono">/mapas</span> abre em
+      <strong>satélite com rótulos</strong> (alternância satélite/mapa no controle do Google, zoom
+      16–18) e a Geocoding API resolve o endereço devolvendo o nível de precisão.
+      <div class="dim" style="margin-top:.4rem">Requisitos mínimos: ${SERVICE_REQUIREMENTS.map(esc).join(' · ')}</div>
+    </div>
 
     <div class="alert" data-kind="info" style="margin-top:.9rem">
       <strong>Este mapa é desenhado aqui, não é um link.</strong> A geometria das 27 UFs (IBGE,
@@ -3412,6 +3642,29 @@
       if (err) msg.innerHTML = `<div class="alert" data-kind="error">${esc(err)}</div>`;
       else { msg.innerHTML = ''; toast('Área excluída'); }
       renderAreaList(); return;
+    }
+
+    // Endereço estruturado: salvar é o gatilho do fluxo de geolocalização.
+    const asave = T.closest('[data-addr-save]');
+    if (asave) {
+      const id = asave.dataset.addrSave;
+      const patch = {};
+      document.querySelectorAll(`[data-addr="${id}"]`).forEach(inp => {
+        patch[inp.dataset.field] = inp.value.trim();
+      });
+      const err = saveAddress(id, patch);
+      const msg = document.getElementById('geo-msg');
+      if (err) { if (msg) msg.innerHTML = `<div class="alert" data-kind="error">${esc(err)}</div>`; return; }
+      render(); toast('Endereço salvo'); return;
+    }
+
+    // Geolocalizar pelo endereço cadastrado.
+    const gc = T.closest('[data-geocode]');
+    if (gc) {
+      const out = geocodeFromAddress(gc.dataset.geocode);
+      render();
+      if (out) toast(out);
+      return;
     }
 
     // Localização da filial pela URL do Google Maps

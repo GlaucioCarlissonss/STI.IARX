@@ -16,7 +16,14 @@ import { createClient } from '@/lib/supabase/client'
  * O debounce existe porque uma rajada de tickets (importação, integração)
  * dispararia dezenas de refreshes por segundo.
  */
-export function RealtimeRefresh({ debounceMs = 1500 }: { debounceMs?: number }) {
+export function RealtimeRefresh({
+  debounceMs = 1500,
+  table = 'tickets',
+}: {
+  debounceMs?: number
+  /** Tabela observada. `/mapas` observa `branches`: mudou o endereço, o mapa muda. */
+  table?: 'tickets' | 'branches'
+}) {
   const router = useRouter()
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -24,8 +31,8 @@ export function RealtimeRefresh({ debounceMs = 1500 }: { debounceMs?: number }) 
     const supabase = createClient()
 
     const channel = supabase
-      .channel('tickets-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
+      .channel(`${table}-changes`)
+      .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
         if (timer.current) clearTimeout(timer.current)
         timer.current = setTimeout(() => router.refresh(), debounceMs)
       })
@@ -35,7 +42,7 @@ export function RealtimeRefresh({ debounceMs = 1500 }: { debounceMs?: number }) 
       if (timer.current) clearTimeout(timer.current)
       supabase.removeChannel(channel)
     }
-  }, [router, debounceMs])
+  }, [router, debounceMs, table])
 
   return null
 }

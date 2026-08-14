@@ -3,11 +3,12 @@ import Link from 'next/link'
 import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireSession } from '@/lib/session'
-import { PRECISION_LABEL, googleMapsUrl, isPreciseEnough, type GeocodePrecision } from '@/lib/maps'
-import { Badge, Card, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { isPreciseEnough, type GeocodePrecision } from '@/lib/maps'
+import { Badge, PageHeader, StatTile } from '@/components/ui'
 import { type MapPoint } from '@/components/google-map'
-import { BranchLocationForm } from './branch-location-form'
 import { MapWorkspace } from './map-workspace'
+import { BranchGeoPanel, type BranchAddress } from './branch-geo-panel'
+import { RealtimeRefresh } from '@/components/realtime-refresh'
 
 export const metadata: Metadata = { title: 'Mapas' }
 
@@ -33,6 +34,47 @@ interface MapRow {
   [key: string]: unknown
 }
 
+interface AddressViewRow {
+  branch_id: string
+  branch_name: string
+  client_name: string | null
+  street: string | null
+  street_number: string | null
+  address_complement: string | null
+  district: string | null
+  city: string | null
+  state: string | null
+  postal_code: string | null
+  address_formatted: string | null
+  address_complete: boolean
+  latitude: number | null
+  longitude: number | null
+  geocode_precision: GeocodePrecision | null
+  geocoded_address: string | null
+  geocode_status: string
+  geocode_stale: boolean
+  geocode_verified_at: string | null
+  geocode_provider: string | null
+  last_message: string | null
+  last_attempt_at: string | null
+}
+
+interface CandidateRow {
+  id: string
+  branch_id: string
+  ordinal: number
+  latitude: number
+  longitude: number
+  formatted_address: string
+  precision: GeocodePrecision
+}
+
+interface LogRow {
+  branch_id: string
+  report_text: string | null
+  created_at: string
+}
+
 interface AreaRow {
   branch_id: string
   area_name: string
@@ -52,13 +94,28 @@ export default async function MapasPage({
   const domain = DOMAINS.find((d) => d.key === dominio) ?? DOMAINS[0]
   const supabase = await createClient()
 
-  const [{ data: rows }, { data: areas }] = await Promise.all([
-    supabase.from(domain.view).select('*').returns<MapRow[]>(),
-    supabase
-      .from('vw_map_area_breakdown')
-      .select('branch_id, area_name, assets_total, lines_active, links_active')
-      .returns<AreaRow[]>(),
-  ])
+  const [{ data: rows }, { data: areas }, { data: addresses }, { data: candidates }, { data: logs }] =
+    await Promise.all([
+      supabase.from(domain.view).select('*').returns<MapRow[]>(),
+      supabase
+        .from('vw_map_area_breakdown')
+        .select('branch_id, area_name, assets_total, lines_active, links_active')
+        .returns<AreaRow[]>(),
+      supabase.from('vw_branch_addresses').select('*').order('branch_name').returns<AddressViewRow[]>(),
+      supabase
+        .from('geocode_candidates')
+        .select('id, branch_id, ordinal, latitude, longitude, formatted_address, precision')
+        .order('ordinal')
+        .returns<CandidateRow[]>(),
+      // Último bloco técnico por filial. `report_text` é o texto que o operador
+      // leu na hora — não é recalculado, para o registro não mudar com o código.
+      supabase
+        .from('geocode_logs')
+        .select('branch_id, report_text, created_at')
+        .order('created_at', { ascending: false })
+        .limit(200)
+        .returns<LogRow[]>(),
+    ])
 
   const all = rows ?? []
   const areaByBranch = new Map<string, AreaRow[]>()
@@ -99,8 +156,61 @@ export default async function MapasPage({
   const total = points.reduce((s, p) => s + p.count, 0)
   const critical = points.filter((p) => p.state_color === 'red').length
 
+  /* --- Endereço e estado da geolocalização, por filial --- */
+  const candidatesByBranch = new Map<string, CandidateRow[]>()
+  for (const c of candidates ?? [])
+    candidatesByBranch.set(c.branch_id, [...(candidatesByBranch.get(c.branch_id) ?? []), c])
+
+  // A lista vem ordenada por data desc: o primeiro de cada filial é o mais recente.
+  const lastReport = new Map<string, string | null>()
+  for (const l of logs ?? []) if (!lastReport.has(l.branch_id)) lastReport.set(l.branch_id, l.report_text)
+
+  const addressRows: BranchAddress[] = (addresses ?? []).map((r) => ({
+    branchId: r.branch_id,
+    branchName: r.branch_name,
+    clientName: r.client_name ?? '—',
+    street: r.street,
+    streetNumber: r.street_number,
+    complement: r.address_complement,
+    district: r.district,
+    city: r.city,
+    state: r.state,
+    postalCode: r.postal_code,
+    addressFormatted: r.address_formatted,
+    addressComplete: r.address_complete,
+    lat: r.latitude === null ? null : Number(r.latitude),
+    lng: r.longitude === null ? null : Number(r.longitude),
+    precision: r.geocode_precision,
+    geocodedAddress: r.geocoded_address,
+    status: r.geocode_status as BranchAddress['status'],
+    stale: r.geocode_stale,
+    verifiedAt: r.geocode_verified_at,
+    provider: r.geocode_provider,
+    lastMessage: r.last_message,
+    lastAttemptAt: r.last_attempt_at,
+    reportText: lastReport.get(r.branch_id) ?? null,
+    candidates: (candidatesByBranch.get(r.branch_id) ?? []).map((c) => ({
+      id: c.id,
+      ordinal: c.ordinal,
+      lat: Number(c.latitude),
+      lng: Number(c.longitude),
+      formattedAddress: c.formatted_address,
+      precision: c.precision,
+    })),
+  }))
+
+  const pendencias = {
+    missing: addressRows.filter((b) => !b.addressComplete).length,
+    stale: addressRows.filter((b) => b.stale).length,
+    candidates: addressRows.filter((b) => b.candidates.length > 0).length,
+  }
+
   return (
     <>
+      {/* Regra de tempo real: alteração de endereço ou coordenada em qualquer
+          sessão redesenha esta tela, sem recarregar na mão. */}
+      <RealtimeRefresh table="branches" debounceMs={800} />
+
       <PageHeader
         title="Mapa da operação"
         description="Google Maps com marcador dimensionado pela quantidade e colorido por criticidade. Busque pela filial, clique na lista para centralizar e no marcador para ver a quebra por área."
@@ -173,68 +283,39 @@ export default async function MapasPage({
         </span>
       </div>
 
-      {/* Filial sem coordenada não pode simplesmente desaparecer do mapa: quem
-          olha acreditaria que a operação inteira está representada. */}
-      {missing.length > 0 && (
-        <section className="mt-6">
-          <Card title={`${missing.length} filial(is) sem localização`}>
-            <p className="mb-3 text-sm text-[var(--color-ink-2)]">
-              Não aparecem no mapa. Informe a coordenada colando a URL do Google Maps, ou
-              geocodifique pelo endereço cadastrado.
+      {/* Endereço é a origem de tudo: sem os quatro campos, não há geolocalização.
+          A seção fica na mesma tela do mapa porque é aqui que o operador percebe
+          o pino errado — mandá-lo para outro menu perderia a correção. */}
+      <section className="mt-8">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold">Endereço e geolocalização das filiais</h2>
+            <p className="text-sm text-[var(--color-ink-2)]">
+              O fluxo roda sobre o endereço cadastrado: logradouro, número, bairro e CEP. Cada
+              filial mostra o estado do último fluxo, o mapa em satélite e a saída técnica
+              registrada em log.
             </p>
-            <div className="flex flex-col gap-3">
-              {missing.map((r) => (
-                <BranchLocationForm
-                  key={r.branch_id}
-                  branchId={r.branch_id}
-                  branchName={r.branch_name}
-                  city={r.city}
-                  state={r.state}
-                />
-              ))}
-            </div>
-          </Card>
-        </section>
-      )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {pendencias.missing > 0 && (
+              <Badge tone="warn">{pendencias.missing} com endereço incompleto</Badge>
+            )}
+            {pendencias.stale > 0 && (
+              <Badge tone="warn">{pendencias.stale} com coordenada desatualizada</Badge>
+            )}
+            {pendencias.candidates > 0 && (
+              <Badge tone="warn">{pendencias.candidates} aguardando confirmação</Badge>
+            )}
+          </div>
+        </div>
 
-      {imprecise.length > 0 && (
-        <section className="mt-6">
-          <Card title={`${imprecise.length} filial(is) com coordenada imprecisa`}>
-            <p className="mb-3 text-sm text-[var(--color-ink-2)]">
-              O Google devolveu um ponto aproximado — normalmente o centro da cidade. Serve para o
-              painel, não para despachar técnico ao endereço.
-            </p>
-            <Table head={['Filial', 'Cidade', 'Precisão', 'Coordenada', '']}>
-              {imprecise.map((r) => (
-                <tr key={r.branch_id}>
-                  <Td className="font-medium">{r.branch_name}</Td>
-                  <Td className="text-[var(--color-ink-2)]">
-                    {[r.city, r.state].filter(Boolean).join(' / ') || '—'}
-                  </Td>
-                  <Td>
-                    <Badge tone="warn">
-                      {r.geocode_precision ? PRECISION_LABEL[r.geocode_precision] : 'desconhecida'}
-                    </Badge>
-                  </Td>
-                  <Td className="font-mono text-xs">
-                    {Number(r.latitude).toFixed(6)}, {Number(r.longitude).toFixed(6)}
-                  </Td>
-                  <Td>
-                    <a
-                      href={googleMapsUrl(Number(r.latitude), Number(r.longitude), r.branch_name)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-semibold text-[var(--color-brand)] hover:underline"
-                    >
-                      Conferir no Maps
-                    </a>
-                  </Td>
-                </tr>
-              ))}
-            </Table>
-          </Card>
-        </section>
-      )}
+        <div className="flex flex-col gap-3">
+          {addressRows.map((b) => (
+            <BranchGeoPanel key={b.branchId} branch={b} />
+          ))}
+        </div>
+      </section>
+
     </>
   )
 }

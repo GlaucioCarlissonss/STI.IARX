@@ -969,5 +969,182 @@ end
 $$;
 reset role;
 
+-- =============================================================================
+\echo '=== 21. Endereço estruturado e geolocalização (0015) ==='
+-- =============================================================================
+reset role;
+do $$
+declare
+  v_sp uuid := '11110000-0000-4000-8000-000000000001';
+  v_mao uuid := '11110000-0000-4000-8000-000000000003';
+  v_vtx uuid := '11110000-0000-4000-8000-000000000004';
+  v_ok boolean;
+  v_lat numeric;
+begin
+  -- Completude é regra do banco, não do formulário.
+  perform app.assert(
+    (select address_complete from public.branches where id = v_sp),
+    'filial com os quatro campos é marcada como endereço completo');
+  perform app.assert(
+    not (select address_complete from public.branches where id = v_mao),
+    'filial sem número NÃO é endereço completo');
+  perform app.assert(
+    not (select address_complete from public.branches where id = v_vtx),
+    'filial sem endereço nenhum NÃO é endereço completo');
+
+  -- CEP fora de formato não entra.
+  begin
+    update public.branches set postal_code = '1310200' where id = v_sp;
+    perform app.assert(false, 'CEP sem máscara deveria ser rejeitado pelo CHECK');
+  exception when check_violation then
+    perform app.assert(true, 'CEP fora do formato 99999-999 é rejeitado');
+  end;
+
+  -- Endereço formatado sai na ordem dos Correios.
+  perform app.assert(
+    public.fn_format_address('Avenida Paulista','1578',null,'Bela Vista','São Paulo','sp','01310-200')
+      = 'Avenida Paulista, 1578, Bela Vista, São Paulo/SP, 01310-200',
+    'fn_format_address monta o endereço em uma linha');
+  perform app.assert(
+    public.fn_format_address('Avenida Paulista','1578','Sala 402','Bela Vista','São Paulo','SP','01310-200')
+      like '%1578 - Sala 402%',
+    'complemento entra depois do número');
+  perform app.assert(
+    public.fn_format_address(null,null,null,null,null,null,null) is null,
+    'endereço vazio devolve null, não string de vírgulas');
+
+  -- Mudar o endereço invalida a coordenada anterior.
+  update public.branches set street = 'Avenida Brigadeiro Faria Lima' where id = v_sp;
+  select geocode_stale into v_ok from public.branches where id = v_sp;
+  perform app.assert(v_ok, 'alterar logradouro marca a coordenada como desatualizada');
+  perform app.assert(
+    (select geocode_status from public.branches where id = v_sp) = 'pending',
+    'alterar endereço devolve o status para pending');
+
+  -- Gravar coordenada nova limpa a pendência e registra a verificação.
+  update public.branches
+     set latitude = -23.5670, longitude = -46.6930, geocode_precision = 'rooftop',
+         geocode_status = 'ok'
+   where id = v_sp;
+  select geocode_stale into v_ok from public.branches where id = v_sp;
+  perform app.assert(not v_ok, 'gravar coordenada nova limpa o sinal de desatualizada');
+  perform app.assert(
+    (select geocode_verified_at from public.branches where id = v_sp) is not null,
+    'gravar coordenada registra o instante da verificação');
+
+  -- Endereço e coordenada no MESMO update não podem marcar desatualizado: é o
+  -- que o geocodificador faz, e um falso positivo aqui deixaria toda filial
+  -- geocodificada aparecendo como pendente.
+  update public.branches
+     set street = 'Avenida Paulista', street_number = '1578',
+         latitude = -23.5613, longitude = -46.6565
+   where id = v_sp;
+  select geocode_stale into v_ok from public.branches where id = v_sp;
+  perform app.assert(not v_ok,
+    'endereço e coordenada gravados juntos não marcam desatualizado');
+
+  -- Log é append-only e guarda o rastro completo.
+  insert into public.geocode_logs (tenant_id, branch_id, input_address, status, provider,
+                                   latitude, longitude, formatted_address, precision, message)
+  values ('a0000000-0000-4000-8000-000000000001', v_sp,
+          '{"street":"Avenida Paulista","streetNumber":"1578"}'::jsonb,
+          'ok', 'google-geocoding', -23.5613, -46.6565,
+          'Av. Paulista, 1578 - Bela Vista, São Paulo - SP', 'rooftop', null);
+  perform app.assert((select count(*) from public.geocode_logs where branch_id = v_sp) = 1,
+    'log de geocodificação é gravado');
+
+  begin
+    insert into public.geocode_logs (tenant_id, branch_id, input_address, status)
+    values ('a0000000-0000-4000-8000-000000000001', v_sp, '{}'::jsonb, 'inventado');
+    perform app.assert(false, 'status inválido no log deveria ser rejeitado');
+  exception when check_violation then
+    perform app.assert(true, 'log aceita apenas os códigos de status do fluxo');
+  end;
+
+  -- Candidatos de múltiplas correspondências: dois por filial, ordinais únicos.
+  insert into public.geocode_candidates (tenant_id, branch_id, ordinal, latitude, longitude,
+                                         formatted_address, precision)
+  values ('a0000000-0000-4000-8000-000000000001', v_sp, 1, -23.561, -46.656, 'Torre A', 'rooftop'),
+         ('a0000000-0000-4000-8000-000000000001', v_sp, 2, -23.562, -46.657, 'Torre B', 'rooftop');
+  perform app.assert((select count(*) from public.geocode_candidates where branch_id = v_sp) = 2,
+    'candidatos ficam registrados até a confirmação do operador');
+
+  begin
+    insert into public.geocode_candidates (tenant_id, branch_id, ordinal, latitude, longitude,
+                                           formatted_address, precision)
+    values ('a0000000-0000-4000-8000-000000000001', v_sp, 1, -23.563, -46.658, 'Torre C', 'rooftop');
+    perform app.assert(false, 'ordinal repetido deveria violar a unicidade');
+  exception when unique_violation then
+    perform app.assert(true, 'ordinal de candidato é único por filial');
+  end;
+
+  begin
+    insert into public.geocode_candidates (tenant_id, branch_id, ordinal, latitude, longitude,
+                                           formatted_address, precision)
+    values ('a0000000-0000-4000-8000-000000000001', v_sp, 9, -100, -46.658, 'Fora do planeta', 'rooftop');
+    perform app.assert(false, 'latitude fora de faixa deveria ser rejeitada');
+  exception when check_violation then
+    perform app.assert(true, 'latitude de candidato é validada');
+  end;
+
+  -- A view de endereços expõe o que a tela de cadastro precisa.
+  perform app.assert(
+    (select pending_candidates from public.vw_branch_addresses where branch_id = v_sp) = 2,
+    'vw_branch_addresses conta os candidatos pendentes');
+  perform app.assert(
+    (select address_formatted from public.vw_branch_addresses where branch_id = v_sp) like 'Avenida Paulista, 1578%',
+    'vw_branch_addresses traz o endereço formatado');
+  select latitude into v_lat from public.vw_branch_addresses where branch_id = v_sp;
+  perform app.assert(v_lat is not null, 'vw_branch_addresses traz a coordenada atual');
+end
+$$;
+
+-- FK composta: candidato de um tenant não pode apontar filial de outro.
+do $$
+begin
+  begin
+    insert into public.geocode_candidates (tenant_id, branch_id, ordinal, latitude, longitude,
+                                           formatted_address, precision)
+    -- Ordinal livre de propósito: com ordinal repetido a unicidade dispara
+    -- ANTES da FK e o teste passaria pelo motivo errado.
+    values ('a0000000-0000-4000-8000-000000000002', '11110000-0000-4000-8000-000000000001',
+            7, -23.5, -46.6, 'Vazamento', 'rooftop');
+    perform app.assert(false, 'candidato cross-tenant deveria ser rejeitado pelo banco');
+  exception when foreign_key_violation then
+    perform app.assert(true, 'FK composta impede candidato apontando filial de outro tenant');
+  end;
+end
+$$;
+
+-- Isolamento e append-only sob RLS, com papel sem BYPASSRLS.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000099","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.geocode_logs) = 0,
+    'tenant 2 não vê log de geocodificação do tenant 1');
+  perform app.assert((select count(*) from public.geocode_candidates) = 0,
+    'tenant 2 não vê candidatos do tenant 1');
+  perform app.assert((select count(*) from public.vw_branch_addresses) = 0,
+    'vw_branch_addresses respeita RLS via security_invoker');
+end
+$$;
+
+-- Gestor do tenant 1 enxerga o log, mas não consegue apagá-lo.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.geocode_logs) >= 1,
+    'gestor do tenant 1 vê o log de geocodificação');
+  begin
+    delete from public.geocode_logs;
+    perform app.assert(false, 'log de geocodificação não deveria aceitar DELETE');
+  exception when insufficient_privilege then
+    perform app.assert(true, 'log de geocodificação é append-only para authenticated');
+  end;
+end
+$$;
+reset role;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-44 tabelas e 14 views em `public`, com 114 policies de RLS. Nomenclatura conforme
+46 tabelas e 15 views em `public`, com 118 policies de RLS. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
 ## 1. Visão geral
@@ -197,7 +197,7 @@ entre tenants.
 
 `supabase/tests/schema_test.sql` roda contra um banco semeado, com um papel
 **sem `BYPASSRLS`** — como superusuário, todo teste de isolamento passaria
-trivialmente e não provaria nada. São 114 asserções cobrindo cobertura de RLS,
+trivialmente e não provaria nada. São 127 asserções cobrindo cobertura de RLS,
 isolamento entre tenants, visibilidade por filial, comentário interno oculto do
 solicitante, escalonamento de privilégio, máquina de estados, fila padrão,
 precedência de SLA, pausa/retomada, idempotência, numeração, views, tokens de TV

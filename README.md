@@ -32,6 +32,7 @@ Supabase — PostgreSQL, Auth, Realtime, Storage, Edge Functions
 | **Telefonia** | Cadastro de linhas, vínculo com aparelho, relatório de custos por filial e operadora |
 | **Fornecedores** | Cadastro, serviços, avaliação, contratos com SLA contratado |
 | **Clientes e filiais** | Grupos econômicos com N filiais, fuso e calendário próprios |
+| **Geolocalização** | Endereço estruturado obrigatório, geocodificação com nível de precisão, tratamento das 6 exceções, mapa em satélite e log append-only de cada tentativa |
 | **Usuários** | 6 papéis, visibilidade por filial (1 ou N), proteção contra auto-escalonamento |
 | **Integration Hub** | Handler Bitrix24 e handler genérico, idempotência, retry com backoff, supressão de eco, logs e mapeamento editável |
 | **Auditoria** | Trigger em 18 tabelas + histórico dedicado de tickets |
@@ -97,9 +98,13 @@ cada chave: a do navegador por *referrer HTTP* (seu domínio), a de servidor por
 > Geocoding **nunca** vai para o cliente: uma chave de servidor irrestrita no bundle é o
 > erro clássico dessa integração.
 
-`/mapas` traz o mapa com tiles do Google, busca por filial, lista lateral de localizações e
-popup com a quebra por área. Sem as chaves o app não quebra: degrada para a lista de filiais
-com coordenada e link para o ponto exato no Google Maps.
+`/mapas` traz o mapa com tiles do Google — **satélite com rótulos por padrão**, alternância
+satélite/mapa e zoom 16–18 ao focar uma filial —, busca por filial, lista lateral de localizações
+e popup com a quebra por área. Na mesma tela fica o **endereço estruturado** de cada filial
+(logradouro, número, bairro e CEP são obrigatórios), o botão de geolocalizar pelo cadastro, a
+confirmação de candidatos quando o CEP tem mais de um endereço, e a saída técnica do último
+fluxo. Sem as chaves o app não quebra: degrada para a lista de filiais com coordenada e link
+para o ponto exato no Google Maps.
 
 > A ferramenta navegável em [`demo/`](demo/) não pode carregar tiles (o CSP da página
 > publicada bloqueia host externo), então lá o mapa é **vetorial embutido** — as 27 UFs do
@@ -129,8 +134,8 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 40 testes: motor de mapeamento e coordenadas
-npm run db:validate   # migrações + seed + 114 asserções em PostgreSQL real
+npm test              # 75 testes: mapeamento, coordenadas e fluxo de geolocalização
+npm run db:validate   # migrações + seed + 127 asserções em PostgreSQL real
 ```
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
@@ -155,12 +160,14 @@ src/
   lib/
     supabase/         # clientes server / browser / admin
     integrations/     # motor de mapeamento (sem dependências) + testes
+    address.ts        # endereço estruturado, validações e relatório técnico
+    geocode.server.ts # Geocoding API e consulta de CEP (somente servidor)
     session.ts        # contexto e papéis
     i18n.ts           # dicionário pt-BR
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 14 migrações
+  migrations/         # 15 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -191,7 +198,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado nesta entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 40 testes unitários e 114 asserções de banco passando — incluindo
+apontamentos, 75 testes unitários e 127 asserções de banco passando — incluindo
 a aritmética de horário útil conferida contra 8 cenários (almoço, fim de semana,
 feriado, fora de expediente).
 
@@ -231,6 +238,6 @@ aceitável. A resolução depende de uma atualização do Next.
 | [01 — Requisitos](docs/01-requisitos.md) | Requisitos rastreáveis, matriz de permissões, lacunas e decisões por padrão |
 | [02 — Benchmarking](docs/02-benchmarking.md) | Freshservice, Jira SM, Zendesk, GLPI, ManageEngine — padrões adotados e 10 antipatterns evitados |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Visão geral e 12 ADRs com alternativas rejeitadas |
-| [04 — Modelo de dados](docs/04-modelo-dados.md) | 44 tabelas, funções, triggers, views e estratégia de índices |
+| [04 — Modelo de dados](docs/04-modelo-dados.md) | 46 tabelas, funções, triggers, views e estratégia de índices |
 | [05 — Bitrix24](docs/05-integracao-bitrix24.md) | Estudo da API, mapeamento, configuração passo a passo e limitações |
 | [06 — Lacunas e Roadmap](docs/06-lacunas-e-roadmap.md) | Especificação dos 11 módulos pendentes, cronograma em lotes e 14 lacunas globais |

@@ -32,7 +32,7 @@ outro nome, a divergência está registrada explicitamente em vez de duplicada.
 ## O que já está implementado desta especificação
 
 A migração `0013_areas_anexos_links.sql` entrega **a camada de dados** do que é
-inequívoco, validada contra PostgreSQL real (114 asserções). O que falta em cada módulo é
+inequívoco, validada contra PostgreSQL real (127 asserções). O que falta em cada módulo é
 a **interface** — e, nos casos marcados, a decisão do operador.
 
 | Módulo | Banco | Interface |
@@ -1502,3 +1502,61 @@ O escopo usa `assigned_to`; a base tem `assigned_user_id`. **Recomendo manter o 
 atual** — a renomeação atinge FK composta, três índices, policies de RLS, views e Server
 Actions, sem ganho funcional. Confirmar que o nome do escopo era descritivo, não
 normativo.
+
+---
+
+## Módulo 12 — Geolocalização a partir do endereço cadastrado
+
+**Status:** implementado (banco, fluxo, interface e testes).
+
+**Descrição.** O mapa deixa de depender de coordenada digitada e passa a derivar
+do endereço do cadastro. Os quatro campos exigidos são **logradouro, número,
+bairro e CEP**; sem eles o fluxo não avança e não desenha mapa.
+
+**Modelagem de dados.** `branches` ganhou `street`, `street_number`,
+`address_complement`, `address_complete` (coluna gerada), `geocode_status`,
+`geocode_stale`, `geocode_verified_at`, `geocode_provider`, e um CHECK que só
+aceita CEP no formato `99999-999`. `geocode_logs` é o rastro append-only de cada
+tentativa (endereço submetido, status, provedor, coordenada, precisão,
+candidatos, mensagem e o bloco técnico exibido). `geocode_candidates` guarda as
+correspondências múltiplas até alguém confirmar. `fn_format_address` monta o
+endereço em uma linha para as views e para a interface.
+
+**Regras de negócio.**
+
+1. Campos obrigatórios ausentes → `[CAMPO AUSENTE]`, sem chamar o provedor.
+2. CEP divergente de cidade/UF/logradouro/bairro → `[INCONSISTÊNCIA DE ENDEREÇO]`,
+   sem chamar o provedor. A comparação normaliza acento, caixa e abreviação de
+   tipo de logradouro — senão todo cadastro com "Av." seria acusado.
+3. Nenhum resultado → `[ENDEREÇO NÃO ENCONTRADO]`; o mapa não é desenhado.
+4. Empate na maior precisão → `[MÚLTIPLAS CORRESPONDÊNCIAS]`; a escolha é do
+   operador. Quando um resultado é mais preciso que os outros, ele vence e a
+   escolha fica registrada.
+5. Precisão abaixo de *rooftop* → `[BAIXA PRECISÃO]`: renderiza com aviso.
+6. Chave ausente, cota estourada ou provedor fora do ar →
+   `[SERVIÇO INDISPONÍVEL]`, com os requisitos mínimos listados. Nunca vira
+   "endereço não encontrado", que faria o operador corrigir cadastro correto.
+7. **Nenhuma coordenada é interpolada.** Falha não apaga a coordenada anterior:
+   ela continua no mapa, marcada como desatualizada.
+8. Alterar qualquer campo de endereço sem gravar coordenada nova marca
+   `geocode_stale` — o pino antigo não passa por atual.
+
+**Fluxo de usuário.** `/mapas` → cartão da filial → preencher endereço → salvar →
+*Geolocalizar pelo endereço* → confirmar candidato, se houver → mapa em satélite
+com marcador e popup → *Ver saída técnica* para o bloco registrado no log.
+
+**Renderização.** Camada `hybrid` (satélite com rótulos) por padrão, alternância
+satélite/mapa no controle do Google, zoom por precisão dentro da faixa 16–18
+(rooftop/manual 18, interpolado 17, demais 16).
+
+**Tempo real.** `RealtimeRefresh` observa `public.branches`: alteração de
+endereço ou coordenada em qualquer sessão redesenha a tela. As consultas do
+provedor usam `cache: 'no-store'`.
+
+**Critérios de aceite.** Cobertos por 35 testes unitários (`src/lib/address.test.ts`)
+e pelas asserções da seção 21 de `supabase/tests/schema_test.sql`.
+
+**Lacunas.** A consulta de CEP usa o ViaCEP por padrão (`CEP_LOOKUP_URL`); em
+produção convém contratar base com SLA. A confirmação de candidato não registra
+quem confirmou além do log da tentativa. Geocodificação em lote para carga
+inicial ainda não existe.

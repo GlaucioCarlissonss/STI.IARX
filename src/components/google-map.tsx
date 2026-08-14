@@ -52,6 +52,7 @@ interface GMap {
   panTo(p: LatLng): void
   setZoom(z: number): void
   getZoom(): number | undefined
+  setMapTypeId(id: string): void
   addListener(ev: string, cb: () => void): void
 }
 interface GoogleApi {
@@ -70,6 +71,15 @@ const MARKER_FILL: Record<MapPoint['state_color'], string> = {
   amber: '#a16207',
   red: '#b91c1c',
 }
+
+/**
+ * Teto do enquadramento automático.
+ *
+ * Uma filial só no `fitBounds` levaria o zoom ao máximo, e a vista perde
+ * referência. 18 é o limite superior da faixa exigida para identificar o imóvel
+ * (16–18) e é o suficiente para ver o telhado na camada de satélite.
+ */
+const MAX_AUTO_ZOOM = 18
 
 let loaderPromise: Promise<void> | null = null
 
@@ -164,11 +174,20 @@ export function GoogleBranchMap({
   points,
   height = 560,
   focus = null,
+  /**
+   * Camada inicial. `hybrid` é satélite COM rótulos de rua — satélite puro é
+   * bonito e inútil para conferir endereço, porque não mostra o nome da via.
+   */
+  mapTypeId = 'hybrid',
+  /** Zoom aplicado ao focar uma filial (faixa 16–18). */
+  focusZoom = 17,
 }: {
   points: MapPoint[]
   height?: number
   /** Filial a centralizar. `nonce` permite repetir o foco na mesma filial. */
   focus?: { branchId: string; nonce: number } | null
+  mapTypeId?: 'hybrid' | 'satellite' | 'roadmap' | 'terrain'
+  focusZoom?: number
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const mapRef = useRef<GMap | null>(null)
@@ -189,8 +208,11 @@ export function GoogleBranchMap({
         if (cancelled || !ref.current) return
         const google = (window as unknown as { google: GoogleApi }).google
         const map = new google.maps.Map(ref.current, {
-          mapTypeControl: false,
-          streetViewControl: false,
+          // Alternância satélite/mapa exposta ao operador: conferir se o pino
+          // caiu no imóvel certo exige a imagem; ler o nome da rua exige o mapa.
+          mapTypeControl: true,
+          mapTypeId,
+          streetViewControl: true,
           zoomControl: true,
           gestureHandling: 'greedy',
           center: { lat: -14.6, lng: -52.5 },
@@ -200,7 +222,7 @@ export function GoogleBranchMap({
         // referência geográfica; limitamos o zoom depois do ajuste.
         map.addListener('idle', () => {
           const z = map.getZoom()
-          if (typeof z === 'number' && z > 15) map.setZoom(15)
+          if (typeof z === 'number' && z > MAX_AUTO_ZOOM) map.setZoom(MAX_AUTO_ZOOM)
         })
         mapRef.current = map
         infoRef.current = new google.maps.InfoWindow({ maxWidth: 300 })
@@ -214,7 +236,7 @@ export function GoogleBranchMap({
     return () => {
       cancelled = true
     }
-  }, [apiKey])
+  }, [apiKey, mapTypeId])
 
   /* Marcadores acompanham a filtragem; o mapa em si permanece. */
   useEffect(() => {
@@ -253,10 +275,10 @@ export function GoogleBranchMap({
     const marker = markersRef.current.get(focus.branchId)
     if (!point || !marker) return
     map.panTo({ lat: point.lat, lng: point.lng })
-    map.setZoom(13)
+    map.setZoom(focusZoom)
     infoRef.current?.setContent(popupHtml(point))
     infoRef.current?.open({ map, anchor: marker })
-  }, [ready, focus, points])
+  }, [ready, focus, points, focusZoom])
 
   /* Degradação explícita: sem chave, o mapa não some — vira lista com link
      para o ponto exato no Google Maps, que é o essencial da tarefa. */

@@ -364,18 +364,49 @@ select app.fn_seed_branch_areas(b.id)
 from public.branches b
 where b.tenant_id = 'a0000000-0000-4000-8000-000000000001';
 
--- Coordenadas das filiais, para o mapa ter o que plotar.
+-- -----------------------------------------------------------------------------
+-- Endereço estruturado (migração 0015)
+--
+-- Logradouros e CEPs reais e públicos, escolhidos para exercitar o fluxo de
+-- geocodificação de ponta a ponta. Cada filial cobre um caso diferente:
+--   1. endereço completo                → caminho feliz
+--   2. endereço completo em outra praça  → segunda coordenada no mapa
+--   3. sem número                        → [CAMPO AUSENTE]
+--   4. sem endereço nenhum               → filial fora do mapa, com aviso
+-- -----------------------------------------------------------------------------
+update public.branches
+   set street = 'Avenida Paulista', street_number = '1578', district = 'Bela Vista',
+       postal_code = '01310-200'
+ where id = '11110000-0000-4000-8000-000000000001';
+update public.branches
+   set street = 'Avenida Francisco Glicério', street_number = '935', district = 'Centro',
+       postal_code = '13012-100'
+ where id = '11110000-0000-4000-8000-000000000002';
+-- Sem número: o fluxo tem de barrar antes de gastar cota da Geocoding API.
+update public.branches
+   set street = 'Avenida Djalma Batista', district = 'Chapada', postal_code = '69050-010'
+ where id = '11110000-0000-4000-8000-000000000003';
+
+-- Coordenadas das filiais, para o mapa ter o que plotar antes do primeiro
+-- geocode. Precisão declarada como `manual` — é o que elas são.
 update public.branches set latitude = -23.550520, longitude = -46.633308,
-       geocoded_at = now(), geocode_source = 'manual'
+       geocoded_at = now(), geocode_source = 'manual',
+       geocode_precision = 'manual', geocode_status = 'ok',
+       geocode_verified_at = now(), geocode_provider = 'seed'
  where id = '11110000-0000-4000-8000-000000000001';
 update public.branches set latitude = -22.909938, longitude = -47.062633,
-       geocoded_at = now(), geocode_source = 'manual'
+       geocoded_at = now(), geocode_source = 'manual',
+       geocode_precision = 'manual', geocode_status = 'ok',
+       geocode_verified_at = now(), geocode_provider = 'seed'
  where id = '11110000-0000-4000-8000-000000000002';
 update public.branches set latitude = -3.119028, longitude = -60.021731,
-       geocoded_at = now(), geocode_source = 'manual'
+       geocoded_at = now(), geocode_source = 'manual',
+       geocode_precision = 'approximate', geocode_status = 'low_precision',
+       geocode_verified_at = now(), geocode_provider = 'seed'
  where id = '11110000-0000-4000-8000-000000000003';
--- A sede da Vertex fica sem coordenada de propósito: exercita o aviso
--- "filiais sem localização" em vez de a filial desaparecer do mapa em silêncio.
+-- A sede da Vertex fica sem coordenada e sem endereço de propósito: exercita o
+-- aviso "filiais sem localização" em vez de a filial desaparecer do mapa em
+-- silêncio, e o [CAMPO AUSENTE] do fluxo de geocodificação.
 
 -- Aloca os ativos em áreas da própria filial.
 update public.it_assets a
