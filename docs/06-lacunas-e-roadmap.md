@@ -1456,6 +1456,13 @@ como iniciativa separada, não como característica do mapa.
 
 ### LG-09 — Provedor de mapas — **RESOLVIDO: Google Maps**
 Decidido pelo operador. Implementado com duas chaves e degradação explícita quando ausentes.
+No app, `/mapas` é a Maps JavaScript API com tiles do Google, busca por filial, lista lateral
+de localizações e popup com quebra por área. Na ferramenta navegável (`demo/sti-tool.html`) o
+mapa é **vetorial embutido** — geometria das 27 UFs (IBGE, simplificada a ~6 km por
+Douglas–Peucker, ~30 KB) projetada em **Mercator**, a mesma projeção dos tiles do Google, para
+que marcador e fronteira não divirjam entre as duas telas. Ele arrasta, dá zoom e agrupa
+marcadores; o que não faz é buscar *tile* de imagem, porque a página publicada é autocontida e
+o CSP dela bloqueia host externo.
 Resta acompanhar **custo por carregamento** e configurar alerta de cota.
 
 ### LG-10 — Pausa de clock configurável por SLA

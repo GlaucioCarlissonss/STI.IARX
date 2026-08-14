@@ -44,10 +44,12 @@ interface GInfoWindow {
 }
 interface GMarker {
   addListener(ev: string, cb: () => void): void
+  setMap(m: unknown): void
 }
 interface GMap {
   fitBounds(b: GBounds, padding?: number): void
   setCenter(p: LatLng): void
+  panTo(p: LatLng): void
   setZoom(z: number): void
   getZoom(): number | undefined
   addListener(ev: string, cb: () => void): void
@@ -160,64 +162,101 @@ function popupHtml(p: MapPoint): string {
  */
 export function GoogleBranchMap({
   points,
-  height = 520,
+  height = 560,
+  focus = null,
 }: {
   points: MapPoint[]
   height?: number
+  /** Filial a centralizar. `nonce` permite repetir o foco na mesma filial. */
+  focus?: { branchId: string; nonce: number } | null
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<GMap | null>(null)
+  const infoRef = useRef<GInfoWindow | null>(null)
+  const markersRef = useRef(new Map<string, GMarker>())
+  const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 
+  /* O mapa é criado UMA vez. Recriá-lo a cada mudança de `points` — o que
+     acontece a cada tecla da busca — recarregaria os tiles e piscaria a tela. */
   useEffect(() => {
-    if (!apiKey || !ref.current || points.length === 0) return
+    if (!apiKey || !ref.current || mapRef.current) return
     let cancelled = false
 
     loadGoogleMaps(apiKey)
       .then(() => {
         if (cancelled || !ref.current) return
         const google = (window as unknown as { google: GoogleApi }).google
-
         const map = new google.maps.Map(ref.current, {
           mapTypeControl: false,
           streetViewControl: false,
           zoomControl: true,
-          gestureHandling: 'cooperative',
+          gestureHandling: 'greedy',
+          center: { lat: -14.6, lng: -52.5 },
+          zoom: 4,
         })
-
-        const info = new google.maps.InfoWindow({ maxWidth: 280 })
-        const bounds = new google.maps.LatLngBounds()
-
-        for (const p of points) {
-          const marker = new google.maps.Marker({
-            position: { lat: p.lat, lng: p.lng },
-            map,
-            title: `${p.name} — ${p.count}`,
-            icon: markerIcon(google, p),
-          })
-          marker.addListener('click', () => {
-            info.setContent(popupHtml(p))
-            info.open({ map, anchor: marker })
-          })
-          bounds.extend({ lat: p.lat, lng: p.lng })
-        }
-
-        map.fitBounds(bounds, 64)
         // Com uma única filial, fitBounds aproxima ao máximo e a vista perde
         // referência geográfica; limitamos o zoom depois do ajuste.
         map.addListener('idle', () => {
           const z = map.getZoom()
           if (typeof z === 'number' && z > 15) map.setZoom(15)
         })
+        mapRef.current = map
+        infoRef.current = new google.maps.InfoWindow({ maxWidth: 300 })
+        setReady(true)
       })
       .catch(() => {
-        if (!cancelled) setError('Não foi possível carregar o Google Maps. Verifique a chave e as restrições de domínio.')
+        if (!cancelled)
+          setError('Não foi possível carregar o Google Maps. Verifique a chave e as restrições de domínio.')
       })
 
     return () => {
       cancelled = true
     }
-  }, [apiKey, points])
+  }, [apiKey])
+
+  /* Marcadores acompanham a filtragem; o mapa em si permanece. */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map) return
+    const google = (window as unknown as { google: GoogleApi }).google
+    const info = infoRef.current
+
+    markersRef.current.forEach((m) => m.setMap(null))
+    markersRef.current = new Map()
+    info?.close()
+
+    const bounds = new google.maps.LatLngBounds()
+    for (const p of points) {
+      const marker = new google.maps.Marker({
+        position: { lat: p.lat, lng: p.lng },
+        map,
+        title: `${p.name} — ${p.count}`,
+        icon: markerIcon(google, p),
+      })
+      marker.addListener('click', () => {
+        info?.setContent(popupHtml(p))
+        info?.open({ map, anchor: marker })
+      })
+      markersRef.current.set(p.branchId, marker)
+      bounds.extend({ lat: p.lat, lng: p.lng })
+    }
+    if (!bounds.isEmpty()) map.fitBounds(bounds, 64)
+  }, [ready, points])
+
+  /* Clique na lista lateral: centraliza e abre o popup daquela filial. */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map || !focus) return
+    const point = points.find((p) => p.branchId === focus.branchId)
+    const marker = markersRef.current.get(focus.branchId)
+    if (!point || !marker) return
+    map.panTo({ lat: point.lat, lng: point.lng })
+    map.setZoom(13)
+    infoRef.current?.setContent(popupHtml(point))
+    infoRef.current?.open({ map, anchor: marker })
+  }, [ready, focus, points])
 
   /* Degradação explícita: sem chave, o mapa não some — vira lista com link
      para o ponto exato no Google Maps, que é o essencial da tarefa. */
@@ -259,16 +298,10 @@ export function GoogleBranchMap({
     )
   }
 
-  if (points.length === 0) {
-    return (
-      <div className="rounded-xl border border-dashed border-[var(--color-border)] p-10 text-center text-sm text-[var(--color-ink-2)]">
-        Nenhuma filial com coordenada cadastrada.
-      </div>
-    )
-  }
-
+  /* O contêiner do mapa nunca é desmontado: se a busca não encontrar filial, o
+     aviso vem SOBRE o mapa. Desmontar recriaria o mapa na próxima busca. */
   return (
-    <div>
+    <div className="relative">
       <div
         ref={ref}
         role="application"
@@ -276,6 +309,11 @@ export function GoogleBranchMap({
         style={{ height }}
         className="w-full overflow-hidden rounded-xl border border-[var(--color-border)]"
       />
+      {points.length === 0 && (
+        <p className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink-2)] shadow">
+          Nenhuma filial com coordenada nesta seleção.
+        </p>
+      )}
       {error && (
         <p role="alert" className="mt-2 text-sm font-medium text-[var(--color-breach-ink)]">
           {error}

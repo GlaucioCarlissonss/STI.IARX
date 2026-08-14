@@ -97,8 +97,13 @@ cada chave: a do navegador por *referrer HTTP* (seu domínio), a de servidor por
 > Geocoding **nunca** vai para o cliente: uma chave de servidor irrestrita no bundle é o
 > erro clássico dessa integração.
 
-Sem as chaves o app não quebra: `/mapas` degrada para a lista de filiais com coordenada e
-link para o ponto exato no Google Maps.
+`/mapas` traz o mapa com tiles do Google, busca por filial, lista lateral de localizações e
+popup com a quebra por área. Sem as chaves o app não quebra: degrada para a lista de filiais
+com coordenada e link para o ponto exato no Google Maps.
+
+> A ferramenta navegável em [`demo/`](demo/) não pode carregar tiles (o CSP da página
+> publicada bloqueia host externo), então lá o mapa é **vetorial embutido** — as 27 UFs do
+> IBGE simplificadas, em Mercator, com pan, zoom e agrupamento de marcadores.
 
 ### 5. Edge Functions (integrações)
 

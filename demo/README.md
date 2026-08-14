@@ -17,8 +17,11 @@ integração com dry run, e navegar os mapas por filial. Tudo persiste em `local
 
 - **Monousuário e local ao navegador.** Sem login, sem RLS, sem dado compartilhado.
 - **Sem backend.** O que vale em produção é o app em `src/` sobre o Supabase.
-- **Mapa em SVG embutido.** A página não pode buscar tiles externos; no app real o mapa é
-  Leaflet + OpenStreetMap (ver LG-09 no documento de roadmap).
+- **Mapa vetorial embutido, não tiles.** O mapa é de verdade — arrasta, dá zoom, agrupa
+  marcadores e desenha as 27 UFs a partir da geometria do IBGE simplificada (~30 KB),
+  projetada em Mercator, a mesma projeção do Google. O que ele não faz é buscar *tile* de
+  imagem: a página é autocontida e o CSP dela bloqueia host externo. No app real, `/mapas`
+  usa a Maps JavaScript API do Google com tiles (ADR de LG-09 no roadmap).
 - **Binário de anexo não é retido** entre recargas — apenas metadados e miniatura de
   imagem. No app real o arquivo vive no Supabase Storage.
 

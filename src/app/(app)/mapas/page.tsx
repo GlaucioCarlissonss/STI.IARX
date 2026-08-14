@@ -4,19 +4,20 @@ import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireSession } from '@/lib/session'
 import { PRECISION_LABEL, googleMapsUrl, isPreciseEnough, type GeocodePrecision } from '@/lib/maps'
-import { Badge, Card, PageHeader, Table, Td } from '@/components/ui'
-import { GoogleBranchMap, type MapPoint } from '@/components/google-map'
+import { Badge, Card, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { type MapPoint } from '@/components/google-map'
 import { BranchLocationForm } from './branch-location-form'
+import { MapWorkspace } from './map-workspace'
 
 export const metadata: Metadata = { title: 'Mapas' }
 
 type Domain = 'tickets' | 'assets' | 'telecom' | 'internet'
 
-const DOMAINS: { key: Domain; label: string; view: string; countField: string }[] = [
-  { key: 'tickets', label: 'Tickets em aberto', view: 'vw_map_tickets', countField: 'open_total' },
-  { key: 'assets', label: 'Ativos de TI', view: 'vw_map_assets', countField: 'assets_total' },
-  { key: 'telecom', label: 'Linhas ativas', view: 'vw_map_telecom', countField: 'lines_active' },
-  { key: 'internet', label: 'Links ativos', view: 'vw_map_internet', countField: 'links_active' },
+const DOMAINS: { key: Domain; label: string; view: string; countField: string; unit: string }[] = [
+  { key: 'tickets', label: 'Tickets em aberto', view: 'vw_map_tickets', countField: 'open_total', unit: 'tickets abertos' },
+  { key: 'assets', label: 'Ativos de TI', view: 'vw_map_assets', countField: 'assets_total', unit: 'ativos' },
+  { key: 'telecom', label: 'Linhas ativas', view: 'vw_map_telecom', countField: 'lines_active', unit: 'linhas ativas' },
+  { key: 'internet', label: 'Links ativos', view: 'vw_map_internet', countField: 'links_active', unit: 'links ativos' },
 ]
 
 interface MapRow {
@@ -95,12 +96,14 @@ export default async function MapasPage({
   const imprecise = all.filter(
     (r) => r.latitude !== null && !isPreciseEnough(r.geocode_precision),
   )
+  const total = points.reduce((s, p) => s + p.count, 0)
+  const critical = points.filter((p) => p.state_color === 'red').length
 
   return (
     <>
       <PageHeader
-        title="Mapas por filial"
-        description="Google Maps com marcador dimensionado pela quantidade e colorido por criticidade. Clique no marcador para ver a quebra por área e abrir o ponto exato no Maps."
+        title="Mapa da operação"
+        description="Google Maps com marcador dimensionado pela quantidade e colorido por criticidade. Busque pela filial, clique na lista para centralizar e no marcador para ver a quebra por área."
       />
 
       <nav aria-label="Domínio do mapa" className="mb-4 flex flex-wrap gap-1.5">
@@ -120,9 +123,42 @@ export default async function MapasPage({
         ))}
       </nav>
 
-      <GoogleBranchMap points={points} />
+      <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile label={domain.label} value={total} hint={`em ${points.length} filial(is) no mapa`} />
+        <StatTile
+          label="Filiais críticas"
+          value={critical}
+          hint="vermelho no mapa"
+          tone={critical ? 'breach' : 'ok'}
+        />
+        <StatTile
+          label="Sem localização"
+          value={missing.length}
+          hint="não aparecem no mapa"
+          tone={missing.length ? 'warn' : 'ok'}
+        />
+        <StatTile
+          label="Coordenada aproximada"
+          value={imprecise.length}
+          hint="centro da cidade"
+          tone={imprecise.length ? 'warn' : 'ok'}
+        />
+      </div>
 
-      <div className="mt-4 flex flex-wrap gap-3 text-xs text-[var(--color-ink-2)]">
+      <MapWorkspace
+        points={points}
+        unitLabel={domain.unit}
+        missing={missing.map((r) => ({
+          branchId: r.branch_id,
+          name: r.branch_name,
+          city: r.city,
+          state: r.state,
+          precision: null,
+          count: Number(r[domain.countField] ?? 0),
+        }))}
+      />
+
+      <div className="mt-3 flex flex-wrap gap-3 text-xs text-[var(--color-ink-2)]">
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block size-2.5 rounded-full bg-[var(--color-ok-ink)]" /> normal
         </span>
@@ -131,6 +167,9 @@ export default async function MapasPage({
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block size-2.5 rounded-full bg-[var(--color-breach-ink)]" /> crítico
+        </span>
+        <span className="text-[var(--color-ink-3)]">
+          tamanho do marcador proporcional à quantidade
         </span>
       </div>
 
