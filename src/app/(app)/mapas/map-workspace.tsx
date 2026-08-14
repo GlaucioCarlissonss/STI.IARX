@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { PRECISION_LABEL, isPreciseEnough, type GeocodePrecision } from '@/lib/maps'
-import { GoogleBranchMap, type MapPoint } from '@/components/google-map'
+import { BranchMap, type MapPoint } from '@/components/branch-map'
 import { inputClass } from '@/components/ui'
 
 export interface MissingBranch {
@@ -57,10 +57,11 @@ export function MapWorkspace({
   return (
     <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="relative">
-        <GoogleBranchMap points={shownPoints} focus={focus} />
+        <BranchMap points={shownPoints} focus={focus} />
 
-        {/* Barra sobre o mapa. Fica à esquerda no topo: o canto inferior
-            esquerdo é da atribuição do Google e não pode ser coberto. */}
+        {/* Barra sobre o mapa. Fica à esquerda no topo: o canto inferior é da
+            atribuição do provedor de tiles (Google, ou OpenStreetMap/Esri) e
+            não pode ser coberto. */}
         <div className="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-2">
           <input
             type="search"

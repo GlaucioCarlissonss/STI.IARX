@@ -247,11 +247,20 @@ export function zoomForPrecision(precision: GeocodePrecision): number {
   }
 }
 
-/** Requisitos mínimos, listados quando alguma dependência não está disponível. */
+/**
+ * Requisitos mínimos, listados quando NENHUM provedor de geocodificação
+ * respondeu.
+ *
+ * Por padrão sempre há um provedor disponível: Google quando
+ * `GOOGLE_MAPS_SERVER_KEY` está configurada, e Nominatim (OpenStreetMap) — sem
+ * chave, sem cadastro — quando não está. Este status só aparece se os dois
+ * falharem (rede fora do ar, DNS bloqueado, etc.), não por falta de
+ * configuração do operador.
+ */
 export const SERVICE_REQUIREMENTS = [
-  'API de geocodificação com cobertura brasileira e nível de precisão no retorno (variável GOOGLE_MAPS_SERVER_KEY)',
-  'API de tiles com camada de satélite em zoom 16–18 (variável NEXT_PUBLIC_GOOGLE_MAPS_API_KEY, restrita por referrer)',
-  'Biblioteca de renderização com camadas, marcador, popup e alternância satélite/mapa (Maps JavaScript API)',
+  'Acesso de rede a um provedor de geocodificação: Google Geocoding API (GOOGLE_MAPS_SERVER_KEY, opcional) ou Nominatim/OpenStreetMap (sem chave, usado por padrão)',
+  'Acesso de rede a um provedor de tiles com satélite em zoom 16–18: Google Maps JS API (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY, opcional) ou OpenStreetMap + Esri World Imagery (sem chave, usado por padrão)',
+  'Biblioteca de renderização com camadas, marcador, popup e alternância satélite/mapa (Leaflet, ou Maps JavaScript API quando a chave do Google existir)',
   'Consulta de CEP para validar consistência (variável CEP_LOOKUP_URL, padrão ViaCEP)',
   'Mecanismo de tempo real para reexecutar o fluxo quando o cadastro muda (Supabase Realtime em public.branches)',
 ]
@@ -339,7 +348,7 @@ export function buildReportText(report: GeocodeReport): string {
     ...multiples,
     '',
     'RENDERIZACAO:',
-    `- Mapa: ${render ? 'renderizado em modo satélite' : 'NÃO renderizado'}`,
+    `- Mapa: ${render ? `renderizado em modo satélite (${report.provider ?? 'provedor padrão'})` : 'NÃO renderizado'}`,
     `- Zoom: ${zoom ?? '—'}`,
     `- Marcador: ${report.chosen ? `posicionado em ${formatCoordinates(report.chosen.lat, report.chosen.lng)}` : '—'}`,
     `- Popup: ${report.chosen ? `${report.chosen.formattedAddress} + ${PRECISION_LABEL[report.chosen.precision]}` : '—'}`,

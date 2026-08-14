@@ -10,7 +10,7 @@ import {
 } from '@/lib/maps'
 import { STATUS_TAG, type GeocodeStatus, normalizeCep } from '@/lib/address'
 import { Badge, Button, Field, inputClass } from '@/components/ui'
-import { GoogleBranchMap, type MapPoint } from '@/components/google-map'
+import { BranchMap, type MapPoint } from '@/components/branch-map'
 import {
   confirmGeocodeCandidate,
   geocodeBranch,
@@ -309,7 +309,7 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
           </div>
           {/* Satélite com rótulos é o padrão: é o que permite ver se o pino caiu
               no imóvel. A alternância para mapa fica no controle do Google. */}
-          <GoogleBranchMap points={[point]} height={320} mapTypeId="hybrid" focusZoom={18} />
+          <BranchMap points={[point]} height={320} focusZoom={18} />
           {!isPreciseEnough(branch.precision) && (
             <p className="mt-2 text-xs text-[var(--color-warn-ink)]">
               {STATUS_TAG.low_precision} O ponto não é o imóvel — confira no satélite e, se preciso,

@@ -80,12 +80,30 @@ await supabase.auth.admin.updateUserById(userId, {
 > qualquer pessoa autenticada migrasse para outro tenant e lesse dados alheios.
 > Ver [ADR-002](docs/03-arquitetura.md#adr-002).
 
-### 4. Google Maps (módulo de mapas)
+### 4. Mapas — funciona sem configurar nada
 
-Duas chaves, com escopos diferentes de propósito:
+`/mapas` já sai do zero com mapa real: ruas via **OpenStreetMap** e satélite via **Esri World
+Imagery**, os dois gratuitos e sem chave — nenhuma conta para criar, nenhum cartão de
+cobrança. É o motor padrão (`src/components/leaflet-branch-map.tsx`, biblioteca Leaflet).
+Alternância satélite/mapa, busca por filial, lista lateral de localizações, popup com a
+quebra por área, zoom 16–18 ao focar uma filial — tudo isso já funciona sem `.env.local`.
+
+Na mesma tela fica o **endereço estruturado** de cada filial (logradouro, número, bairro e
+CEP são obrigatórios), o botão de geolocalizar pelo cadastro, a confirmação de candidatos
+quando o CEP tem mais de um endereço, e a saída técnica do último fluxo. A geocodificação
+também não exige chave por padrão: usa o **Nominatim** (OpenStreetMap) para transformar o
+endereço em coordenada.
+
+> Uso responsável: os tiles do OSM e do Esri são gratuitos sob política de *fair use* —
+> exigem atribuição (já exibida no canto do mapa) e não servem para tráfego pesado em
+> produção com muitos usuários simultâneos. Para esse cenário, considere um provedor pago
+> (o próprio Google, MapTiler, Stadia…) ou hospedar os tiles.
+
+**Opcional — motor oficial do Google.** Se preferir o Google Maps (SLA e suporte oficiais),
+crie as duas chaves na sua conta Google Cloud e o app troca de motor automaticamente:
 
 ```bash
-# .env.local
+# .env.local — opcional; sem isso o app já usa OpenStreetMap/Esri
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=   # navegador — Maps JavaScript API
 GOOGLE_MAPS_SERVER_KEY=            # servidor  — Geocoding API
 ```
@@ -98,17 +116,10 @@ cada chave: a do navegador por *referrer HTTP* (seu domínio), a de servidor por
 > Geocoding **nunca** vai para o cliente: uma chave de servidor irrestrita no bundle é o
 > erro clássico dessa integração.
 
-`/mapas` traz o mapa com tiles do Google — **satélite com rótulos por padrão**, alternância
-satélite/mapa e zoom 16–18 ao focar uma filial —, busca por filial, lista lateral de localizações
-e popup com a quebra por área. Na mesma tela fica o **endereço estruturado** de cada filial
-(logradouro, número, bairro e CEP são obrigatórios), o botão de geolocalizar pelo cadastro, a
-confirmação de candidatos quando o CEP tem mais de um endereço, e a saída técnica do último
-fluxo. Sem as chaves o app não quebra: degrada para a lista de filiais com coordenada e link
-para o ponto exato no Google Maps.
-
-> A ferramenta navegável em [`demo/`](demo/) não pode carregar tiles (o CSP da página
-> publicada bloqueia host externo), então lá o mapa é **vetorial embutido** — as 27 UFs do
-> IBGE simplificadas, em Mercator, com pan, zoom e agrupamento de marcadores.
+> A ferramenta navegável em [`demo/`](demo/) não pode carregar tile nenhum — nem do Google,
+> nem do OpenStreetMap — porque o CSP da página publicada bloqueia host externo. Lá o mapa é
+> **vetorial embutido** — as 27 UFs do IBGE simplificadas, em Mercator, com pan, zoom e
+> agrupamento de marcadores.
 
 ### 5. Edge Functions (integrações)
 
@@ -134,7 +145,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 75 testes: mapeamento, coordenadas e fluxo de geolocalização
+npm test              # 86 testes: mapeamento, coordenadas, geolocalização e provedores sem chave
 npm run db:validate   # migrações + seed + 127 asserções em PostgreSQL real
 ```
 
@@ -161,7 +172,7 @@ src/
     supabase/         # clientes server / browser / admin
     integrations/     # motor de mapeamento (sem dependências) + testes
     address.ts        # endereço estruturado, validações e relatório técnico
-    geocode.server.ts # Geocoding API e consulta de CEP (somente servidor)
+    geocode.server.ts # geocodificação (Google ou Nominatim) e consulta de CEP (somente servidor)
     session.ts        # contexto e papéis
     i18n.ts           # dicionário pt-BR
   proxy.ts            # renovação de sessão e guarda de rotas
@@ -198,7 +209,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado nesta entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 75 testes unitários e 127 asserções de banco passando — incluindo
+apontamentos, 86 testes unitários e 127 asserções de banco passando — incluindo
 a aritmética de horário útil conferida contra 8 cenários (almoço, fim de semana,
 feriado, fora de expediente).
 

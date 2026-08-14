@@ -364,7 +364,7 @@ describe('relatório técnico', () => {
     const text = buildReportText(await report())
     expect(text).toContain('- Campos obrigatórios: COMPLETO')
     expect(text).toContain('- Consistência CEP/Logradouro: CONSISTENTE')
-    expect(text).toContain('- Mapa: renderizado em modo satélite')
+    expect(text).toContain('- Mapa: renderizado em modo satélite (google-geocoding)')
     expect(text).toContain('- Zoom: 18')
     expect(text).toContain('- Alternância satélite/mapa: sim')
     expect(text).toContain('- Status: SUCESSO')
@@ -413,7 +413,7 @@ describe('relatório técnico', () => {
       }),
     )
     expect(text).toContain('REQUISITOS MINIMOS:')
-    expect(text).toContain('API de tiles')
+    expect(text).toContain('provedor de tiles')
     expect(text).toContain('- Serviço utilizado: não disponível')
   })
 })

@@ -141,13 +141,13 @@ export function parseGoogleGeocode(payload: unknown): GeocodeCandidate[] {
 }
 
 /**
- * Geocodifica o endereço estruturado.
+ * Geocodifica o endereço estruturado pela Google Geocoding API.
  *
  * `components=country:BR|postal_code:` restringe a busca ao CEP informado — sem
  * isso, "Rua 7 de Setembro, 100" devolve resultado em dezenas de cidades e o
  * fluxo cai em múltiplas correspondências sempre.
  */
-export async function geocodeAddress(address: StructuredAddress): Promise<GeocodeProviderResult> {
+export async function geocodeAddressGoogle(address: StructuredAddress): Promise<GeocodeProviderResult> {
   const key = process.env.GOOGLE_MAPS_SERVER_KEY
   if (!key)
     return {
@@ -197,6 +197,139 @@ export async function geocodeAddress(address: StructuredAddress): Promise<Geocod
     return { status: 'not_found', candidates: [], provider: 'google-geocoding', message: 'A resposta não trouxe coordenada utilizável.' }
 
   return { status: 'ok', candidates, provider: 'google-geocoding', message: '' }
+}
+
+/* ==========================================================================
+   Geocodificação sem chave — Nominatim (OpenStreetMap)
+   ========================================================================== */
+
+interface NominatimAddress {
+  house_number?: string
+  road?: string
+  suburb?: string
+  neighbourhood?: string
+  city?: string
+  town?: string
+  state?: string
+  postcode?: string
+}
+interface NominatimResult {
+  lat?: string
+  lon?: string
+  display_name?: string
+  place_id?: number
+  /** jsonv2: tipo semântico do resultado — 'house', 'road', 'suburb', 'city'… */
+  addresstype?: string
+  class?: string
+  type?: string
+  address?: NominatimAddress
+}
+
+/** Identifica a aplicação ao Nominatim — a política de uso exige um User-Agent próprio, não o do navegador. */
+const NOMINATIM_USER_AGENT =
+  process.env.NOMINATIM_USER_AGENT ?? 'STI-IARX-helpdesk/1.0 (contato via painel do operador)'
+
+/**
+ * Estima o nível de precisão a partir do tipo semântico que o Nominatim
+ * devolve. Não é o mesmo vocabulário do Google (`ROOFTOP`/…) — é uma
+ * heurística sobre `addresstype`/`class`/`type`, documentada como tal para não
+ * parecer mais exata do que realmente é.
+ */
+export function nominatimPrecision(r: NominatimResult): GeocodeCandidate['precision'] {
+  const kind = (r.addresstype || r.type || '').toLowerCase()
+  const cls = (r.class || '').toLowerCase()
+  if (kind === 'house' || cls === 'building') return 'rooftop'
+  if (cls === 'highway' || kind === 'road') return 'range_interpolated'
+  if (['suburb', 'neighbourhood', 'city_district', 'quarter', 'city', 'town', 'village'].includes(kind))
+    return 'approximate'
+  return 'geometric_center'
+}
+
+/** Converte a resposta do Nominatim em candidatos nossos. */
+export function parseNominatimResults(payload: unknown): GeocodeCandidate[] {
+  const results = Array.isArray(payload) ? (payload as NominatimResult[]) : []
+  return results
+    .map((r): GeocodeCandidate | null => {
+      const lat = Number(r.lat)
+      const lng = Number(r.lon) // atenção: o campo do Nominatim é `lon`, não `lng`
+      if (!isValidCoordinates(lat, lng)) return null
+      const rounded = roundCoordinates({ lat, lng })
+      return {
+        lat: rounded.lat,
+        lng: rounded.lng,
+        formattedAddress: r.display_name ?? '',
+        precision: nominatimPrecision(r),
+        placeId: r.place_id ? String(r.place_id) : null,
+      }
+    })
+    .filter((c): c is GeocodeCandidate => c !== null)
+    .slice(0, MAX_CANDIDATES)
+}
+
+/**
+ * Geocodifica pelo Nominatim (OpenStreetMap) — sem chave, sem cadastro.
+ *
+ * É o provedor padrão quando `GOOGLE_MAPS_SERVER_KEY` não está configurada
+ * (ver `resolveGeocodeProvider`): o fluxo funciona assim que o app é
+ * publicado, sem o operador precisar criar conta em lugar nenhum.
+ *
+ * Parâmetros estruturados (`street`/`city`/`state`/`postalcode`), não a busca
+ * livre (`q`) — a mesma razão do `components` na chamada ao Google: sem
+ * restringir por CEP, um logradouro comum devolve resultado em dezenas de
+ * cidades e o fluxo cai em múltiplas correspondências sempre.
+ */
+export async function geocodeAddressNominatim(address: StructuredAddress): Promise<GeocodeProviderResult> {
+  const cep = normalizeCep(address.postalCode)
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    addressdetails: '1',
+    countrycodes: 'br',
+    limit: String(MAX_CANDIDATES),
+    country: 'Brazil',
+  })
+  const street = [address.street, address.streetNumber].map((p) => (p ?? '').trim()).filter(Boolean).join(' ')
+  if (street) params.set('street', street)
+  if (address.city) params.set('city', address.city.trim())
+  if (address.state) params.set('state', address.state.trim())
+  if (cep) params.set('postalcode', cep)
+
+  const payload = await fetchJson(`https://nominatim.openstreetmap.org/search?${params}`, {
+    headers: { 'User-Agent': NOMINATIM_USER_AGENT, 'Accept-Language': 'pt-BR' },
+  })
+  if (payload === null)
+    return {
+      status: 'service_unavailable',
+      candidates: [],
+      provider: 'nominatim',
+      message: 'O Nominatim (OpenStreetMap) não respondeu.',
+    }
+
+  const candidates = parseNominatimResults(payload)
+  if (candidates.length === 0)
+    return {
+      status: 'not_found',
+      candidates: [],
+      provider: 'nominatim',
+      message: 'Nenhuma correspondência para o endereço informado.',
+    }
+
+  return { status: 'ok', candidates, provider: 'nominatim', message: '' }
+}
+
+/**
+ * Escolhe o provedor de geocodificação sem exigir configuração do operador.
+ *
+ * Google é preferido quando a chave existe (SLA e suporte oficiais); na
+ * ausência dela, o Nominatim garante que o fluxo funcione de qualquer forma —
+ * o mapa não fica bloqueado esperando alguém criar conta no Google Cloud.
+ */
+export function resolveGeocodeProvider(): (address: StructuredAddress) => Promise<GeocodeProviderResult> {
+  return process.env.GOOGLE_MAPS_SERVER_KEY ? geocodeAddressGoogle : geocodeAddressNominatim
+}
+
+/** Provedor efetivo usado pelo pipeline por padrão — resolvido a cada chamada. */
+export async function geocodeAddress(address: StructuredAddress): Promise<GeocodeProviderResult> {
+  return resolveGeocodeProvider()(address)
 }
 
 /* ==========================================================================

@@ -1454,16 +1454,29 @@ domínio próprio ou catálogo de serviços.
 Construir isso é **módulo maior que os 11 deste roadmap somados**. Precisa ser tratado
 como iniciativa separada, não como característica do mapa.
 
-### LG-09 — Provedor de mapas — **RESOLVIDO: Google Maps**
-Decidido pelo operador. Implementado com duas chaves e degradação explícita quando ausentes.
-No app, `/mapas` é a Maps JavaScript API com tiles do Google, busca por filial, lista lateral
-de localizações e popup com quebra por área. Na ferramenta navegável (`demo/sti-tool.html`) o
-mapa é **vetorial embutido** — geometria das 27 UFs (IBGE, simplificada a ~6 km por
-Douglas–Peucker, ~30 KB) projetada em **Mercator**, a mesma projeção dos tiles do Google, para
-que marcador e fronteira não divirjam entre as duas telas. Ele arrasta, dá zoom e agrupa
-marcadores; o que não faz é buscar *tile* de imagem, porque a página publicada é autocontida e
-o CSP dela bloqueia host externo.
-Resta acompanhar **custo por carregamento** e configurar alerta de cota.
+### LG-09 — Provedor de mapas — **RESOLVIDO: OpenStreetMap/Esri por padrão, Google opcional**
+Decisão revista: o motor padrão passou a ser **OpenStreetMap (ruas) + Esri World Imagery
+(satélite)** via Leaflet — gratuitos, sem chave, sem conta — para o app funcionar assim que
+publicado, sem o operador precisar criar credencial em lugar nenhum. O motor Google Maps
+continua disponível e é escolhido automaticamente quando `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` /
+`GOOGLE_MAPS_SERVER_KEY` estão configuradas (`src/components/branch-map.tsx` decide o motor;
+`GoogleBranchMap` e `LeafletBranchMap` compartilham marcador e popup via
+`src/components/map-marker.tsx`). A geocodificação segue a mesma lógica: Google quando há
+chave, senão **Nominatim** (OpenStreetMap), sem chave (`src/lib/geocode.server.ts`,
+`resolveGeocodeProvider`).
+
+No app, `/mapas` tem busca por filial, lista lateral de localizações, popup com quebra por
+área e zoom 16–18 ao focar uma filial, em qualquer um dos dois motores. Na ferramenta
+navegável (`demo/sti-tool.html`) o mapa é **vetorial embutido** — geometria das 27 UFs (IBGE,
+simplificada a ~6 km por Douglas–Peucker, ~30 KB) projetada em **Mercator**, a mesma projeção
+dos tiles do Google e do OSM, para que marcador e fronteira não divirjam. Ele arrasta, dá
+zoom e agrupa marcadores; o que não faz é buscar *tile* de imagem — nenhum provedor (Google,
+OSM, Esri, Mapbox, Bing) pode ser chamado de dentro da página publicada, porque ela é
+autocontida e o CSP bloqueia host externo.
+
+Resta acompanhar o **fair-use** do OSM/Esri (atribuição obrigatória, uso comercial pesado
+pode exigir tile próprio ou pago) e, se o Google for ativado, o custo por carregamento e o
+alerta de cota.
 
 ### LG-10 — Pausa de clock configurável por SLA
 Ver Módulo 1. Hoje a pausa é comportamento de status, não configuração. Se o requisito é
