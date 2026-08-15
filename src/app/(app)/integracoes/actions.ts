@@ -8,7 +8,7 @@ import { requireSession, canManageConfig } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 
 const toggleSchema = z.object({
-  integration_id: z.string().uuid(),
+  integration_id: z.string().uuid('Seleção inválida.'),
   status: z.enum(['active', 'paused']),
 })
 
@@ -38,7 +38,7 @@ export async function setIntegrationStatus(
 }
 
 const reverseSyncSchema = z.object({
-  integration_id: z.string().uuid(),
+  integration_id: z.string().uuid('Seleção inválida.'),
   enabled: z.enum(['true', 'false']),
 })
 
@@ -78,7 +78,7 @@ export async function setReverseSync(
 }
 
 const tokenSchema = z.object({
-  integration_id: z.string().uuid(),
+  integration_id: z.string().uuid('Seleção inválida.'),
   token: z.string().trim().min(8, 'O token precisa ter ao menos 8 caracteres.'),
 })
 

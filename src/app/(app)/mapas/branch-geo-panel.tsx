@@ -101,6 +101,8 @@ function TextField({
         defaultValue={defaultValue}
         placeholder={placeholder}
         maxLength={maxLength}
+        required={required}
+        aria-required={required}
         className={inputClass}
       />
     </Field>
@@ -164,7 +166,12 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
             {m.error}
           </p>
         ) : m.success ? (
-          <p key={i} className="mb-2 text-sm font-medium text-[var(--color-ok-ink)]">{m.success}</p>
+          // O botão de origem fica desabilitado durante o envio e o foco some
+          // para o body — sem aria-live, "Endereço salvo" e "Localizado em…"
+          // nunca eram anunciados para quem usa leitor de tela.
+          <p key={i} role="status" aria-live="polite" className="mb-2 text-sm font-medium text-[var(--color-ok-ink)]">
+            {m.success}
+          </p>
         ) : null,
       )}
 
@@ -174,27 +181,27 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
         <div className="sm:col-span-3">
           <TextField
             branchId={branch.branchId}
-            label="Logradouro" name="street" required defaultValue={branch.street ?? ''} />
+            label="Logradouro" name="street" required maxLength={200} defaultValue={branch.street ?? ''} />
         </div>
         <div className="sm:col-span-1">
           <TextField
             branchId={branch.branchId}
-            label="Número" name="street_number" required defaultValue={branch.streetNumber ?? ''} />
+            label="Número" name="street_number" required maxLength={30} defaultValue={branch.streetNumber ?? ''} />
         </div>
         <div className="sm:col-span-2">
           <TextField
             branchId={branch.branchId}
-            label="Complemento" name="address_complement" defaultValue={branch.complement ?? ''} />
+            label="Complemento" name="address_complement" maxLength={120} defaultValue={branch.complement ?? ''} />
         </div>
         <div className="sm:col-span-2">
           <TextField
             branchId={branch.branchId}
-            label="Bairro" name="district" required defaultValue={branch.district ?? ''} />
+            label="Bairro" name="district" required maxLength={120} defaultValue={branch.district ?? ''} />
         </div>
         <div className="sm:col-span-2">
           <TextField
             branchId={branch.branchId}
-            label="Cidade" name="city" defaultValue={branch.city ?? ''} />
+            label="Cidade" name="city" maxLength={120} defaultValue={branch.city ?? ''} />
         </div>
         <div className="sm:col-span-1">
           <TextField
@@ -207,6 +214,7 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
             label="CEP"
             name="postal_code"
             required
+            maxLength={10}
             defaultValue={branch.postalCode ?? ''}
             placeholder="99999-999"
           />
@@ -225,7 +233,12 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
         <form action={runGeocode}>
           <input type="hidden" name="branch_id" value={branch.branchId} />
-          <Button type="submit" variant="secondary" disabled={geocoding || !branch.addressComplete}>
+          <Button
+            type="submit"
+            variant="secondary"
+            disabled={geocoding || !branch.addressComplete}
+            aria-describedby={!branch.addressComplete ? `geocode-hint-${branch.branchId}` : undefined}
+          >
             {geocoding ? 'Geolocalizando…' : 'Geolocalizar pelo endereço'}
           </Button>
         </form>
@@ -245,7 +258,7 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
       </div>
 
       {!branch.addressComplete && (
-        <p className="mt-2 text-xs text-[var(--color-warn-ink)]">
+        <p id={`geocode-hint-${branch.branchId}`} className="mt-2 text-xs text-[var(--color-warn-ink)]">
           {STATUS_TAG.missing_fields} O botão de geolocalizar fica desabilitado até os quatro campos
           estarem preenchidos — geocodificar endereço parcial devolve um ponto convincente e errado.
         </p>
@@ -308,7 +321,9 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
             )}
           </div>
           {/* Satélite com rótulos é o padrão: é o que permite ver se o pino caiu
-              no imóvel. A alternância para mapa fica no controle do Google. */}
+              no imóvel. A alternância satélite/mapa fica no controle do próprio
+              mapa (Google, ou o seletor de camadas do Leaflet quando não há
+              chave configurada — ver `branch-map.tsx`). */}
           <BranchMap points={[point]} height={320} focusZoom={18} />
           {!isPreciseEnough(branch.precision) && (
             <p className="mt-2 text-xs text-[var(--color-warn-ink)]">

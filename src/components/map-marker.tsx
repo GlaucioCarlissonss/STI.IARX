@@ -64,6 +64,24 @@ export function markerSvg(point: MapPoint) {
   }
 }
 
+/**
+ * Assinatura estável do conjunto de pontos — usada pelos dois motores para
+ * decidir se reenquadram a câmera.
+ *
+ * `points` é reconstruído com identidade nova a cada render do servidor
+ * (`page.tsx`). Sem comparar o CONTEÚDO, qualquer atualização em tempo real
+ * (`RealtimeRefresh`) — inclusive de outra filial, sem relação com a que está
+ * na tela — reenquadrava e cancelava o pan/zoom manual de todo mundo olhando
+ * o mapa. A ordem do array não importa para essa decisão, por isso ordena
+ * antes de juntar.
+ */
+export function pointsSignature(points: MapPoint[]): string {
+  return points
+    .map((p) => `${p.branchId}:${p.lat.toFixed(6)},${p.lng.toFixed(6)}:${p.count}:${p.state_color}`)
+    .sort()
+    .join('|')
+}
+
 export function popupHtml(p: MapPoint): string {
   const esc = (s: string) =>
     s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)

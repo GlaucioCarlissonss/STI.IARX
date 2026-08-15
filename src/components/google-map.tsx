@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { PRECISION_LABEL, googleMapsUrl } from '@/lib/maps'
-import { MAX_AUTO_ZOOM, markerSvg, popupHtml, type MapPoint } from './map-marker'
+import { MAX_AUTO_ZOOM, markerSvg, pointsSignature, popupHtml, type MapPoint } from './map-marker'
 
 export type { MapPoint }
 
@@ -45,6 +45,7 @@ interface GoogleApi {
     LatLngBounds: new () => GBounds
     Point: new (x: number, y: number) => unknown
     Size: new (w: number, h: number) => unknown
+    event: { clearInstanceListeners(instance: unknown): void }
   }
 }
 
@@ -120,6 +121,7 @@ export function GoogleBranchMap({
   const mapRef = useRef<GMap | null>(null)
   const infoRef = useRef<GInfoWindow | null>(null)
   const markersRef = useRef(new Map<string, GMarker>())
+  const lastFitRef = useRef<string | null>(null)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
@@ -162,6 +164,18 @@ export function GoogleBranchMap({
 
     return () => {
       cancelled = true
+      // A JS API do Google não tem um `map.remove()` equivalente ao do
+      // Leaflet — o melhor que dá para fazer é soltar os listeners e os
+      // marcadores para o GC recolher. Sem isso, um mapa por painel de filial
+      // (várias instâncias) vazava a cada navegação para longe da tela.
+      const google = (window as unknown as { google?: GoogleApi }).google
+      if (mapRef.current && google) {
+        markersRef.current.forEach((m) => m.setMap(null))
+        markersRef.current = new Map()
+        infoRef.current?.close()
+        google.maps.event.clearInstanceListeners(mapRef.current)
+      }
+      mapRef.current = null
     }
   }, [apiKey, mapTypeId])
 
@@ -191,7 +205,13 @@ export function GoogleBranchMap({
       markersRef.current.set(p.branchId, marker)
       bounds.extend({ lat: p.lat, lng: p.lng })
     }
-    if (!bounds.isEmpty()) map.fitBounds(bounds, 64)
+    // Só reenquadra quando o CONJUNTO de pontos muda de fato — não a cada
+    // refresh em tempo real ou re-render do servidor com o mesmo conteúdo.
+    const signature = pointsSignature(points)
+    if (!bounds.isEmpty() && signature !== lastFitRef.current) {
+      map.fitBounds(bounds, 64)
+    }
+    lastFitRef.current = signature
   }, [ready, points])
 
   /* Clique na lista lateral: centraliza e abre o popup daquela filial. */

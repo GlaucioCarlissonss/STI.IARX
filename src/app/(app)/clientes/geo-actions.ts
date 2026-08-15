@@ -27,7 +27,7 @@ import { runGeocodePipeline } from '@/lib/geocode.server'
  */
 
 const coordsSchema = z.object({
-  branch_id: z.string().uuid(),
+  branch_id: z.string().uuid('Seleção inválida.'),
   input: z.string().trim().min(1, 'Cole a URL do Google Maps ou o par de coordenadas.'),
 })
 
@@ -55,7 +55,7 @@ export async function setBranchCoordinates(
 
   const { lat, lng } = roundCoordinates(coords)
   const supabase = await createClient()
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('branches')
     .update({
       latitude: lat,
@@ -65,10 +65,28 @@ export async function setBranchCoordinates(
       // Coordenada colada do Maps é a mais confiável que temos: quem colou
       // estava olhando o lugar. Marcamos 'manual', não 'approximate'.
       geocode_precision: 'manual',
+      // A coordenada manual sobrepõe qualquer estado de um fluxo automático
+      // anterior — sem isso, o painel continuava mostrando "Aguardando
+      // geolocalização" ou "[MÚLTIPLAS CORRESPONDÊNCIAS]" ao lado do pino que
+      // acabou de ser definido corretamente à mão.
+      geocode_status: 'ok',
+      geocode_provider: 'manual',
+      geocode_stale: false,
+      // `geocoded_address` é o texto que um PROVEDOR devolveu; a coordenada
+      // manual não tem um — mantê-lo do fluxo anterior mostraria o endereço
+      // errado ao lado da coordenada nova e certa.
+      geocoded_address: null,
+      place_id: null,
     })
     .eq('id', parsed.data.branch_id)
+    .select('id')
 
   if (error) return { error: error.message }
+  if (!updated?.length) return { error: 'Filial não encontrada, ou sem permissão para alterá-la.' }
+
+  // Candidatos de uma ambiguidade anterior perdem sentido: o operador acabou
+  // de resolver a localização por outra via.
+  await supabase.from('geocode_candidates').delete().eq('branch_id', parsed.data.branch_id)
 
   revalidatePath('/clientes')
   revalidatePath('/mapas')
@@ -88,14 +106,14 @@ export async function setBranchCoordinates(
  * deixa um pino antigo passando por atual.
  */
 const addressSchema = z.object({
-  branch_id: z.string().uuid(),
-  street: z.string().trim().max(200),
-  street_number: z.string().trim().max(30),
-  address_complement: z.string().trim().max(120),
-  district: z.string().trim().max(120),
-  city: z.string().trim().max(120),
-  state: z.string().trim().max(2),
-  postal_code: z.string().trim().max(10),
+  branch_id: z.string().uuid('Filial inválida.'),
+  street: z.string().trim().max(200, 'Logradouro muito longo (máximo 200 caracteres).'),
+  street_number: z.string().trim().max(30, 'Número muito longo (máximo 30 caracteres).'),
+  address_complement: z.string().trim().max(120, 'Complemento muito longo (máximo 120 caracteres).'),
+  district: z.string().trim().max(120, 'Bairro muito longo (máximo 120 caracteres).'),
+  city: z.string().trim().max(120, 'Cidade muito longa (máximo 120 caracteres).'),
+  state: z.string().trim().max(2, 'UF deve ter 2 letras.'),
+  postal_code: z.string().trim().max(10, 'CEP inválido.'),
 })
 
 export async function saveBranchAddress(
@@ -115,7 +133,7 @@ export async function saveBranchAddress(
   if (d.postal_code && !cep) return { error: 'CEP inválido — informe 8 dígitos (99999-999).' }
 
   const supabase = await createClient()
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('branches')
     .update({
       street: d.street || null,
@@ -127,8 +145,13 @@ export async function saveBranchAddress(
       postal_code: cep,
     })
     .eq('id', d.branch_id)
+    .select('id')
 
   if (error) return { error: error.message }
+  // Sem isso, um branch_id de outro tenant (ou já excluído) faz 0 linhas
+  // casarem no UPDATE — o Postgres não devolve erro, e a tela diria
+  // "Endereço salvo" sem nada ter sido gravado.
+  if (!updated?.length) return { error: 'Filial não encontrada, ou sem permissão para alterá-la.' }
 
   revalidatePath('/clientes')
   revalidatePath('/mapas')
@@ -257,6 +280,12 @@ export async function geocodeBranch(_prev: ActionState, formData: FormData): Pro
         place_id: report.chosen.placeId,
         geocode_status: report.status,
         geocode_provider: report.provider,
+        // Explícito, não deixado para o trigger: o trigger só zera `stale`
+        // quando lat/lng MUDAM — se o provedor devolver a MESMA coordenada de
+        // antes (prédio não mudou, só completou um campo do endereço), o
+        // gatilho não dispara e o badge "coordenada desatualizada" ficaria
+        // preso para sempre, mesmo com o fluxo acabado de rodar com sucesso.
+        geocode_stale: false,
       })
       .eq('id', branch.id)
     if (error) return { error: error.message }
@@ -289,8 +318,8 @@ export async function geocodeBranch(_prev: ActionState, formData: FormData): Pro
    ========================================================================== */
 
 const confirmSchema = z.object({
-  branch_id: z.string().uuid(),
-  candidate_id: z.string().uuid(),
+  branch_id: z.string().uuid('Seleção inválida.'),
+  candidate_id: z.string().uuid('Seleção inválida.'),
 })
 
 /**
@@ -320,7 +349,7 @@ export async function confirmGeocodeCandidate(
   if (readError) return { error: readError.message }
   if (!candidate) return { error: 'Candidato não encontrado — refaça a geocodificação.' }
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('branches')
     .update({
       latitude: candidate.latitude,
@@ -332,10 +361,13 @@ export async function confirmGeocodeCandidate(
       place_id: candidate.place_id,
       geocode_status: candidate.precision === 'rooftop' ? 'ok' : 'low_precision',
       geocode_provider: 'google-geocoding',
+      geocode_stale: false,
     })
     .eq('id', parsed.data.branch_id)
+    .select('id')
 
   if (error) return { error: error.message }
+  if (!updated?.length) return { error: 'Filial não encontrada, ou sem permissão para alterá-la.' }
 
   await supabase.from('geocode_candidates').delete().eq('branch_id', parsed.data.branch_id)
 

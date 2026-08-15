@@ -3,7 +3,7 @@
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState } from 'react'
 import type { Map as LeafletMap, Marker as LeafletMarker, LayerGroup } from 'leaflet'
-import { MAX_AUTO_ZOOM, markerSvg, popupHtml, type MapPoint } from './map-marker'
+import { MAX_AUTO_ZOOM, markerSvg, pointsSignature, popupHtml, type MapPoint } from './map-marker'
 
 export type { MapPoint }
 
@@ -36,7 +36,15 @@ export function LeafletBranchMap({
   const ref = useRef<HTMLDivElement>(null)
   const mapRef = useRef<LeafletMap | null>(null)
   const markersRef = useRef(new Map<string, LeafletMarker>())
+  const lastFitRef = useRef<string | null>(null)
   const [ready, setReady] = useState(false)
+  // Distinto de `ready`: o mapa existe assim que `ready` vira true, mas os
+  // marcadores só existem depois que o efeito seguinte (também assíncrono,
+  // por causa do próprio `import('leaflet')`) terminar de povoar `markersRef`.
+  // Sem essa distinção, um clique na lista lateral entre um momento e outro
+  // encontrava `markersRef` vazio e retornava em silêncio, sem centralizar
+  // nem reagir de novo — porque as deps do efeito de foco não mudam depois.
+  const [markersReady, setMarkersReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   /* O mapa é criado UMA vez. Recriá-lo a cada mudança de `points` — o que
@@ -126,6 +134,10 @@ export function LeafletBranchMap({
             popupAnchor: [0, -anchor],
           }),
           title: `${p.name} — ${p.count}`,
+          // Sem isso o Leaflet gera `<img alt="">` — o marcador ficava sem
+          // nome acessível, só com o `title` (tooltip do mouse, que leitor
+          // de tela não lê da mesma forma). O motor Google já expunha isso.
+          alt: `${p.name} — ${p.count}`,
         }).addTo(map)
         // autoClose (padrão do Leaflet) já garante um popup aberto por vez —
         // não precisa da InfoWindow única e compartilhada que o motor Google usa.
@@ -133,7 +145,14 @@ export function LeafletBranchMap({
         markersRef.current.set(p.branchId, marker)
         latLngs.push([p.lat, p.lng])
       }
-      if (latLngs.length) map.fitBounds(latLngs, { padding: [64, 64] })
+      // Só reenquadra quando o CONJUNTO de pontos muda de fato — não a cada
+      // refresh em tempo real ou re-render do servidor com o mesmo conteúdo.
+      const signature = pointsSignature(points)
+      if (latLngs.length && signature !== lastFitRef.current) {
+        map.fitBounds(latLngs, { padding: [64, 64] })
+      }
+      lastFitRef.current = signature
+      setMarkersReady(true)
     })
 
     return () => {
@@ -144,7 +163,7 @@ export function LeafletBranchMap({
   /* Clique na lista lateral: centraliza e abre o popup daquela filial. */
   useEffect(() => {
     const map = mapRef.current
-    if (!ready || !map || !focus) return
+    if (!markersReady || !map || !focus) return
     const point = points.find((p) => p.branchId === focus.branchId)
     const marker = markersRef.current.get(focus.branchId)
     if (!point || !marker) return
@@ -152,7 +171,7 @@ export function LeafletBranchMap({
     // "chegando" no ponto, em vez de saltar direto para o zoom final.
     map.flyTo([point.lat, point.lng], focusZoom)
     marker.openPopup()
-  }, [ready, focus, points, focusZoom])
+  }, [markersReady, focus, points, focusZoom])
 
   return (
     <div className="relative">

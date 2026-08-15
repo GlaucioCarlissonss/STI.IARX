@@ -93,7 +93,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </ul>
         </nav>
 
-        <main id="conteudo" className="min-w-0 flex-1 pb-20 lg:pb-0">
+        <main id="conteudo" tabIndex={-1} className="min-w-0 flex-1 pb-20 lg:pb-0 focus:outline-none">
           {children}
         </main>
       </div>

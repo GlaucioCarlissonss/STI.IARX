@@ -63,7 +63,7 @@ export async function createAsset(_prev: ActionState, formData: FormData): Promi
 }
 
 const statusSchema = z.object({
-  asset_id: z.string().uuid(),
+  asset_id: z.string().uuid('Seleção inválida.'),
   status: z.enum(['in_stock', 'active', 'maintenance', 'retired', 'lost']),
 })
 

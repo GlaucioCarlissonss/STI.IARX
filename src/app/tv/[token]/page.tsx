@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { DashboardMetrics, EnrichedTicket } from '@/lib/types'
 import { TvBoard } from './tv-board'
+import { TvReconnecting } from './tv-reconnecting'
 
 export const metadata: Metadata = {
   title: 'Painel de operação',
@@ -27,7 +28,17 @@ export default async function TvPage({ params }: { params: Promise<{ token: stri
   const { token } = await params
   const supabase = createAdminClient()
 
-  const { data: resolved } = await supabase.rpc('resolve_dashboard_token', { p_token: token })
+  const { data: resolved, error: resolveError } = await supabase.rpc('resolve_dashboard_token', {
+    p_token: token,
+  })
+
+  // Falha de rede/banco na própria consulta é diferente de "token inválido" —
+  // confundir as duas faria uma instabilidade passageira derrubar a TV no
+  // MESMO 404 permanente de um token de verdade revogado, sem chance de se
+  // recuperar sozinha (o intervalo que atualiza a tela vive dentro do
+  // `TvBoard`, que nunca chega a montar numa página 404).
+  if (resolveError) return <TvReconnecting />
+
   const scope = Array.isArray(resolved) ? resolved[0] : resolved
 
   // Token inválido, expirado ou revogado — 404 sem explicar qual dos três,

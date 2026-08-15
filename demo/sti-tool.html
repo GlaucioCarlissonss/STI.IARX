@@ -86,10 +86,30 @@
     cursor:pointer; font:inherit; font-size:.82rem; padding:.38rem .7rem; border-radius:8px; }
   .icon-btn:hover { background:var(--surface-3); }
 
+  /* Atalho para leitores de tela e navegação por teclado (WCAG 2.4.1) — sem
+     isso, quem usa só teclado precisa passar pelo logo, pelo alternador
+     Console/TV, Tema e Restaurar exemplo antes de chegar na nav, em TODA
+     troca de tela. */
+  .skip-link { position:absolute; left:-9999px; top:0; z-index:100;
+    padding:.75rem 1rem; background:var(--brand); color:#fff; font-weight:600; border-radius:0 0 8px 0; }
+  .skip-link:focus { left:0; }
+
   .layout { display:grid; grid-template-columns:13.5rem minmax(0,1fr); gap:1.75rem; padding-top:1.5rem; }
   @media (max-width:980px) { .layout { grid-template-columns:1fr; gap:1rem; } }
   .side { position:sticky; top:4.4rem; align-self:start; display:flex; flex-direction:column; gap:1px; }
-  @media (max-width:980px) { .side { position:static; flex-direction:row; overflow-x:auto; gap:.3rem; padding-bottom:.3rem; } }
+  @media (max-width:980px) {
+    .side {
+      position:static; flex-direction:row; overflow-x:auto; gap:.3rem; padding-bottom:.3rem;
+      /* Sem esconder nenhum item: a barra vira rolável, mas "Fornecedores",
+         "Mapas" etc. saíam da tela sem nenhuma pista visual de que dava para
+         arrastar — pareciam ausentes, não escondidos. O degradê nas bordas é
+         permanente (independe da posição de rolagem) porque a máscara é
+         aplicada no próprio contêiner rolável, não no conteúdo que rola dentro
+         dele — por isso não precisa de JS ouvindo o scroll. */
+      -webkit-mask-image:linear-gradient(to right,transparent 0,#000 1.25rem,#000 calc(100% - 1.25rem),transparent 100%);
+      mask-image:linear-gradient(to right,transparent 0,#000 1.25rem,#000 calc(100% - 1.25rem),transparent 100%);
+    }
+  }
   .side button { display:flex; align-items:center; gap:.4rem; text-align:left; white-space:nowrap;
     border:0; background:transparent; font:inherit; font-size:.875rem; font-weight:500;
     color:var(--ink-2); padding:.45rem .7rem; border-radius:7px; cursor:pointer; }
@@ -365,6 +385,8 @@
   .wall-controls { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; margin-top:1rem; }
 </style>
 
+<a href="#view" class="skip-link">Pular para o conteúdo</a>
+
 <div class="banner">
   <strong>Ferramenta operacional</strong> — as 11 melhorias solicitadas estão implementadas e utilizáveis.
   Comece em <strong>Novidades</strong>. Tudo é gravado neste navegador.
@@ -385,7 +407,7 @@
 <main class="shell">
   <div id="console" class="layout">
     <nav class="side" aria-label="Módulos" id="nav"></nav>
-    <div id="view"></div>
+    <div id="view" tabindex="-1"></div>
   </div>
 
   <div id="wall-stage" class="wall-stage hidden">

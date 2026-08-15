@@ -72,7 +72,6 @@ interface CandidateRow {
 interface LogRow {
   branch_id: string
   report_text: string | null
-  created_at: string
 }
 
 interface AreaRow {
@@ -107,13 +106,16 @@ export default async function MapasPage({
         .select('id, branch_id, ordinal, latitude, longitude, formatted_address, precision')
         .order('ordinal')
         .returns<CandidateRow[]>(),
-      // Último bloco técnico por filial. `report_text` é o texto que o operador
-      // leu na hora — não é recalculado, para o registro não mudar com o código.
+      // Último bloco técnico por filial, um por vez via `distinct on` no banco
+      // (vw_branch_last_geocode_log) — não "os N logs mais recentes do
+      // tenant": com muitas filiais, o log de uma pouco geocodificada caía
+      // fora de qualquer corte fixo e a tela dizia "nunca tentamos" com
+      // histórico existente, só mais antigo. `report_text` é o texto que o
+      // operador leu na hora — não é recalculado, para o registro não mudar
+      // com o código.
       supabase
-        .from('geocode_logs')
-        .select('branch_id, report_text, created_at')
-        .order('created_at', { ascending: false })
-        .limit(200)
+        .from('vw_branch_last_geocode_log')
+        .select('branch_id, report_text')
         .returns<LogRow[]>(),
     ])
 
@@ -161,9 +163,9 @@ export default async function MapasPage({
   for (const c of candidates ?? [])
     candidatesByBranch.set(c.branch_id, [...(candidatesByBranch.get(c.branch_id) ?? []), c])
 
-  // A lista vem ordenada por data desc: o primeiro de cada filial é o mais recente.
-  const lastReport = new Map<string, string | null>()
-  for (const l of logs ?? []) if (!lastReport.has(l.branch_id)) lastReport.set(l.branch_id, l.report_text)
+  // A view já devolve uma linha por filial (distinct on), sem precisar de
+  // dedup em memória nem de um corte fixo de "N logs mais recentes".
+  const lastReport = new Map<string, string | null>((logs ?? []).map((l) => [l.branch_id, l.report_text]))
 
   const addressRows: BranchAddress[] = (addresses ?? []).map((r) => ({
     branchId: r.branch_id,
@@ -213,7 +215,7 @@ export default async function MapasPage({
 
       <PageHeader
         title="Mapa da operação"
-        description="Google Maps com marcador dimensionado pela quantidade e colorido por criticidade. Busque pela filial, clique na lista para centralizar e no marcador para ver a quebra por área."
+        description="Mapa com marcador dimensionado pela quantidade e colorido por criticidade. Busque pela filial, clique na lista para centralizar e no marcador para ver a quebra por área."
       />
 
       <nav aria-label="Domínio do mapa" className="mb-4 flex flex-wrap gap-1.5">

@@ -9,9 +9,9 @@ import type { ActionState } from '@/app/(app)/tickets/actions'
 const ROLES = ['admin', 'gestor', 'atendente', 'solicitante', 'visualizador'] as const
 
 const updateSchema = z.object({
-  user_id: z.string().uuid(),
+  user_id: z.string().uuid('Seleção inválida.'),
   role: z.enum(ROLES),
-  branch_ids: z.array(z.string().uuid()).default([]),
+  branch_ids: z.array(z.string().uuid('Seleção inválida.')).default([]),
   is_active: z.boolean(),
 })
 
@@ -39,6 +39,14 @@ export async function updateUserAccess(
   })
 
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
+
+  // A trigger de auditoria só barra ESCALONAMENTO — rebaixar ou desativar a
+  // própria conta passaria por ela normalmente. Barrado aqui também, não só
+  // escondendo o formulário na UI: sem isso, um admin sozinho no tenant podia
+  // se trancar do lado de fora com dois cliques e sem confirmação.
+  if (parsed.data.user_id === profile.id) {
+    return { error: 'Você não pode alterar o próprio papel ou acesso — peça a outro administrador.' }
+  }
 
   const supabase = await createClient()
 

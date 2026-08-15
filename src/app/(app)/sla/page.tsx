@@ -39,7 +39,7 @@ export default async function SlaPage() {
   await requireRole(['super_admin', 'admin', 'gestor'])
   const supabase = await createClient()
 
-  const [{ data: compliance }, { data: definitions }, { data: uncovered }] = await Promise.all([
+  const [{ data: compliance }, { data: definitions }, { count: uncoveredCount }] = await Promise.all([
     supabase
       .from('vw_sla_compliance')
       .select(
@@ -60,7 +60,11 @@ export default async function SlaPage() {
     supabase.from('sla_tracking').select('ticket_id', { count: 'exact', head: true }).eq('coverage', 'uncovered'),
   ])
 
-  const uncoveredCount = (uncovered as unknown as { count: number } | null)?.count ?? 0
+  // Com `{ count: 'exact', head: true }` o Supabase devolve `data: null` e o
+  // total no campo `count`, IRMÃO de `data` — não dentro dele. Ler de `data`
+  // (como estava antes) sempre dava `undefined`, e o card de "tickets sem
+  // SLA aplicável" nunca aparecia, mesmo com cobertura furada de verdade.
+  const semSla = uncoveredCount ?? 0
 
   return (
     <>
@@ -69,11 +73,11 @@ export default async function SlaPage() {
         description="Compliance por período e fila, e as definições vigentes."
       />
 
-      {uncoveredCount > 0 && (
+      {semSla > 0 && (
         <div className="mb-6">
           <Card>
             <p className="text-sm font-semibold text-[var(--color-warn-ink)]">
-              {uncoveredCount} ticket(s) sem SLA aplicável
+              {semSla} ticket(s) sem SLA aplicável
             </p>
             <p className="mt-1 text-sm text-[var(--color-ink-2)]">
               Nenhuma definição casou com a combinação de contrato, categoria e prioridade desses

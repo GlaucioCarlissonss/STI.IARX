@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { cloneElement, isValidElement, type ReactNode } from 'react'
 import type { SlaState, TicketStatus } from '@/lib/types'
 import { slaStateLabel, ticketStatusLabel, ticketStatusTone } from '@/lib/i18n'
 
@@ -205,6 +205,18 @@ export function Field({
   required?: boolean
   children: ReactNode
 }) {
+  const hintId = `${htmlFor}-hint`
+  // A dica só ajuda leitor de tela se o campo apontar para ela: o `id` sozinho
+  // nunca foi suficiente, e nenhum input do projeto informava
+  // `aria-describedby` na mão — a regra de negócio na dica ("obrigatório se o
+  // status for cancelada", "define o SLA aplicável"...) ficava muda. Clonar o
+  // filho aqui resolve para every campo que usa `Field`, de uma vez.
+  const field =
+    hint && isValidElement(children)
+      ? cloneElement(children as React.ReactElement<{ 'aria-describedby'?: string }>, {
+          'aria-describedby': hintId,
+        })
+      : children
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={htmlFor} className="text-sm font-medium text-[var(--color-ink)]">
@@ -215,9 +227,9 @@ export function Field({
           </span>
         )}
       </label>
-      {children}
+      {field}
       {hint && (
-        <p id={`${htmlFor}-hint`} className="text-xs text-[var(--color-ink-3)]">
+        <p id={hintId} className="text-xs text-[var(--color-ink-3)]">
           {hint}
         </p>
       )}
@@ -235,6 +247,8 @@ export function Button({
   disabled,
   name,
   value,
+  onClick,
+  'aria-describedby': ariaDescribedBy,
 }: {
   children: ReactNode
   variant?: 'primary' | 'secondary' | 'danger'
@@ -242,6 +256,9 @@ export function Button({
   disabled?: boolean
   name?: string
   value?: string
+  onClick?: () => void
+  /** Liga o botão à explicação de por que está desabilitado (ex.: campo faltando). */
+  'aria-describedby'?: string
 }) {
   const variants = {
     primary: 'bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-ink)]',
@@ -255,6 +272,8 @@ export function Button({
       name={name}
       value={value}
       disabled={disabled}
+      onClick={onClick}
+      aria-describedby={ariaDescribedBy}
       className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${variants[variant]}`}
     >
       {children}

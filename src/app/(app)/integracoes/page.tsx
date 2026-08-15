@@ -33,10 +33,14 @@ export default async function IntegracoesPage() {
 
   const list = integrations ?? []
   const failedByIntegration = new Map<string, number>()
+  // A consulta busca 'pending' e 'failed' juntos, mas só 'failed' era
+  // contado — uma fila travada em 'pending' (webhook chegando, nada sendo
+  // processado) não acendia badge nenhum, e o admin via a integração como
+  // saudável enquanto os eventos se acumulavam sem processar.
+  const pendingByIntegration = new Map<string, number>()
   for (const e of pending ?? []) {
-    if (e.status === 'failed') {
-      failedByIntegration.set(e.integration_id, (failedByIntegration.get(e.integration_id) ?? 0) + 1)
-    }
+    const target = e.status === 'failed' ? failedByIntegration : pendingByIntegration
+    target.set(e.integration_id, (target.get(e.integration_id) ?? 0) + 1)
   }
 
   const totalRequests = list.reduce((s, i) => s + i.request_count, 0)
@@ -69,6 +73,7 @@ export default async function IntegracoesPage() {
         <div className="grid gap-4 xl:grid-cols-2">
           {list.map((i) => {
             const failed = failedByIntegration.get(i.id) ?? 0
+            const pendingCount = pendingByIntegration.get(i.id) ?? 0
             return (
               <Card key={i.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -85,6 +90,7 @@ export default async function IntegracoesPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {failed > 0 && <Badge tone="breach">{failed} falha(s)</Badge>}
+                    {pendingCount > 0 && <Badge tone="neutral">{pendingCount} pendente(s)</Badge>}
                     <Badge tone={statusTone[i.status]}>{integrationStatusLabel[i.status]}</Badge>
                   </div>
                 </div>

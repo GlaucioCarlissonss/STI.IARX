@@ -95,7 +95,7 @@ export default async function UsuariosPage() {
                 Última atividade: {formatDateTime(u.last_seen_at)}
               </p>
 
-              {editable && u.role !== 'super_admin' && (
+              {editable && u.role !== 'super_admin' && u.id !== profile.id && (
                 <div className="mt-4 border-t border-[var(--color-border)] pt-4">
                   <UserAccessForm
                     userId={u.id}
@@ -105,6 +105,15 @@ export default async function UsuariosPage() {
                     branches={branches}
                   />
                 </div>
+              )}
+              {editable && u.id === profile.id && (
+                // A trigger de auditoria só barra ESCALONAMENTO de papel —
+                // rebaixar a si mesmo ou desativar a própria conta passa, e um
+                // admin sozinho no tenant ficaria trancado do lado de fora sem
+                // caminho de volta pela própria aplicação.
+                <p className="mt-4 border-t border-[var(--color-border)] pt-4 text-xs text-[var(--color-ink-3)]">
+                  Este é o seu usuário — para mudar seu próprio papel ou acesso, peça a outro administrador.
+                </p>
               )}
             </Card>
           )

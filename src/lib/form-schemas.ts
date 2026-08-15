@@ -16,7 +16,7 @@ export const emptyToNull = z
   .transform((v) => (v === '' ? null : v))
 
 /** `""` → `null`; caso contrário exige UUID válido. */
-export const optionalUuid = emptyToNull.pipe(z.union([z.string().uuid(), z.null()]))
+export const optionalUuid = emptyToNull.pipe(z.union([z.string().uuid('Seleção inválida.'), z.null()]))
 
 /**
  * `""` → `null`; caso contrário número não negativo.

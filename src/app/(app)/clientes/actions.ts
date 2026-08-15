@@ -47,7 +47,7 @@ const branchSchema = z.object({
   state: emptyToNull,
   // O timezone da filial é a base de todo cálculo de horário útil de SLA (ADR-004),
   // por isso é obrigatório e tem default explícito.
-  timezone: z.string().trim().min(3),
+  timezone: z.string().trim().min(3, 'Selecione um fuso horário.'),
   business_hours_id: optionalUuid,
   contact_name: emptyToNull,
   contact_email: emptyToNull,

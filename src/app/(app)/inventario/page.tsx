@@ -42,8 +42,16 @@ export default async function InventarioPage() {
 
   const today = new Date()
   const in90 = new Date(today.getTime() + 90 * 86400000)
+  // Sem o piso em `today`, garantia vencida há anos contava como "vencendo em
+  // 90 dias" para sempre — um parque antigo mostrava um tile vermelho
+  // permanente e sem ação possível, e escondia no meio dele a garantia que de
+  // fato vence semana que vem.
   const expiringWarranty = list.filter(
-    (a) => a.warranty_until && new Date(a.warranty_until) <= in90 && a.status !== 'retired',
+    (a) =>
+      a.warranty_until &&
+      new Date(a.warranty_until) >= today &&
+      new Date(a.warranty_until) <= in90 &&
+      a.status !== 'retired',
   ).length
 
   const totalValue = list.reduce((sum, a) => sum + (a.acquisition_cost ?? 0), 0)

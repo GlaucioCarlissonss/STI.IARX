@@ -13,8 +13,8 @@ const createTokenSchema = z.object({
     .string()
     .trim()
     .transform((v) => (v === '' ? null : v))
-    .pipe(z.union([z.string().uuid(), z.null()])),
-  branch_ids: z.array(z.string().uuid()).default([]),
+    .pipe(z.union([z.string().uuid('Seleção inválida.'), z.null()])),
+  branch_ids: z.array(z.string().uuid('Seleção inválida.')).default([]),
 })
 
 export interface TokenActionState extends ActionState {

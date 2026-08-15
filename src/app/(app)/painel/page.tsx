@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession } from '@/lib/session'
+import { requireSession, canManageRecords } from '@/lib/session'
 import { formatMinutes } from '@/lib/format'
 import type { DashboardMetrics, EnrichedTicket } from '@/lib/types'
 import { Card, EmptyState, PageHeader, StatTile } from '@/components/ui'
@@ -46,13 +46,19 @@ export default async function PainelPage() {
       <PageHeader
         title={`Olá, ${profile.full_name.split(' ')[0]}`}
         description="Visão geral da operação de atendimento."
+        // A página /tv exige o mesmo canManageRecords (super_admin/admin/gestor).
+        // Mostrar o botão para os demais papéis levava a um redirect silencioso
+        // de volta para /painel, sem explicação — o "cliquei e não aconteceu
+        // nada" mais fácil de bater de frente no dia a dia.
         action={
-          <Link
-            href="/tv"
-            className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]"
-          >
-            Painéis de TV
-          </Link>
+          canManageRecords(profile.role) ? (
+            <Link
+              href="/tv"
+              className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]"
+            >
+              Painéis de TV
+            </Link>
+          ) : undefined
         }
       />
 

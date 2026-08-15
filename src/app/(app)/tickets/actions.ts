@@ -20,7 +20,7 @@ export interface ActionState {
   success?: string
 }
 
-const uuid = z.string().uuid()
+const uuid = z.string().uuid('Seleção inválida.')
 const optionalUuid = z
   .string()
   .trim()
@@ -28,8 +28,12 @@ const optionalUuid = z
   .pipe(z.union([uuid, z.null()]))
 
 const createTicketSchema = z.object({
-  title: z.string().trim().min(4, 'O título precisa ter ao menos 4 caracteres.').max(200),
-  description: z.string().trim().max(20000).optional(),
+  title: z
+    .string()
+    .trim()
+    .min(4, 'O título precisa ter ao menos 4 caracteres.')
+    .max(200, 'O título pode ter no máximo 200 caracteres.'),
+  description: z.string().trim().max(20000, 'A descrição pode ter no máximo 20.000 caracteres.').optional(),
   priority_id: uuid,
   category_id: optionalUuid,
   queue_id: optionalUuid,
@@ -194,7 +198,11 @@ export async function transferQueue(_prev: ActionState, formData: FormData): Pro
 
 const commentSchema = z.object({
   ticket_id: uuid,
-  body: z.string().trim().min(1, 'Escreva um comentário.').max(20000),
+  body: z
+    .string()
+    .trim()
+    .min(1, 'Escreva um comentário.')
+    .max(20000, 'O comentário pode ter no máximo 20.000 caracteres.'),
   visibility: z.enum(['public', 'internal']),
 })
 
