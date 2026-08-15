@@ -1,10 +1,11 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { requireRole } from '@/lib/session'
+import { requireRole, canManageRecords } from '@/lib/session'
 import { formatCnpj, formatCurrency, formatDate, formatMinutes } from '@/lib/format'
 import type { Supplier } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
-import { NewSupplierForm } from './new-supplier-form'
+import { EditPanel } from '@/components/edit-panel'
+import { EditSupplierForm, NewSupplierForm } from './supplier-forms'
 
 export const metadata: Metadata = { title: 'Fornecedores' }
 
@@ -22,7 +23,8 @@ interface ContractRow {
 }
 
 export default async function FornecedoresPage() {
-  await requireRole(['super_admin', 'admin', 'gestor'])
+  const { profile } = await requireRole(['super_admin', 'admin', 'gestor'])
+  const editable = canManageRecords(profile.role)
   const supabase = await createClient()
 
   const [{ data: suppliers }, { data: contracts }] = await Promise.all([
@@ -112,6 +114,16 @@ export default async function FornecedoresPage() {
                         </tr>
                       ))}
                     </Table>
+                  </div>
+                )}
+
+                {/* Ocupa a largura do cartão: espremido na coluna dos selos, o
+                    formulário viraria uma tira de campos de 6rem. */}
+                {editable && (
+                  <div className="mt-4">
+                    <EditPanel title={`Editar ${s.name}`}>
+                      <EditSupplierForm supplier={s} />
+                    </EditPanel>
                   </div>
                 )}
               </Card>

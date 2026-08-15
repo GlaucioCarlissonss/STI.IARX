@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireSession, canManageRecords } from '@/lib/session'
@@ -6,7 +7,8 @@ import { assetStatusLabel, assetTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { ItAsset } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
-import { NewAssetForm } from './new-asset-form'
+import { EditPanel } from '@/components/edit-panel'
+import { EditAssetForm, NewAssetForm } from './asset-forms'
 
 export const metadata: Metadata = { title: 'Inventário de TI' }
 
@@ -26,7 +28,7 @@ export default async function InventarioPage() {
     supabase
       .from('it_assets')
       .select(
-        'id, asset_tag, serial_number, asset_type, brand, model, status, branch_id, assigned_user_id, acquisition_date, warranty_until, acquisition_cost, notes',
+        'id, asset_tag, serial_number, asset_type, brand, model, status, branch_id, assigned_user_id, supplier_id, acquisition_date, warranty_until, acquisition_cost, notes',
       )
       .is('deleted_at', null)
       .order('asset_tag')
@@ -36,6 +38,7 @@ export default async function InventarioPage() {
     supabase.from('suppliers').select('id, name').is('deleted_at', null).order('name'),
   ])
 
+  const editable = canManageRecords(profile.role)
   const list = assets ?? []
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const userName = new Map(agents.map((a) => [a.id, a.full_name]))
@@ -90,7 +93,8 @@ export default async function InventarioPage() {
                 head={['Patrimônio', 'Equipamento', 'Nº de série', 'Status', 'Filial', 'Responsável', 'Garantia']}
               >
                 {list.map((a) => (
-                  <tr key={a.id} className="hover:bg-[var(--color-surface-2)]">
+                  <Fragment key={a.id}>
+                  <tr className="hover:bg-[var(--color-surface-2)]">
                     <Td className="font-mono text-xs">{a.asset_tag ?? '—'}</Td>
                     <Td>
                       <span className="font-medium text-[var(--color-ink)]">
@@ -116,6 +120,21 @@ export default async function InventarioPage() {
                     </Td>
                     <Td className="text-[var(--color-ink-2)]">{formatDate(a.warranty_until)}</Td>
                   </tr>
+                  {editable && (
+                    <tr>
+                      <Td className="bg-[var(--color-surface-2)]" colSpan={7}>
+                        <EditPanel title={`Editar ${[a.brand, a.model].filter(Boolean).join(' ') || a.asset_tag || 'ativo'}`}>
+                          <EditAssetForm
+                            asset={a}
+                            branches={branches}
+                            agents={agents}
+                            suppliers={suppliers ?? []}
+                          />
+                        </EditPanel>
+                      </Td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </Table>
             </>
@@ -127,7 +146,7 @@ export default async function InventarioPage() {
           )}
         </div>
 
-        {canManageRecords(profile.role) && (
+        {editable && (
           <Card title="Novo ativo">
             <NewAssetForm branches={branches} agents={agents} suppliers={suppliers ?? []} />
           </Card>

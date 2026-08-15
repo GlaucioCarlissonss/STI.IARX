@@ -155,9 +155,14 @@ export interface Branch {
   client_id: string
   name: string
   code: string | null
+  cnpj: string | null
   city: string | null
   state: string | null
   timezone: string
+  business_hours_id: string | null
+  contact_name: string | null
+  contact_email: string | null
+  contact_phone: string | null
   is_active: boolean
 }
 
@@ -166,6 +171,7 @@ export interface Client {
   legal_name: string
   trade_name: string | null
   cnpj: string | null
+  contract_ref: string | null
   status: string
 }
 
@@ -179,6 +185,7 @@ export interface ItAsset {
   status: string
   branch_id: string | null
   assigned_user_id: string | null
+  supplier_id: string | null
   acquisition_date: string | null
   warranty_until: string | null
   acquisition_cost: number | null

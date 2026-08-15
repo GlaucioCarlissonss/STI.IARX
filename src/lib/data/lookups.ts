@@ -46,7 +46,9 @@ export const getBranches = cache(async (): Promise<Branch[]> => {
   const supabase = await createClient()
   const { data } = await supabase
     .from('branches')
-    .select('id, client_id, name, code, city, state, timezone, is_active')
+    .select(
+      'id, client_id, name, code, cnpj, city, state, timezone, business_hours_id, contact_name, contact_email, contact_phone, is_active',
+    )
     .is('deleted_at', null)
     .order('name')
   return data ?? []
@@ -56,7 +58,7 @@ export const getClients = cache(async (): Promise<Client[]> => {
   const supabase = await createClient()
   const { data } = await supabase
     .from('clients')
-    .select('id, legal_name, trade_name, cnpj, status')
+    .select('id, legal_name, trade_name, cnpj, contract_ref, status')
     .is('deleted_at', null)
     .order('legal_name')
   return data ?? []

@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireSession, canManageRecords } from '@/lib/session'
@@ -6,7 +7,8 @@ import { lineStatusLabel, lineTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { TelecomLine } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
-import { NewLineForm } from './new-line-form'
+import { EditPanel } from '@/components/edit-panel'
+import { EditLineForm, NewLineForm } from './line-forms'
 
 export const metadata: Metadata = { title: 'Telefonia' }
 
@@ -51,6 +53,7 @@ export default async function TelefoniaPage() {
       .is('deleted_at', null),
   ])
 
+  const editable = canManageRecords(profile.role)
   const list = lines ?? []
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const userName = new Map(agents.map((a) => [a.id, a.full_name]))
@@ -82,7 +85,8 @@ export default async function TelefoniaPage() {
           {list.length > 0 ? (
             <Table head={['Número', 'Operadora / plano', 'Tipo', 'Status', 'Filial', 'Responsável', 'Custo', 'Fidelidade']}>
               {list.map((l) => (
-                <tr key={l.id} className="hover:bg-[var(--color-surface-2)]">
+                <Fragment key={l.id}>
+                <tr className="hover:bg-[var(--color-surface-2)]">
                   <Td className="font-mono text-xs font-medium">{l.phone_number}</Td>
                   <Td>
                     <span className="font-medium text-[var(--color-ink)]">{l.carrier}</span>
@@ -105,6 +109,21 @@ export default async function TelefoniaPage() {
                   <Td className="tabular-nums">{formatCurrency(l.monthly_cost)}</Td>
                   <Td className="text-[var(--color-ink-2)]">{formatDate(l.loyalty_until)}</Td>
                 </tr>
+                {editable && (
+                  <tr>
+                    <Td className="bg-[var(--color-surface-2)]" colSpan={8}>
+                      <EditPanel title={`Editar ${l.phone_number}`}>
+                        <EditLineForm
+                          line={l}
+                          branches={branches}
+                          agents={agents}
+                          devices={devices ?? []}
+                        />
+                      </EditPanel>
+                    </Td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </Table>
           ) : (
@@ -137,7 +156,7 @@ export default async function TelefoniaPage() {
           </section>
         </div>
 
-        {canManageRecords(profile.role) && (
+        {editable && (
           <Card title="Nova linha">
             <NewLineForm
               branches={branches}

@@ -186,8 +186,21 @@ export function Table({ head, children }: { head: string[]; children: ReactNode 
   )
 }
 
-export function Td({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <td className={`border-b border-[var(--color-border)] px-4 py-3 ${className}`}>{children}</td>
+export function Td({
+  children,
+  className = '',
+  colSpan,
+}: {
+  children: ReactNode
+  className?: string
+  /** Usado pelas linhas que abrem um painel abaixo do registro. */
+  colSpan?: number
+}) {
+  return (
+    <td colSpan={colSpan} className={`border-b border-[var(--color-border)] px-4 py-3 ${className}`}>
+      {children}
+    </td>
+  )
 }
 
 /* --- Controles de formulário ------------------------------------------- */

@@ -1,15 +1,20 @@
+import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/session'
 import { getBranches, getClients } from '@/lib/data/lookups'
 import { formatCnpj } from '@/lib/format'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
-import { NewClientForm, NewBranchForm } from './forms'
+import { EditPanel } from '@/components/edit-panel'
+import { requireSession, canManageRecords } from '@/lib/session'
+import { EditBranchForm, EditClientForm, NewClientForm, NewBranchForm } from './forms'
 
 export const metadata: Metadata = { title: 'Clientes e filiais' }
 
 export default async function ClientesPage() {
   await requireRole(['super_admin', 'admin', 'gestor'])
+  const { profile } = await requireSession()
+  const editable = canManageRecords(profile.role)
   const supabase = await createClient()
 
   const [clients, branches, { data: businessHours }] = await Promise.all([
@@ -47,23 +52,59 @@ export default async function ClientesPage() {
                   </Badge>
                 </div>
 
+                {/* Largura do cartão inteiro: na coluna dos selos o formulário
+                    seria uma tira estreita de campos. */}
+                {editable && (
+                  <div className="mt-4">
+                    <EditPanel title={`Editar ${c.trade_name ?? c.legal_name}`}>
+                      <EditClientForm client={c} />
+                    </EditPanel>
+                  </div>
+                )}
+
                 <div className="mt-4">
                   {clientBranches.length > 0 ? (
-                    <Table head={['Filial', 'Código', 'Cidade / UF', 'Fuso horário', 'Situação']}>
+                    <Table
+                      head={[
+                        'Filial',
+                        'Código',
+                        'Cidade / UF',
+                        'Fuso horário',
+                        'Situação',
+                      ]}
+                    >
                       {clientBranches.map((b) => (
-                        <tr key={b.id}>
-                          <Td className="font-medium text-[var(--color-ink)]">{b.name}</Td>
-                          <Td className="font-mono text-xs text-[var(--color-ink-2)]">
-                            {b.code ?? '—'}
-                          </Td>
-                          <Td className="text-[var(--color-ink-2)]">
-                            {[b.city, b.state].filter(Boolean).join(' / ') || '—'}
-                          </Td>
-                          <Td className="text-[var(--color-ink-2)]">{b.timezone}</Td>
-                          <Td>
-                            {b.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
-                          </Td>
-                        </tr>
+                        // O painel de edição ocupa uma linha própria, não a
+                        // última célula: dentro de uma coluna estreita o
+                        // formulário ficaria espremido a ponto de atrapalhar.
+                        <Fragment key={b.id}>
+                          <tr>
+                            <Td className="font-medium text-[var(--color-ink)]">{b.name}</Td>
+                            <Td className="font-mono text-xs text-[var(--color-ink-2)]">
+                              {b.code ?? '—'}
+                            </Td>
+                            <Td className="text-[var(--color-ink-2)]">
+                              {[b.city, b.state].filter(Boolean).join(' / ') || '—'}
+                            </Td>
+                            <Td className="text-[var(--color-ink-2)]">{b.timezone}</Td>
+                            <Td>
+                              {b.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
+                            </Td>
+                          </tr>
+                          {editable && (
+                            <tr>
+                              <Td className="bg-[var(--color-surface-2)]" colSpan={5}>
+                                <EditPanel title={`Editar ${b.name}`}>
+                                  <EditBranchForm
+                                    branch={b}
+                                    clients={clients}
+                                    businessHours={businessHours ?? []}
+                                  />
+                                </EditPanel>
+                              </Td>
+                            </tr>
+                          )}
+                        </Fragment>
                       ))}
                     </Table>
                   ) : (

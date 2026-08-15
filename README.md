@@ -32,6 +32,7 @@ Supabase — PostgreSQL, Auth, Realtime, Storage, Edge Functions
 | **Telefonia** | Cadastro de linhas, vínculo com aparelho, relatório de custos por filial e operadora |
 | **Fornecedores** | Cadastro, serviços, avaliação, contratos com SLA contratado |
 | **Clientes e filiais** | Grupos econômicos com N filiais, fuso e calendário próprios |
+| **Edição dos cadastros** | Cliente, filial, ativo, linha e fornecedor são editáveis e inativáveis pela interface, com a mesma regra de validação do cadastro |
 | **Geolocalização** | Endereço estruturado obrigatório, geocodificação com nível de precisão, tratamento das 6 exceções, mapa em satélite e log append-only de cada tentativa |
 | **Usuários** | 6 papéis, visibilidade por filial (1 ou N), proteção contra auto-escalonamento |
 | **Integration Hub** | Handler Bitrix24 e handler genérico, idempotência, retry com backoff, supressão de eco, logs e mapeamento editável |
@@ -145,7 +146,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 86 testes: mapeamento, coordenadas, geolocalização e provedores sem chave
+npm test              # 105 testes: mapeamento, coordenadas, geolocalização, provedores sem chave e cadastros
 npm run db:validate   # migrações + seed + 127 asserções em PostgreSQL real
 ```
 
@@ -217,6 +218,12 @@ feriado, fora de expediente).
 
 - Upload de anexos pela UI — as tabelas e o vínculo existem, falta ligar ao
   Supabase Storage.
+- Cadastro de áreas da filial, anexos, links de internet e dashboard de
+  telefonia — banco pronto (migrações `0013`–`0016`), interface pendente; a
+  especificação de cada um está em
+  [docs/06-lacunas-e-roadmap.md](docs/06-lacunas-e-roadmap.md).
+- Convite de usuário e recuperação de senha: `/usuarios` altera papel e filiais
+  de quem já existe, mas não cria conta nova.
 - Importação em massa de ativos por CSV (RF-INV-04, prioridade *Should*).
 - Edição de definições de SLA, categorias e regras de fila pela UI — hoje são
   cadastrados por SQL; as telas são de leitura.
