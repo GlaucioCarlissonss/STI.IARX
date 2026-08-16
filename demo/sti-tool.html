@@ -388,7 +388,7 @@
 <a href="#view" class="skip-link">Pular para o conteúdo</a>
 
 <div class="banner">
-  <strong>Ferramenta operacional</strong> — as 11 melhorias solicitadas estão implementadas e utilizáveis.
+  <strong>Ferramenta operacional</strong> — as 11 melhorias solicitadas e os cadastros administrativos estão implementados e utilizáveis.
   Comece em <strong>Novidades</strong>. Tudo é gravado neste navegador.
 </div>
 
@@ -444,12 +444,15 @@
 <script>
 (() => {
   'use strict';
-  // v4: o cadastro passou a ter endereço estruturado. Reaproveitar a chave antiga
-  // devolveria filiais sem logradouro e o fluxo cairia em [CAMPO AUSENTE] sempre.
-  const KEY = 'sti.helpdesk.v4';
+  // v5: os cadastros deixaram de ser constantes do código. Cliente, fornecedor,
+  // categoria, prioridade, contrato e usuário agora são registros editáveis, e
+  // um estado v4 não teria nenhuma dessas coleções — a tela abriria vazia.
+  const KEY = 'sti.helpdesk.v5';
   const MIN = 60000;
 
   /* ===================== Catálogos ===================== */
+  /* PRIORITIES não é mais a lista viva — `db.priorities` é. Fica como semente
+     do estado inicial e como rede de segurança do helper `prio()`. */
   const PRIORITIES = {
     critical:{label:'Crítica',color:'#dc2626',weight:100,tfr:15,res:240},
     high:    {label:'Alta',   color:'#ea580c',weight:75, tfr:60,res:480},
@@ -503,10 +506,7 @@
   const DOC_KIND = { nfe:'NF-e', cte:'CT-e', receipt:'Recibo', contract:'Contrato',
     warranty:'Garantia', amendment:'Adendo', loyalty_term:'Termo de fidelidade',
     cancellation:'Cancelamento', installation_report:'Laudo de instalação', other:'Outro' };
-  const AGENTS = ['Ana Souza','Bruno Lima','Gestor de Serviços'];
   const ME = 'Ana Souza';
-  const CATEGORIES = ['Infraestrutura › Rede / Internet','Infraestrutura › Servidores',
-    'Sistemas › ERP','Telefonia › Linha móvel','Acessos › Reset de senha'];
   const routeQueue = c => c.startsWith('Telefonia') ? 'telefonia'
     : c.startsWith('Infraestrutura') ? 'infra' : 'geral';
 
@@ -524,34 +524,127 @@
   function seed() {
     const now = Date.now();
 
+    /* Cliente é registro, não mais um texto colado na filial: sem isso não há
+       onde corrigir um CNPJ nem como inativar um grupo sem apagar o histórico. */
+    const clients = [
+      { id:'c1', legalName:'Grupo Meridiano Alimentos S.A.', tradeName:'Grupo Meridiano',
+        cnpj:'12.345.678/0001-90', contractRef:'CT-2026-001', status:'active' },
+      { id:'c2', legalName:'Construtora Vertex Ltda.', tradeName:'Vertex',
+        cnpj:'98.765.432/0001-10', contractRef:'CT-2026-014', status:'active' }
+    ];
+
+    const suppliers = [
+      { id:'s1', name:'NetLink Telecom', legalName:'NetLink Telecomunicações Ltda.',
+        cnpj:'11.222.333/0001-44', email:'suporte@netlink.com.br', phone:'+55 11 4004-1000',
+        services:['Link dedicado','MPLS'], rating:4.5, active:true },
+      { id:'s2', name:'Vivo Empresas', legalName:'Telefônica Brasil S.A.',
+        cnpj:'02.558.157/0001-62', email:'corporativo@vivo.com.br', phone:'+55 11 3000-2000',
+        services:['Telefonia móvel','Dados'], rating:3.5, active:true },
+      { id:'s3', name:'Dell do Brasil', legalName:'Dell Computadores do Brasil Ltda.',
+        cnpj:'72.381.189/0001-10', email:'suporte@dell.com.br', phone:'+55 11 4004-0000',
+        services:['Hardware','Garantia ProSupport'], rating:4, active:true }
+    ];
+
+    /* SLA CONTRATADO do fornecedor — o prazo que o terceiro nos deve, distinto
+       das definições de SLA que oferecemos ao cliente. */
+    const supplierContracts = [
+      { id:'sc1', supplierId:'s1', number:'NL-2026-001', description:'Link dedicado 500/500 — Matriz SP',
+        startsOn:'2026-01-01', endsOn:'2027-01-01', monthlyCost:4800,
+        responseSla:60, resolutionSla:240, active:true },
+      { id:'sc2', supplierId:'s1', number:'NL-2026-002', description:'Link dedicado 300/300 — CD Campinas',
+        startsOn:'2026-02-15', endsOn:'2026-10-30', monthlyCost:2200,
+        responseSla:60, resolutionSla:480, active:true },
+      { id:'sc3', supplierId:'s2', number:'VIVO-2026-001', description:'Pacote de linhas móveis',
+        startsOn:'2025-06-01', endsOn:'2027-06-01', monthlyCost:1890,
+        responseSla:240, resolutionSla:1440, active:true },
+      { id:'sc4', supplierId:'s3', number:'DELL-PS-2025', description:'ProSupport — parque de notebooks',
+        startsOn:'2025-04-10', endsOn:'2028-04-10', monthlyCost:0,
+        responseSla:120, resolutionSla:2880, active:false }
+    ];
+
+    /* Categorias em 2 níveis, como a trigger trg_category_depth exige. */
+    const categories = [
+      { id:'ct1', parentId:null, name:'Infraestrutura', description:'Rede, servidores e datacenter.', active:true },
+      { id:'ct2', parentId:'ct1', name:'Rede / Internet', description:'', active:true },
+      { id:'ct3', parentId:'ct1', name:'Servidores', description:'', active:true },
+      { id:'ct4', parentId:null, name:'Sistemas', description:'Aplicações de negócio.', active:true },
+      { id:'ct5', parentId:'ct4', name:'ERP', description:'', active:true },
+      { id:'ct6', parentId:null, name:'Telefonia', description:'Linhas móveis e fixas.', active:true },
+      { id:'ct7', parentId:'ct6', name:'Linha móvel', description:'', active:true },
+      { id:'ct8', parentId:null, name:'Acessos', description:'Contas, senhas e permissões.', active:true },
+      { id:'ct9', parentId:'ct8', name:'Reset de senha', description:'', active:true }
+    ];
+
+    /* Prioridade vira registro editável: peso, cor e ordem deixam de ser
+       constantes do código. A `key` é derivada do nome e nunca reeditada,
+       porque as definições de SLA apontam para ela. */
+    const priorities = [
+      { key:'critical', label:'Crítica', color:'#dc2626', weight:100, sortOrder:1, tfr:15, res:240, active:true },
+      { key:'high', label:'Alta', color:'#ea580c', weight:75, sortOrder:2, tfr:60, res:480, active:true },
+      { key:'medium', label:'Média', color:'#ca8a04', weight:45, sortOrder:3, tfr:240, res:1440, active:true },
+      { key:'low', label:'Baixa', color:'#0891b2', weight:20, sortOrder:4, tfr:480, res:2880, active:true }
+    ];
+
+    const slaContracts = [
+      { id:'k1', name:'Meridiano — Padrão', clientId:'c1', branchId:null, calendar:'Comercial',
+        validFrom:'2026-01-01', validTo:'', active:true, notes:'Contrato guarda-chuva do grupo.' },
+      { id:'k2', name:'Meridiano — Manaus 24x7', clientId:'c1', branchId:'b3', calendar:'24x7',
+        validFrom:'2026-01-01', validTo:'', active:true, notes:'Operação ininterrupta na filial Manaus.' }
+    ];
+
+    /* Usuários deixam de ser uma lista de nomes: papel e filiais visíveis são
+       o que decide o que cada pessoa enxerga. */
+    const users = [
+      { id:'u1', name:'Administrador IAR', email:'admin@iaroffice.com.br', phone:'',
+        role:'admin', branchIds:[], active:true, isMe:false },
+      { id:'u2', name:'Ana Souza', email:'ana.souza@iaroffice.com.br', phone:'+55 11 99000-1001',
+        role:'atendente', branchIds:['b1','b2'], active:true, isMe:true },
+      { id:'u3', name:'Bruno Lima', email:'bruno.lima@iaroffice.com.br', phone:'',
+        role:'atendente', branchIds:['b3','b4'], active:true, isMe:false },
+      { id:'u4', name:'Gestor de Serviços', email:'gestor@iaroffice.com.br', phone:'',
+        role:'gestor', branchIds:[], active:true, isMe:false },
+      { id:'u5', name:'Carla Dias', email:'carla.dias@meridiano.com.br', phone:'',
+        role:'solicitante', branchIds:['b1'], active:true, isMe:false }
+    ];
+
     // Endereço ESTRUTURADO: logradouro, número, bairro e CEP são os quatro
     // campos que o fluxo de geolocalização exige. Cada filial cobre um caso:
     // completo, completo em outra praça, sem número, e sem endereço nenhum.
     const branches = [
-      { id:'b1', name:'Meridiano — Matriz São Paulo', short:'Matriz SP', client:'Grupo Meridiano Alimentos S.A.',
+      { id:'b1', name:'Meridiano — Matriz São Paulo', short:'Matriz SP', clientId:'c1', client:'Grupo Meridiano Alimentos S.A.',
+        code:'MER-SP', cnpj:'12.345.678/0001-90', timezone:'America/Sao_Paulo', calendar:'Comercial', active:true,
+        contactName:'Carla Dias', contactEmail:'carla.dias@meridiano.com.br', contactPhone:'+55 11 3555-1000',
         street:'Avenida Paulista', number:'1578', complement:'Conjunto 12', district:'Bela Vista',
         city:'São Paulo', state:'SP', cep:'01310-200',
         lat:-23.55052, lng:-46.633308, precision:'manual', geoStatus:'ok', stale:false, geoReport:null,
         address:'Avenida Paulista, 1578 - Conjunto 12, Bela Vista, São Paulo/SP, 01310-200' },
-      { id:'b2', name:'Meridiano — CD Campinas', short:'CD Campinas', client:'Grupo Meridiano Alimentos S.A.',
+      { id:'b2', name:'Meridiano — CD Campinas', short:'CD Campinas', clientId:'c1', client:'Grupo Meridiano Alimentos S.A.',
+        code:'MER-CPQ', cnpj:'12.345.678/0002-70', timezone:'America/Sao_Paulo', calendar:'Comercial', active:true,
+        contactName:'', contactEmail:'', contactPhone:'',
         street:'Avenida Francisco Glicério', number:'935', complement:null, district:'Centro',
         city:'Campinas', state:'SP', cep:'13012-100',
         lat:-22.909938, lng:-47.062633, precision:'manual', geoStatus:'ok', stale:false, geoReport:null,
         address:'Avenida Francisco Glicério, 935, Centro, Campinas/SP, 13012-100' },
       // Sem número: o fluxo tem de barrar em [CAMPO AUSENTE].
-      { id:'b3', name:'Meridiano — Filial Manaus', short:'Manaus', client:'Grupo Meridiano Alimentos S.A.',
+      { id:'b3', name:'Meridiano — Filial Manaus', short:'Manaus', clientId:'c1', client:'Grupo Meridiano Alimentos S.A.',
+        code:'MER-MAO', cnpj:'12.345.678/0003-50', timezone:'America/Manaus', calendar:'24x7', active:true,
+        contactName:'', contactEmail:'', contactPhone:'',
         street:'Avenida Djalma Batista', number:'', complement:null, district:'Chapada',
         city:'Manaus', state:'AM', cep:'69050-010',
         lat:-3.119028, lng:-60.021731, precision:'approximate', geoStatus:'low_precision', stale:false, geoReport:null,
         address:'Avenida Djalma Batista, Chapada, Manaus/AM, 69050-010' },
-      { id:'b4', name:'Meridiano — Filial Recife', short:'Recife', client:'Grupo Meridiano Alimentos S.A.',
+      { id:'b4', name:'Meridiano — Filial Recife', short:'Recife', clientId:'c1', client:'Grupo Meridiano Alimentos S.A.',
+        code:'MER-REC', cnpj:'12.345.678/0004-31', timezone:'America/Recife', calendar:'Comercial', active:true,
+        contactName:'', contactEmail:'', contactPhone:'',
         street:'Avenida Conselheiro Aguiar', number:'2333', complement:null, district:'Boa Viagem',
         city:'Recife', state:'PE', cep:'51020-020',
         lat:-8.047562, lng:-34.877, precision:'approximate', geoStatus:'low_precision', stale:false, geoReport:null,
         address:'Avenida Conselheiro Aguiar, 2333, Boa Viagem, Recife/PE, 51020-020' },
       // Sem coordenada e sem endereço, de propósito: exercita o aviso "filiais
       // sem localização" em vez de a filial desaparecer do mapa em silêncio.
-      { id:'b5', name:'Vertex — Sede', short:'Vertex BH', client:'Construtora Vertex Ltda.',
+      { id:'b5', name:'Vertex — Sede', short:'Vertex BH', clientId:'c2', client:'Construtora Vertex Ltda.',
+        code:'VTX-BH', cnpj:'98.765.432/0001-10', timezone:'America/Sao_Paulo', calendar:'Comercial', active:true,
+        contactName:'', contactEmail:'', contactPhone:'',
         street:'', number:'', complement:null, district:'', city:'Belo Horizonte', state:'MG', cep:'',
         lat:null, lng:null, precision:null, geoStatus:'pending', stale:false, geoReport:null, address:null }
     ];
@@ -573,21 +666,21 @@
     /* SLA como POLÍTICA: contrato × categoria × prioridade, do mais específico
        ao mais genérico — é a mesma precedência de app.fn_resolve_sla(). */
     const slaDefs = [
-      { id:nid('sla'), name:'Meridiano — Infra crítica', contract:'Meridiano — Padrão',
-        category:'Infraestrutura', priority:'critical', tfr:5, res:60, calendar:'Comercial', active:true },
-      { id:nid('sla'), name:'Meridiano — Crítica', contract:'Meridiano — Padrão',
-        category:null, priority:'critical', tfr:10, res:120, calendar:'Comercial', active:true },
-      { id:nid('sla'), name:'Meridiano — Alta', contract:'Meridiano — Padrão',
-        category:null, priority:'high', tfr:30, res:360, calendar:'Comercial', active:true },
-      { id:nid('sla'), name:'Manaus 24x7 — Crítica', contract:'Meridiano — Manaus 24x7',
-        category:null, priority:'critical', tfr:15, res:180, calendar:'24x7', active:true },
-      { id:nid('sla'), name:'Padrão do tenant — Crítica', contract:null, category:null,
+      { id:nid('sla'), name:'Meridiano — Infra crítica', contractId:'k1', contract:'Meridiano — Padrão',
+        categoryId:'ct1', category:'Infraestrutura', priority:'critical', tfr:5, res:60, calendar:'Comercial', active:true },
+      { id:nid('sla'), name:'Meridiano — Crítica', contractId:'k1', contract:'Meridiano — Padrão',
+        categoryId:null, category:null, priority:'critical', tfr:10, res:120, calendar:'Comercial', active:true },
+      { id:nid('sla'), name:'Meridiano — Alta', contractId:'k1', contract:'Meridiano — Padrão',
+        categoryId:null, category:null, priority:'high', tfr:30, res:360, calendar:'Comercial', active:true },
+      { id:nid('sla'), name:'Manaus 24x7 — Crítica', contractId:'k2', contract:'Meridiano — Manaus 24x7',
+        categoryId:null, category:null, priority:'critical', tfr:15, res:180, calendar:'24x7', active:true },
+      { id:nid('sla'), name:'Padrão do tenant — Crítica', contractId:null, contract:null, categoryId:null, category:null,
         priority:'critical', tfr:15, res:240, calendar:'Comercial', active:true },
-      { id:nid('sla'), name:'Padrão do tenant — Alta', contract:null, category:null,
+      { id:nid('sla'), name:'Padrão do tenant — Alta', contractId:null, contract:null, categoryId:null, category:null,
         priority:'high', tfr:60, res:480, calendar:'Comercial', active:true },
-      { id:nid('sla'), name:'Padrão do tenant — Média', contract:null, category:null,
+      { id:nid('sla'), name:'Padrão do tenant — Média', contractId:null, contract:null, categoryId:null, category:null,
         priority:'medium', tfr:240, res:1440, calendar:'Comercial', active:true },
-      { id:nid('sla'), name:'Padrão do tenant — Baixa', contract:null, category:null,
+      { id:nid('sla'), name:'Padrão do tenant — Baixa', contractId:null, contract:null, categoryId:null, category:null,
         priority:'low', tfr:480, res:2880, calendar:'Comercial', active:true }
     ];
 
@@ -752,8 +845,9 @@
       ]
     };
 
-    return { branches, areas, queues, slaDefs, tickets, assets, lines, links,
-             integration, nextTicket:1053, uid };
+    return { clients, branches, areas, queues, categories, priorities,
+             slaContracts, slaDefs, suppliers, supplierContracts, users,
+             tickets, assets, lines, links, integration, nextTicket:1053, uid };
   }
 
   let db;
@@ -762,7 +856,13 @@
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const p = JSON.parse(raw);
-        if (p && Array.isArray(p.tickets) && p.tickets.length && Array.isArray(p.links)) {
+        // Checar as coleções NOVAS também: um estado gravado por uma versão
+        // anterior passaria na checagem antiga e abriria as telas de cadastro
+        // vazias, sem erro visível.
+        if (p && Array.isArray(p.tickets) && p.tickets.length && Array.isArray(p.links)
+            && Array.isArray(p.clients) && Array.isArray(p.priorities)
+            && Array.isArray(p.categories) && Array.isArray(p.users)
+            && Array.isArray(p.suppliers) && Array.isArray(p.slaContracts)) {
           uid = p.uid || 5000;
           return p;
         }
@@ -781,6 +881,64 @@
   const branchById = id => db.branches.find(b => b.id === id);
   const areaById   = id => db.areas.find(a => a.id === id);
   const queueBySlug = s => db.queues.find(q => q.slug === s) || db.queues[0];
+  const clientById = id => db.clients.find(c => c.id === id);
+  const supplierById = id => db.suppliers.find(s => s.id === id);
+  const categoryById = id => db.categories.find(c => c.id === id);
+  const slaContractById = id => db.slaContracts.find(k => k.id === id);
+  const userById = id => db.users.find(u => u.id === id);
+  const contractsOf = supplierId => db.supplierContracts.filter(c => c.supplierId === supplierId);
+
+  /**
+   * Prioridade por chave.
+   *
+   * O fallback existe porque a prioridade virou registro editável: um ticket
+   * antigo pode apontar para uma chave que o operador removeu da lista, e sem
+   * isto a tela inteira quebraria ao ler `.label` de `undefined`.
+   */
+  const PRIORITY_FALLBACK = { label:'—', color:'#64748b', weight:50, tfr:60, res:480 };
+  const prio = k => db.priorities.find(p => p.key === k) || PRIORITIES[k] || PRIORITY_FALLBACK;
+  const activePriorities = () => db.priorities.filter(p => p.active)
+                                              .sort((a,b) => a.sortOrder - b.sortOrder);
+
+  /** Caminho "Pai › Filho" — é assim que o ticket guarda a categoria. */
+  const catPath = c => {
+    if (!c) return '';
+    const parent = c.parentId ? categoryById(c.parentId) : null;
+    return parent ? `${parent.name} › ${c.name}` : c.name;
+  };
+  /** Só folhas ativas de pai ativo entram no seletor de abertura de ticket. */
+  const categoryPaths = () => db.categories
+    .filter(c => c.active && (!c.parentId || categoryById(c.parentId)?.active))
+    .map(catPath).sort((a,b) => a.localeCompare(b, 'pt-BR'));
+  const topCategories = () => db.categories.filter(c => !c.parentId);
+
+  /** Nomes atribuíveis a um ticket — espelha o papel, não uma lista fixa. */
+  const agentNames = () => db.users
+    .filter(u => u.active && ['atendente','gestor','admin'].includes(u.role))
+    .map(u => u.name);
+
+  /** Quem pode figurar como responsável por um ativo: inclui solicitantes. */
+  const assignableNames = () => db.users.filter(u => u.active).map(u => u.name);
+
+  /**
+   * Nome do cliente da filial.
+   *
+   * A filial guarda `clientId`; `client` é só um retrato do nome, mantido em dia
+   * a cada gravação para que ticket e mapa não precisem resolver a referência.
+   */
+  const branchClientName = b => {
+    if (!b) return '';
+    const c = b.clientId ? clientById(b.clientId) : null;
+    return c ? (c.tradeName || c.legalName) : (b.client || '');
+  };
+  /** Repropaga o nome do cliente para filiais e tickets após uma edição. */
+  function syncClientName(clientId) {
+    const name = branchClientName({ clientId });
+    db.branches.filter(b => b.clientId === clientId).forEach(b => {
+      b.client = name;
+      db.tickets.filter(t => t.branchId === b.id).forEach(t => { t.client = name; });
+    });
+  }
   const areasOf = branchId => db.areas.filter(a => a.branchId === branchId && a.active)
                                       .sort((x,y) => x.order - y.order);
   const openTickets = () => db.tickets.filter(t => IS_OPEN(t.status));
@@ -805,7 +963,7 @@
     const rem = remainingMs(t);
     const urgency = rem < 0 ? 1 : Math.min(Math.max(1 - rem / (t.target * MIN), 0), 1);
     const age = Math.min((Date.now() - t.createdAt) / (72 * 3600 * 1000), 1);
-    return wc * (PRIORITIES[t.prio].weight / 100) + wd * urgency + wa * age;
+    return wc * (prio(t.prio).weight / 100) + wd * urgency + wa * age;
   }
 
   /** Ordena pelo score e desempata pelo critério configurado na fila. */
@@ -822,8 +980,8 @@
   }
 
   /** Precedência de SLA: contrato+categoria → contrato → padrão do tenant. */
-  function resolveSla(prio, cat) {
-    const cands = db.slaDefs.filter(d => d.active && d.priority === prio &&
+  function resolveSla(prioKey, cat) {
+    const cands = db.slaDefs.filter(d => d.active && d.priority === prioKey &&
       (d.category === null || (cat || '').startsWith(d.category)));
     const rank = d => d.contract && d.category ? 1 : d.contract ? 3 : 5;
     return cands.sort((a, b) => rank(a) - rank(b))[0] || null;
@@ -903,18 +1061,18 @@
   function createTicket(f) {
     const title = (f.title || '').trim();
     if (title.length < 4) return { error:'O título precisa ter ao menos 4 caracteres.' };
-    const prio = PRIORITIES[f.prio] ? f.prio : 'medium';
-    const cat = f.cat || CATEGORIES[0];
+    const prioKey = db.priorities.some(p => p.key === f.prio) ? f.prio : (activePriorities()[0]?.key || 'medium');
+    const cat = f.cat || categoryPaths()[0] || '';
     const branchId = f.branchId || db.branches[0].id;
-    const def = resolveSla(prio, cat);
-    const target = def ? def.res : PRIORITIES[prio].res;
+    const def = resolveSla(prioKey, cat);
+    const target = def ? def.res : prio(prioKey).res;
     const now = Date.now();
     const t = {
-      id:nid('t'), n:db.nextTicket++, title, desc:(f.desc || '').trim(), prio, status:'open',
-      cat, branchId, client:branchById(branchId).client,
+      id:nid('t'), n:db.nextTicket++, title, desc:(f.desc || '').trim(), prio:prioKey, status:'open',
+      cat, branchId, client:branchClientName(branchById(branchId)),
       queue:f.queue || routeQueue(cat), areaId:f.areaId || null,
       assignee:f.assignee || null, requester:'Carla Dias',
-      createdAt:now, target, tfr:def ? def.tfr : PRIORITIES[prio].tfr,
+      createdAt:now, target, tfr:def ? def.tfr : prio(prioKey).tfr,
       dueAt:now + target*MIN, frozen:null, firstResponseAt:null, resolvedAt:null, reopened:0,
       tags:(f.tags || '').split(',').map(s => s.trim()).filter(Boolean),
       comments:[], attachments:[],
@@ -980,35 +1138,57 @@
   }
 
   /* --- Cadastros --- */
+  /**
+   * Cadastra ou edita um ativo — a MESMA validação nos dois caminhos.
+   *
+   * Separar em duas funções foi o que, no app real, deixou a edição aceitar o
+   * que o cadastro recusava. Aqui `f.id` decide gravar por cima ou inserir.
+   */
   function createAsset(f) {
     if (!(f.model || '').trim()) return 'Informe marca e modelo.';
     if (!f.areaId) return 'A área da filial é obrigatória.';
     const tag = (f.tag || '').trim();
-    if (tag && db.assets.some(a => a.tag.toUpperCase() === tag.toUpperCase()))
+    if (tag && db.assets.some(a => a.id !== f.id && (a.tag || '').toUpperCase() === tag.toUpperCase()))
       return 'Já existe um ativo com este patrimônio.';
+    const sn = (f.sn || '').trim();
+    if (sn && db.assets.some(a => a.id !== f.id && (a.sn || '').toUpperCase() === sn.toUpperCase()))
+      return 'Já existe um ativo com este número de série.';
     const area = areaById(f.areaId);
     if (!area || area.branchId !== f.branchId) return 'A área informada pertence a outra filial.';
-    db.assets.push({ id:nid('a'), tag, sn:(f.sn || '').trim(), type:f.type || 'Notebook',
+    const payload = { tag, sn, type:f.type || 'Notebook',
       model:f.model.trim(), status:f.status || 'in_stock', branchId:f.branchId,
       areaId:f.areaId, user:(f.user || '').trim(), warranty:f.warranty || '',
-      cost:Number(f.cost) || 0, attachments:[], custody:[] });
+      cost:Number(f.cost) || 0 };
+    if (f.id) {
+      const a = db.assets.find(x => x.id === f.id);
+      if (!a) return 'Ativo não encontrado.';
+      Object.assign(a, payload);
+    } else db.assets.push(Object.assign({ id:nid('a'), attachments:[], custody:[] }, payload));
     save(); return null;
   }
 
+  /** Cadastra ou edita uma linha — mesma validação nos dois caminhos. */
   function createLine(f) {
     const num = (f.num || '').trim();
     if (num.length < 8) return 'Informe o número da linha.';
     if (!(f.carrier || '').trim()) return 'Informe a operadora.';
     if (!f.areaId) return 'A área da empresa é obrigatória.';
-    if (db.lines.some(l => l.num === num)) return 'Este número já está cadastrado.';
+    if (db.lines.some(l => l.id !== f.id && l.num === num)) return 'Este número já está cadastrado.';
+    // Espelha a constraint line_cancelled_needs_date do banco.
     if (f.status === 'cancelled' && !f.cancelledOn) return 'Linha cancelada exige a data de cancelamento.';
     const area = areaById(f.areaId);
     if (!area || area.branchId !== f.branchId) return 'A área informada pertence a outra filial.';
-    db.lines.push({ id:nid('l'), num, carrier:f.carrier.trim(), plan:(f.plan || '').trim(),
+    const payload = { num, carrier:f.carrier.trim(), plan:(f.plan || '').trim(),
       type:f.type || 'Pós-pago', status:f.status || 'active', branchId:f.branchId, areaId:f.areaId,
       user:(f.user || '').trim(), cost:Number(f.cost) || 0, loyalty:f.loyalty || '',
+      cancelledOn:f.cancelledOn || '',
       contractNumber:(f.contractNumber || '').trim(), contractStart:f.contractStart || '',
-      contractEnd:f.contractEnd || '', attachments:[] });
+      contractEnd:f.contractEnd || '' };
+    if (f.id) {
+      const l = db.lines.find(x => x.id === f.id);
+      if (!l) return 'Linha não encontrada.';
+      Object.assign(l, payload);
+    } else db.lines.push(Object.assign({ id:nid('l'), attachments:[] }, payload));
     save(); return null;
   }
 
@@ -1072,7 +1252,7 @@
   const ago = ms => fmtMs(Date.now() - ms);
   const kb = b => b >= 1048576 ? (b/1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b/1024)) + ' KB';
   const pill = (l, t) => `<span class="pill" data-tone="${t}"><span class="dot"></span>${esc(l)}</span>`;
-  const prioTag = p => `<span class="prio" style="color:${PRIORITIES[p].color}"><span class="dot"></span>${PRIORITIES[p].label}</span>`;
+  const prioTag = p => `<span class="prio" style="color:${prio(p).color}"><span class="dot"></span>${esc(prio(p).label)}</span>`;
   const areaName = id => areaById(id)?.name ?? '—';
   const branchName = id => branchById(id)?.name ?? '—';
   const branchShort = id => branchById(id)?.short ?? '—';
@@ -1631,7 +1811,7 @@
     return db.branches.map(b => {
       if (domain === 'tickets') {
         const list = openTickets().filter(t => t.branchId === b.id);
-        const crit = list.filter(t => PRIORITIES[t.prio].weight >= 80 || slaState(t) === 'breached').length;
+        const crit = list.filter(t => prio(t.prio).weight >= 80 || slaState(t) === 'breached').length;
         const risk = list.filter(t => ['warning','critical'].includes(slaState(t))).length;
         return { branchId:b.id, count:list.length, state: crit ? 'red' : risk ? 'amber' : 'green' };
       }
@@ -1677,7 +1857,7 @@
       novos:open.filter(t => t.status === 'open').length,
       andamento:open.filter(t => ['assigned','in_progress'].includes(t.status)).length,
       esperando:open.filter(t => PAUSES(t.status)).length,
-      criticos:open.filter(t => PRIORITIES[t.prio].weight >= 80).length,
+      criticos:open.filter(t => prio(t.prio).weight >= 80).length,
       risco:open.filter(t => ['warning','critical'].includes(slaState(t))).length,
       estourado:open.filter(t => slaState(t) === 'breached').length,
       resolvedToday:db.tickets.filter(t => t.resolvedAt && new Date(t.resolvedAt).toDateString() === today).length,
@@ -1749,7 +1929,15 @@
     { n:10, t:'Edição de integrações e mapeamento', go:'integracoes',
       d:'Editar endpoint e autenticação, adicionar/remover mapeamentos, testar com payload real sem gravar nada, e versões com rollback.' },
     { n:11, t:'Mapas por filial com detalhamento por área', go:'mapas',
-      d:'Mapa em Tickets, Inventário, Telefonia e Links. Marcador dimensionado pela quantidade, cor por criticidade e popup com quebra por área.' }
+      d:'Mapa em Tickets, Inventário, Telefonia e Links. Marcador dimensionado pela quantidade, cor por criticidade e popup com quebra por área.' },
+    { n:12, t:'Cadastro de clientes e filiais', go:'clientes',
+      d:'Grupo econômico e unidades como registro editável: razão social, CNPJ, código, fuso e calendário. Editar e inativar sem excluir — cliente inativo mantém filiais, tickets e contratos.' },
+    { n:13, t:'Fornecedores e contratos', go:'fornecedores',
+      d:'Cadastro do prestador com serviços e avaliação, mais os contratos: número, vigência, custo mensal e o SLA CONTRATADO (o prazo que o terceiro nos deve).' },
+    { n:14, t:'Categorias, prioridades e contratos de SLA', go:'sla',
+      d:'O que antes era constante no código virou cadastro: categoria em dois níveis, prioridade com peso e cor, contrato de SLA por cliente e as definições. A prioridade nova já aparece ao abrir ticket.' },
+    { n:15, t:'Criar atendente e trocar a própria senha', go:'usuarios',
+      d:'Conta nova com papel e filiais visíveis, e senha temporária mostrada uma única vez. Em Minha conta a pessoa troca essa senha — sem isso ficaria presa a ela.' }
   ];
 
   const views = {};
@@ -1757,16 +1945,16 @@
   views.novidades = () => `
     <div class="page-head"><div>
       <p class="eyebrow">Entrega</p>
-      <h1>As 11 melhorias solicitadas</h1>
-      <p class="lede">Cada cartão abre a tela onde a melhoria está funcionando. Tudo é editável e
-      gravado neste navegador — abra um ticket, mude um SLA, anexe uma foto.</p>
+      <h1>O que está pronto para usar</h1>
+      <p class="lede">Cada cartão abre a tela onde o recurso está funcionando. Tudo é editável e
+      gravado neste navegador — abra um ticket, mude um SLA, cadastre um cliente, crie um atendente.</p>
     </div></div>
 
     <div class="alert" data-kind="info" style="margin-bottom:1.25rem">
-      <strong>Onde cada coisa vive.</strong> Esta página é a ferramenta navegável.
-      A camada de banco (37 → 44 tabelas, 114 asserções) e a especificação dos 11 módulos
-      estão no repositório, em <span class="mono">supabase/migrations/0013</span> e
-      <span class="mono">docs/06-lacunas-e-roadmap.md</span>.
+      <strong>Onde cada coisa vive.</strong> Esta página é a ferramenta navegável — os cartões
+      01 a 11 são as melhorias especificadas em <span class="mono">docs/06-lacunas-e-roadmap.md</span>;
+      12 a 15 são os cadastros administrativos. O que vale em produção é o app Next.js em
+      <span class="mono">src/</span> sobre o Supabase; aqui os dados ficam apenas neste navegador.
     </div>
 
     <div class="news">${IMPROVEMENTS.map(i => `
@@ -1776,6 +1964,350 @@
         <p>${esc(i.d)}</p>
         <footer><button type="button" class="btn btn-sm" data-go="${i.go}">Abrir</button></footer>
       </article>`).join('')}</div>`;
+
+  /* ===================== Clientes e filiais =====================
+     Cliente e filial deixaram de ser texto fixo no código: são registros com
+     edição e inativação, como no app real. Inativar nunca exclui — cliente
+     inativo carrega filiais, tickets e contratos que precisam sobreviver. */
+  const CLIENT_STATUS = { active:{label:'Ativo',tone:'ok'}, inactive:{label:'Inativo',tone:'neutral'},
+    prospect:{label:'Prospect',tone:'info'} };
+  const TIMEZONES = ['America/Sao_Paulo','America/Manaus','America/Cuiaba','America/Belem',
+    'America/Fortaleza','America/Recife','America/Bahia','America/Campo_Grande',
+    'America/Porto_Velho','America/Rio_Branco','America/Boa_Vista','America/Noronha'];
+  const CALENDARS = ['Comercial','24x7'];
+
+  const branchesOfClient = id => db.branches.filter(b => b.clientId === id);
+
+  views.clientes = () => `
+    <div class="page-head">
+      <div><p class="eyebrow">Cadastros</p><h1>Clientes e filiais</h1>
+      <p class="lede">Grupos econômicos atendidos e suas unidades. A filial define a visibilidade
+      dos atendentes e o fuso usado no cálculo de SLA. O endereço e a coordenada de cada filial
+      ficam em <button type="button" class="btn btn-sm" data-variant="ghost" data-go="mapas">Mapas</button>.</p></div>
+      <button type="button" class="btn" id="client-new">Novo cliente</button></div>
+
+    ${db.clients.length ? '' : `<div class="alert" data-kind="info">Nenhum cliente cadastrado.</div>`}
+
+    ${db.clients.map(c => {
+      const bs = branchesOfClient(c.id);
+      const st = CLIENT_STATUS[c.status] || CLIENT_STATUS.active;
+      return `<div class="card" style="margin-bottom:1rem"><div class="card-body">
+        <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap">
+          <div>
+            <h2>${esc(c.tradeName || c.legalName)}</h2>
+            <p class="dim" style="margin:.2rem 0 0">${esc(c.legalName)}${c.cnpj?' · '+esc(c.cnpj):''}</p>
+            ${c.contractRef?`<p class="dim" style="margin:.15rem 0 0">Contrato: ${esc(c.contractRef)}</p>`:''}
+          </div>
+          <div class="row-actions">
+            ${pill(st.label, st.tone)}
+            <button type="button" class="btn btn-sm" data-variant="ghost" data-client-edit="${c.id}">Editar</button>
+            <button type="button" class="btn btn-sm" data-variant="ghost" data-branch-new="${c.id}">Nova filial</button>
+          </div>
+        </div>
+
+        ${bs.length ? `<div class="table-wrap" style="margin-top:.8rem"><table>
+          <thead><tr><th>Filial</th><th>Código</th><th>Cidade / UF</th><th>Fuso horário</th>
+            <th>Calendário</th><th>Situação</th><th></th></tr></thead>
+          <tbody>${bs.map(b => `<tr>
+            <td class="strong">${esc(b.name)}</td>
+            <td class="mono">${esc(b.code)||'—'}</td>
+            <td class="muted">${esc([b.city,b.state].filter(Boolean).join(' / '))||'—'}</td>
+            <td class="muted">${esc(b.timezone||'—')}</td>
+            <td class="muted">${esc(b.calendar||'Padrão do tenant')}</td>
+            <td>${b.active!==false?pill('Ativa','ok'):pill('Inativa','neutral')}</td>
+            <td class="row-actions">
+              <button type="button" class="btn btn-sm" data-variant="ghost" data-branch-edit="${b.id}">Editar</button>
+            </td></tr>`).join('')}</tbody></table></div>`
+          : `<p class="dim" style="margin:.8rem 0 0"><em>Nenhuma filial cadastrada para este cliente.</em></p>`}
+      </div></div>`;
+    }).join('')}`;
+
+  function clientModal(id) {
+    const c = id ? clientById(id) : null;
+    modal(c ? `Editar ${c.tradeName || c.legalName}` : 'Novo cliente', `
+      <input type="hidden" id="cm-id" value="${c?c.id:''}">
+      <div class="form-grid">
+        <div class="field form-full"><label for="cm-legal">Razão social <span class="req">*</span></label>
+          <input type="text" id="cm-legal" maxlength="200" value="${c?esc(c.legalName):''}"></div>
+        <div class="field form-full"><label for="cm-trade">Nome fantasia</label>
+          <input type="text" id="cm-trade" maxlength="200" value="${c?esc(c.tradeName):''}"></div>
+        <div class="field"><label for="cm-cnpj">CNPJ</label>
+          <input type="text" id="cm-cnpj" maxlength="20" placeholder="00.000.000/0001-00" value="${c?esc(c.cnpj):''}"></div>
+        <div class="field"><label for="cm-ref">Referência de contrato</label>
+          <input type="text" id="cm-ref" maxlength="100" value="${c?esc(c.contractRef):''}"></div>
+        <div class="field"><label for="cm-status">Situação</label>
+          <select id="cm-status">${Object.entries(CLIENT_STATUS).map(([k,v])=>
+            `<option value="${k}"${c&&c.status===k?' selected':''}>${v.label}</option>`).join('')}</select></div>
+        ${c?`<div class="form-full alert" data-kind="info">Inativar tira o cliente dos seletores e
+          mantém filiais, tickets e contratos históricos — não exclui nada.</div>`:''}
+        <div class="form-full" id="cm-msg"></div>
+      </div>`, { save: c ? 'Salvar alterações' : 'Cadastrar cliente' });
+  }
+
+  function branchModal(id, clientId) {
+    const b = id ? branchById(id) : null;
+    const cid = b ? b.clientId : clientId;
+    modal(b ? `Editar ${b.name}` : 'Nova filial', `
+      <input type="hidden" id="bm-id" value="${b?b.id:''}">
+      <div class="form-grid">
+        <div class="field form-full"><label for="bm-client">Cliente <span class="req">*</span></label>
+          <select id="bm-client">${db.clients.map(c=>
+            `<option value="${c.id}"${cid===c.id?' selected':''}>${esc(c.tradeName||c.legalName)}</option>`).join('')}</select></div>
+        <div class="field form-full"><label for="bm-name">Nome da filial <span class="req">*</span></label>
+          <input type="text" id="bm-name" maxlength="200" placeholder="Matriz São Paulo" value="${b?esc(b.name):''}"></div>
+        <div class="field"><label for="bm-code">Código</label>
+          <input type="text" id="bm-code" maxlength="30" placeholder="MER-SP" value="${b?esc(b.code):''}"></div>
+        <div class="field"><label for="bm-cnpj">CNPJ</label>
+          <input type="text" id="bm-cnpj" maxlength="20" value="${b?esc(b.cnpj):''}"></div>
+        <div class="field"><label for="bm-city">Cidade</label>
+          <input type="text" id="bm-city" maxlength="120" value="${b?esc(b.city):''}"></div>
+        <div class="field"><label for="bm-state">UF</label>
+          <input type="text" id="bm-state" maxlength="2" placeholder="SP" value="${b?esc(b.state):''}"></div>
+        <div class="field"><label for="bm-tz">Fuso horário <span class="req">*</span></label>
+          <select id="bm-tz">${TIMEZONES.map(t=>
+            `<option${b&&b.timezone===t?' selected':''}>${t}</option>`).join('')}</select></div>
+        <div class="field"><label for="bm-cal">Calendário de atendimento</label>
+          <select id="bm-cal">${CALENDARS.map(k=>
+            `<option${b&&b.calendar===k?' selected':''}>${k}</option>`).join('')}</select></div>
+        <div class="field form-full"><label for="bm-contact">Contato principal</label>
+          <input type="text" id="bm-contact" maxlength="120" value="${b?esc(b.contactName):''}"></div>
+        <div class="field"><label for="bm-email">E-mail</label>
+          <input type="email" id="bm-email" maxlength="200" value="${b?esc(b.contactEmail):''}"></div>
+        <div class="field"><label for="bm-phone">Telefone</label>
+          <input type="text" id="bm-phone" maxlength="30" value="${b?esc(b.contactPhone):''}"></div>
+        <div class="form-full"><label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem" class="muted">
+          <input type="checkbox" id="bm-active"${!b||b.active!==false?' checked':''}> Filial ativa
+          <span class="dim">— inativar não apaga a filial nem seus ativos</span></label></div>
+        <div class="form-full alert" data-kind="info">O fuso é a base do cálculo de horário útil de SLA.
+          Endereço, coordenada e geolocalização desta filial ficam na tela de Mapas.</div>
+        <div class="form-full" id="bm-msg"></div>
+      </div>`, { save: b ? 'Salvar alterações' : 'Cadastrar filial' });
+  }
+
+  /* ===================== Fornecedores e contratos =====================
+     O SLA daqui é o CONTRATADO — o prazo que o terceiro nos deve. Não confundir
+     com as definições de SLA, que são o prazo que oferecemos ao cliente. */
+  views.fornecedores = () => `
+    <div class="page-head">
+      <div><p class="eyebrow">Cadastros</p><h1>Fornecedores</h1>
+      <p class="lede">Prestadores de serviço de TI, contratos vigentes e SLAs contratados.</p></div>
+      <button type="button" class="btn" id="supplier-new">Novo fornecedor</button></div>
+
+    ${db.suppliers.length ? '' : `<div class="alert" data-kind="info">Nenhum fornecedor cadastrado.</div>`}
+
+    ${db.suppliers.map(s => {
+      const cs = contractsOf(s.id);
+      return `<div class="card" style="margin-bottom:1rem"><div class="card-body">
+        <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap">
+          <div>
+            <h2>${esc(s.name)}</h2>
+            <p class="dim" style="margin:.2rem 0 0">${esc(s.legalName)||'—'}${s.cnpj?' · '+esc(s.cnpj):''}</p>
+            <p class="muted" style="margin:.15rem 0 0;font-size:.82rem">
+              ${esc([s.email,s.phone].filter(Boolean).join(' · '))||'Sem contato cadastrado'}</p>
+          </div>
+          <div class="row-actions">
+            ${s.rating!==null&&s.rating!==''?pill('Avaliação '+Number(s.rating).toFixed(1),
+              s.rating>=4?'ok':s.rating>=3?'warn':'breach'):''}
+            ${s.active?pill('Ativo','ok'):pill('Inativo','neutral')}
+            <button type="button" class="btn btn-sm" data-variant="ghost" data-supplier-edit="${s.id}">Editar</button>
+            <button type="button" class="btn btn-sm" data-variant="ghost" data-contract-new="${s.id}">Novo contrato</button>
+          </div>
+        </div>
+
+        ${(s.services||[]).length?`<div class="row-actions" style="margin-top:.55rem">
+          ${s.services.map(v=>pill(esc(v),'neutral')).join('')}</div>`:''}
+
+        ${cs.length ? `<div class="table-wrap" style="margin-top:.8rem"><table>
+          <thead><tr><th>Contrato</th><th>Vigência</th><th>Custo mensal</th>
+            <th>SLA resposta</th><th>SLA resolução</th><th>Situação</th><th></th></tr></thead>
+          <tbody>${cs.map(k => `<tr>
+            <td><div class="strong">${esc(k.number)||'—'}</div>
+              <div class="dim">${esc(k.description)}</div></td>
+            <td class="muted">${fmtDate(k.startsOn)} → ${k.endsOn?fmtDate(k.endsOn):'indeterminado'}</td>
+            <td class="num">${k.monthlyCost?brl(k.monthlyCost):'—'}</td>
+            <td class="num">${k.responseSla?fmtMin(k.responseSla):'—'}</td>
+            <td class="num">${k.resolutionSla?fmtMin(k.resolutionSla):'—'}</td>
+            <td>${k.active?pill('Ativo','ok'):pill('Inativo','neutral')}</td>
+            <td class="row-actions">
+              <button type="button" class="btn btn-sm" data-variant="ghost" data-contract-edit="${k.id}">Editar</button>
+            </td></tr>`).join('')}</tbody></table></div>`
+          : `<p class="dim" style="margin:.8rem 0 0"><em>Nenhum contrato cadastrado para este fornecedor.</em></p>`}
+      </div></div>`;
+    }).join('')}`;
+
+  function supplierModal(id) {
+    const s = id ? supplierById(id) : null;
+    modal(s ? `Editar ${s.name}` : 'Novo fornecedor', `
+      <input type="hidden" id="fm-id" value="${s?s.id:''}">
+      <div class="form-grid">
+        <div class="field form-full"><label for="fm-name">Nome <span class="req">*</span></label>
+          <input type="text" id="fm-name" maxlength="200" placeholder="NetLink Telecom" value="${s?esc(s.name):''}"></div>
+        <div class="field form-full"><label for="fm-legal">Razão social</label>
+          <input type="text" id="fm-legal" maxlength="200" value="${s?esc(s.legalName):''}"></div>
+        <div class="field"><label for="fm-cnpj">CNPJ</label>
+          <input type="text" id="fm-cnpj" maxlength="20" placeholder="00.000.000/0001-00" value="${s?esc(s.cnpj):''}"></div>
+        <div class="field"><label for="fm-phone">Telefone</label>
+          <input type="text" id="fm-phone" maxlength="30" value="${s?esc(s.phone):''}"></div>
+        <div class="field form-full"><label for="fm-email">E-mail</label>
+          <input type="email" id="fm-email" maxlength="200" value="${s?esc(s.email):''}"></div>
+        <div class="field form-full"><label for="fm-services">Serviços prestados</label>
+          <input type="text" id="fm-services" value="${s?esc((s.services||[]).join(', ')):''}"
+            placeholder="Link dedicado, MPLS, telefonia">
+          <span class="dim">Separe por vírgula.</span></div>
+        <div class="field"><label for="fm-rating">Avaliação (0 a 5)</label>
+          <input type="number" id="fm-rating" min="0" max="5" step="0.1" value="${s&&s.rating!==null?s.rating:''}"></div>
+        <div class="form-full"><label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem" class="muted">
+          <input type="checkbox" id="fm-active"${!s||s.active?' checked':''}> Fornecedor ativo
+          <span class="dim">— inativar mantém contratos e ativos já vinculados</span></label></div>
+        <div class="form-full" id="fm-msg"></div>
+      </div>`, { save: s ? 'Salvar alterações' : 'Cadastrar fornecedor' });
+  }
+
+  function contractModal(id, supplierId) {
+    const k = id ? db.supplierContracts.find(x => x.id === id) : null;
+    const sid = k ? k.supplierId : supplierId;
+    modal(k ? `Editar contrato ${k.number || ''}`.trim() : 'Novo contrato', `
+      <input type="hidden" id="km-id" value="${k?k.id:''}">
+      <div class="form-grid">
+        <div class="field form-full"><label for="km-supplier">Fornecedor <span class="req">*</span></label>
+          <select id="km-supplier">${db.suppliers.map(s=>
+            `<option value="${s.id}"${sid===s.id?' selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
+        <div class="field form-full"><label for="km-number">Número do contrato</label>
+          <input type="text" id="km-number" maxlength="60" value="${k?esc(k.number):''}"></div>
+        <div class="field form-full"><label for="km-desc">Descrição</label>
+          <input type="text" id="km-desc" maxlength="500" value="${k?esc(k.description):''}"></div>
+        <div class="field"><label for="km-start">Início da vigência</label>
+          <input type="date" id="km-start" value="${k?esc(k.startsOn):''}"></div>
+        <div class="field"><label for="km-end">Fim da vigência</label>
+          <input type="date" id="km-end" value="${k?esc(k.endsOn):''}"></div>
+        <div class="field"><label for="km-cost">Custo mensal (R$)</label>
+          <input type="number" id="km-cost" min="0" step="0.01" value="${k&&k.monthlyCost?k.monthlyCost:''}"></div>
+        <div class="field"><label for="km-resp">SLA de resposta (min)</label>
+          <input type="number" id="km-resp" min="1" value="${k&&k.responseSla?k.responseSla:''}"></div>
+        <div class="field"><label for="km-reso">SLA de resolução (min)</label>
+          <input type="number" id="km-reso" min="1" value="${k&&k.resolutionSla?k.resolutionSla:''}"></div>
+        <div class="form-full"><label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem" class="muted">
+          <input type="checkbox" id="km-active"${!k||k.active?' checked':''}> Contrato ativo</label></div>
+        <div class="form-full alert" data-kind="info">Estes prazos são o SLA <strong>contratado</strong> —
+          o que o fornecedor nos deve. Não é o SLA que oferecemos ao cliente, que fica na tela de SLA.</div>
+        <div class="form-full" id="km-msg"></div>
+      </div>`, { save: k ? 'Salvar alterações' : 'Cadastrar contrato' });
+  }
+
+  /* ===================== Usuários =====================
+     Criar conta gera senha temporária mostrada UMA vez — é o caminho escolhido
+     em vez de convite por e-mail, que exigiria SMTP configurado. Por isso a
+     tela "Minha conta" existe: sem ela a pessoa ficaria presa à senha inicial. */
+  const ROLES = { admin:'Administrador', gestor:'Gestor', atendente:'Atendente',
+    solicitante:'Solicitante', visualizador:'Visualizador (TV)' };
+  const TENANT_WIDE_ROLES = ['admin','gestor'];
+
+  /** Senha temporária legível: sem 0/O e 1/l, que geram erro ao ditar. */
+  function tempPassword() {
+    const alpha = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    const bytes = new Uint32Array(12);
+    crypto.getRandomValues(bytes);
+    return [...bytes].map(b => alpha[b % alpha.length]).join('');
+  }
+
+  let lastTempPassword = null;
+
+  views.usuarios = () => `
+    <div class="page-head">
+      <div><p class="eyebrow">Acesso</p><h1>Usuários</h1>
+      <p class="lede">Papel e visibilidade por filial. Um atendente vinculado a várias filiais
+      enxerga os tickets e ativos de todas elas. Gestor e administrador enxergam o tenant inteiro.</p></div>
+      <button type="button" class="btn" id="user-new">Novo usuário</button></div>
+
+    ${lastTempPassword ? `<div class="alert" data-kind="warn" style="margin-bottom:1rem">
+      <strong>Senha temporária de ${esc(lastTempPassword.name)}:</strong>
+      <span class="mono" style="font-size:1rem">${esc(lastTempPassword.password)}</span><br>
+      Aparece uma única vez. Repasse por um canal seguro e peça para trocar em
+      <button type="button" class="btn btn-sm" data-variant="ghost" data-go="conta">Minha conta</button>
+      no primeiro acesso.
+      <button type="button" class="btn btn-sm" data-variant="ghost" id="temp-dismiss">Já anotei</button>
+    </div>` : ''}
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(21rem,1fr));gap:.85rem">
+      ${db.users.map(u => {
+        const scoped = !TENANT_WIDE_ROLES.includes(u.role);
+        const names = (u.branchIds || []).map(id => branchShort(id)).filter(Boolean);
+        return `<div class="card"><div class="card-body">
+          <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start;flex-wrap:wrap">
+            <div><h2>${esc(u.name)}${u.isMe?' <span class="dim">(você)</span>':''}</h2>
+              <p class="dim" style="margin:.15rem 0 0">${esc(u.email)}</p></div>
+            <div class="row-actions">
+              ${u.active?'':pill('Inativo','breach')}
+              ${pill(ROLES[u.role] || u.role,'info')}
+            </div></div>
+          <p class="muted" style="margin:.5rem 0 0;font-size:.82rem">
+            ${!scoped ? 'Enxerga todas as filiais do tenant.'
+              : names.length ? `${names.length} filial(is): ${esc(names.join(', '))}`
+              : '<span style="color:var(--breach-ink)">Nenhuma filial vinculada — não enxerga ticket de filial alguma.</span>'}</p>
+          <div class="row-actions" style="margin-top:.7rem">
+            <button type="button" class="btn btn-sm" data-variant="ghost" data-user-edit="${u.id}">Editar acesso</button>
+          </div>
+        </div></div>`;
+      }).join('')}
+    </div>`;
+
+  function userModal(id) {
+    const u = id ? userById(id) : null;
+    const role = u ? u.role : 'atendente';
+    modal(u ? `Editar acesso — ${u.name}` : 'Novo usuário', `
+      <input type="hidden" id="um-id" value="${u?u.id:''}">
+      <div class="form-grid">
+        <div class="field form-full"><label for="um-name">Nome completo <span class="req">*</span></label>
+          <input type="text" id="um-name" maxlength="150" value="${u?esc(u.name):''}"></div>
+        <div class="field"><label for="um-email">E-mail <span class="req">*</span></label>
+          <input type="email" id="um-email" maxlength="200" value="${u?esc(u.email):''}"${u?' disabled':''}>
+          ${u?'<span class="dim">O e-mail identifica a conta e não é alterado aqui.</span>':''}</div>
+        <div class="field"><label for="um-phone">Telefone</label>
+          <input type="text" id="um-phone" maxlength="30" value="${u?esc(u.phone):''}"></div>
+        <div class="field form-full"><label for="um-role">Papel <span class="req">*</span></label>
+          <select id="um-role">${Object.entries(ROLES).map(([k,v])=>
+            `<option value="${k}"${role===k?' selected':''}>${v}</option>`).join('')}</select></div>
+        <fieldset class="form-full" id="um-branches" style="border:0;padding:0;margin:0">
+          <legend style="font-size:.82rem;font-weight:600;padding:0">Filiais visíveis</legend>
+          <p class="dim" style="margin:.15rem 0 .35rem">A primeira marcada vira a filial principal.
+          Gestor e administrador enxergam tudo — para eles, marcar filial é inócuo.</p>
+          <div style="max-height:9rem;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:.4rem">
+            ${db.branches.map(b=>`<label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem;padding:.15rem 0" class="muted">
+              <input type="checkbox" class="um-branch" value="${b.id}"${u&&(u.branchIds||[]).includes(b.id)?' checked':''}>
+              ${esc(b.name)}</label>`).join('')}
+          </div></fieldset>
+        <div class="form-full"><label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem" class="muted">
+          <input type="checkbox" id="um-active"${!u||u.active?' checked':''}> Usuário ativo</label></div>
+        ${u&&u.isMe?`<div class="form-full alert" data-kind="warn">Este é o seu usuário — mudar o próprio
+          papel ou desativar a própria conta trancaria você do lado de fora. Peça a outro administrador.</div>`:''}
+        ${u?'':`<div class="form-full alert" data-kind="info">Uma senha temporária será gerada e mostrada
+          uma única vez após o cadastro.</div>`}
+        <div class="form-full" id="um-msg"></div>
+      </div>`, { save: u ? 'Salvar acesso' : 'Criar usuário' });
+  }
+
+  /* ===================== Minha conta ===================== */
+  views.conta = () => {
+    const me = db.users.find(u => u.isMe) || db.users[0];
+    return `
+      <div class="page-head"><div><p class="eyebrow">Acesso</p><h1>Minha conta</h1>
+        <p class="lede">${esc(me.name)} · ${esc(me.email)} · ${esc(ROLES[me.role] || me.role)}</p></div></div>
+
+      <div class="card" style="max-width:32rem"><div class="card-body">
+        <h2>Trocar senha</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">É por aqui que se sai da senha temporária
+        recebida no primeiro acesso.</p>
+        <div class="form-grid">
+          <div class="field form-full"><label for="pw-new">Nova senha <span class="req">*</span></label>
+            <input type="password" id="pw-new" autocomplete="new-password" minlength="8">
+            <span class="dim">Pelo menos 8 caracteres.</span></div>
+          <div class="field form-full"><label for="pw-confirm">Confirme a nova senha <span class="req">*</span></label>
+            <input type="password" id="pw-confirm" autocomplete="new-password" minlength="8"></div>
+          <div class="form-full" id="pw-msg"></div>
+          <div class="form-full"><button type="button" class="btn" id="pw-save">Trocar senha</button></div>
+        </div>
+      </div></div>`;
+  };
 
   /* ===================== Painel ===================== */
   views.painel = () => {
@@ -1841,7 +2373,7 @@
           ${db.queues.map(q=>`<option value="${q.slug}"${filters.queue===q.slug?' selected':''}>${q.name}</option>`).join('')}
         </select></div>
         <div class="field"><label for="f-prio">Prioridade</label><select id="f-prio"><option value="">Todas</option>
-          ${Object.entries(PRIORITIES).map(([k,v])=>`<option value="${k}"${filters.prio===k?' selected':''}>${v.label}</option>`).join('')}
+          ${activePriorities().map(v=>`<option value="${v.key}"${filters.prio===v.key?' selected':''}>${esc(v.label)}</option>`).join('')}
         </select></div>
         <div class="field"><label for="f-branch">Filial</label><select id="f-branch"><option value="">Todas</option>
           ${db.branches.map(b=>`<option value="${b.id}"${filters.branch===b.id?' selected':''}>${b.short}</option>`).join('')}
@@ -1871,10 +2403,10 @@
         <div class="field form-full"><label for="t-desc">Descrição</label>
           <textarea id="t-desc" name="desc" placeholder="Quando começou, quem é afetado, o que já foi tentado."></textarea></div>
         <div class="field"><label for="t-prio">Prioridade <span class="req">*</span></label>
-          <select id="t-prio" name="prio">${Object.entries(PRIORITIES).map(([k,v])=>
-            `<option value="${k}"${k==='medium'?' selected':''}>${v.label}</option>`).join('')}</select></div>
+          <select id="t-prio" name="prio">${activePriorities().map(v=>
+            `<option value="${v.key}"${v.key==='medium'?' selected':''}>${esc(v.label)}</option>`).join('')}</select></div>
         <div class="field"><label for="t-cat">Categoria</label>
-          <select id="t-cat" name="cat">${CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></div>
+          <select id="t-cat" name="cat">${categoryPaths().map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
         <div class="field"><label for="t-branch">Filial</label>
           <select id="t-branch" name="branchId" data-area-src="t-area">
             ${db.branches.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div>
@@ -1886,7 +2418,7 @@
             ${db.queues.map(q=>`<option value="${q.slug}">${q.name}</option>`).join('')}</select></div>
         <div class="field"><label for="t-assignee">Atendente</label>
           <select id="t-assignee" name="assignee"><option value="">Não atribuir agora</option>
-            ${AGENTS.map(a=>`<option>${a}</option>`).join('')}</select></div>
+            ${agentNames().map(a=>`<option>${esc(a)}</option>`).join('')}</select></div>
         <div class="field form-full"><label for="t-tags">Tags</label>
           <input type="text" id="t-tags" name="tags" placeholder="rede, urgente"></div>
         <div class="form-full">
@@ -1934,6 +2466,68 @@
               ${im.open?`<span class="dim">${im.open} em aberto</span>`:''}
             </td></tr>`;
         }).join('')}</tbody></table></div>
+
+      <h2 style="margin-bottom:.6rem">Contratos de SLA</h2>
+      <p class="dim" style="margin:0 0 .6rem">O contrato agrupa as definições de um cliente.
+      Uma definição sem contrato vale como padrão do tenant.</p>
+      <div class="table-wrap" style="margin-bottom:1.25rem"><table>
+        <thead><tr><th>Contrato</th><th>Cliente</th><th>Filial</th><th>Calendário</th>
+          <th>Vigência</th><th>Situação</th><th></th></tr></thead>
+        <tbody>${db.slaContracts.length?db.slaContracts.map(k=>`<tr>
+          <td class="strong">${esc(k.name)}</td>
+          <td class="muted">${esc(clientById(k.clientId)?.tradeName || clientById(k.clientId)?.legalName || '—')}</td>
+          <td class="muted">${k.branchId?esc(branchShort(k.branchId)):'Todas as filiais'}</td>
+          <td class="muted">${esc(k.calendar)}</td>
+          <td class="muted">${k.validFrom?fmtDate(k.validFrom):'—'} → ${k.validTo?fmtDate(k.validTo):'indeterminado'}</td>
+          <td>${k.active?pill('Ativo','ok'):pill('Inativo','neutral')}</td>
+          <td class="row-actions">
+            <button type="button" class="btn btn-sm" data-variant="ghost" data-slac-edit="${k.id}">Editar</button>
+          </td></tr>`).join(''):`<tr><td colspan="7" class="dim">Nenhum contrato de SLA cadastrado.</td></tr>`}
+        </tbody></table></div>
+      <div class="row-actions" style="margin-bottom:1.75rem">
+        <button type="button" class="btn btn-sm" id="slac-new">Novo contrato de SLA</button></div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));gap:.85rem;margin-bottom:1.75rem">
+        <div class="card"><div class="card-body">
+          <div style="display:flex;justify-content:space-between;align-items:start;gap:.6rem">
+            <h2>Categorias</h2>
+            <button type="button" class="btn btn-sm" data-variant="ghost" id="cat-new">Nova categoria</button></div>
+          <p class="dim" style="margin:.25rem 0 .7rem">Dois níveis, como o banco exige.
+          Inativar tira do formulário de abertura sem apagar histórico.</p>
+          ${topCategories().length?topCategories().map(parent=>{
+            const kids = db.categories.filter(c => c.parentId === parent.id);
+            return `<div style="border:1px solid var(--line);border-radius:8px;padding:.5rem .6rem;margin-bottom:.5rem">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">
+                <span class="strong">${esc(parent.name)}</span>
+                <span class="row-actions">${parent.active?pill('Ativa','ok'):pill('Inativa','neutral')}
+                  <button type="button" class="btn btn-sm" data-variant="ghost" data-cat-edit="${parent.id}">Editar</button>
+                </span></div>
+              ${kids.length?`<ul style="list-style:none;margin:.45rem 0 0;padding:0 0 0 .7rem;border-left:1px solid var(--line)">
+                ${kids.map(c=>`<li style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.15rem 0">
+                  <span class="muted">${esc(c.name)}</span>
+                  <span class="row-actions">${c.active?pill('Ativa','ok'):pill('Inativa','neutral')}
+                    <button type="button" class="btn btn-sm" data-variant="ghost" data-cat-edit="${c.id}">Editar</button>
+                  </span></li>`).join('')}</ul>`:''}
+            </div>`;
+          }).join(''):`<p class="dim"><em>Nenhuma categoria cadastrada.</em></p>`}
+        </div></div>
+
+        <div class="card"><div class="card-body">
+          <div style="display:flex;justify-content:space-between;align-items:start;gap:.6rem">
+            <h2>Prioridades</h2>
+            <button type="button" class="btn btn-sm" data-variant="ghost" id="prio-new">Nova prioridade</button></div>
+          <p class="dim" style="margin:.25rem 0 .7rem">O peso alimenta o score da fila.
+          A chave interna nasce do nome e nunca muda — as definições de SLA apontam para ela.</p>
+          ${db.priorities.slice().sort((a,b)=>a.sortOrder-b.sortOrder).map(p=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap;
+                        border:1px solid var(--line);border-radius:8px;padding:.5rem .6rem;margin-bottom:.45rem">
+              <span class="prio" style="color:${p.color}"><span class="dot"></span>${esc(p.label)}
+                <span class="dim" style="margin-left:.35rem">peso ${p.weight} · ${esc(p.key)}</span></span>
+              <span class="row-actions">${p.active?pill('Ativa','ok'):pill('Inativa','neutral')}
+                <button type="button" class="btn btn-sm" data-variant="ghost" data-prio-edit="${p.key}">Editar</button>
+              </span></div>`).join('')}
+        </div></div>
+      </div>
 
       <h2 style="margin-bottom:.6rem">Filas</h2>
       <p class="dim" style="margin:0 0 .6rem">Pesos e desempate alteram a ordenação na hora —
@@ -1993,7 +2587,9 @@
       <td>${pill(ASSET_STATUS[a.status].label, ASSET_STATUS[a.status].tone)}</td>
       <td class="muted">${a.user?esc(a.user):'<span style="color:var(--breach-ink)">sem responsável</span>'}</td>
       <td class="dim">${(a.attachments||[]).length?'📎 '+a.attachments.length:'—'}</td>
-      <td class="muted num">${fmtDate(a.warranty)}</td></tr>`;
+      <td class="muted num">${fmtDate(a.warranty)}</td>
+      <td class="row-actions"><button type="button" class="btn btn-sm" data-variant="ghost"
+        data-asset-edit="${a.id}">Editar</button></td></tr>`;
   }
 
   views.inventario = () => {
@@ -2012,9 +2608,9 @@
       list.forEach(a => { const k = a.areaId ? areaName(a.areaId) : 'Sem área'; (groups[k] ||= []).push(a); });
       body = `<div class="table-wrap"><table>
         <thead><tr><th>Foto</th><th>Patrimônio</th><th>Equipamento</th><th>Filial</th><th>Área</th>
-          <th>Status</th><th>Responsável</th><th>Anexos</th><th>Garantia</th></tr></thead>
+          <th>Status</th><th>Responsável</th><th>Anexos</th><th>Garantia</th><th></th></tr></thead>
         <tbody>${Object.keys(groups).sort().map(k => `
-          <tr class="group-head"><td colspan="9">${esc(k)} — ${groups[k].length} ativo(s) ·
+          <tr class="group-head"><td colspan="10">${esc(k)} — ${groups[k].length} ativo(s) ·
             ${brl(groups[k].reduce((s,a)=>s+(a.cost||0),0))}</td></tr>
           ${groups[k].map(assetRow).join('')}`).join('')}</tbody></table></div>`;
     } else if (invFilters.group === 'filial') {
@@ -2022,14 +2618,14 @@
       list.forEach(a => { (groups[branchName(a.branchId)] ||= []).push(a); });
       body = `<div class="table-wrap"><table>
         <thead><tr><th>Foto</th><th>Patrimônio</th><th>Equipamento</th><th>Filial</th><th>Área</th>
-          <th>Status</th><th>Responsável</th><th>Anexos</th><th>Garantia</th></tr></thead>
+          <th>Status</th><th>Responsável</th><th>Anexos</th><th>Garantia</th><th></th></tr></thead>
         <tbody>${Object.keys(groups).sort().map(k => `
-          <tr class="group-head"><td colspan="9">${esc(k)} — ${groups[k].length} ativo(s)</td></tr>
+          <tr class="group-head"><td colspan="10">${esc(k)} — ${groups[k].length} ativo(s)</td></tr>
           ${groups[k].map(assetRow).join('')}`).join('')}</tbody></table></div>`;
     } else {
       body = list.length ? `<div class="table-wrap"><table>
         <thead><tr><th>Foto</th><th>Patrimônio</th><th>Equipamento</th><th>Filial</th><th>Área</th>
-          <th>Status</th><th>Responsável</th><th>Anexos</th><th>Garantia</th></tr></thead>
+          <th>Status</th><th>Responsável</th><th>Anexos</th><th>Garantia</th><th></th></tr></thead>
         <tbody>${list.map(assetRow).join('')}</tbody></table></div>`
         : `<div class="card"><p class="empty">Nenhum ativo nesta seleção.</p></div>`;
     }
@@ -2159,7 +2755,7 @@
       ${telMode === 'mapa' ? renderMap('telecom', mapRows('telecom')) : `
         <div class="table-wrap" style="margin-bottom:1.25rem"><table>
           <thead><tr><th>Número</th><th>Operadora / plano</th><th>Tipo</th><th>Status</th>
-            <th>Filial</th><th>Área</th><th>Responsável</th><th>Contrato</th><th>Custo</th></tr></thead>
+            <th>Filial</th><th>Área</th><th>Responsável</th><th>Contrato</th><th>Custo</th><th></th></tr></thead>
           <tbody>${list.length?list.map(l=>`<tr data-clickable data-line="${l.id}" tabindex="0">
             <td class="mono strong">${esc(l.num)}</td>
             <td><div class="strong">${esc(l.carrier)}</div><div class="dim">${esc(l.plan)||'—'}</div></td>
@@ -2169,8 +2765,10 @@
             <td>${l.areaId?pill(areaName(l.areaId),'info'):pill('sem área','warn')}</td>
             <td class="muted">${esc(l.user)||'—'}</td>
             <td>${hasContract(l)?pill('anexado','ok'):pill('faltando','crit')}</td>
-            <td class="num">${brl(l.cost)}</td></tr>`).join('')
-            :`<tr><td colspan="9"><p class="empty">Nenhuma linha nesta seleção.</p></td></tr>`}</tbody></table></div>
+            <td class="num">${brl(l.cost)}</td>
+            <td class="row-actions"><button type="button" class="btn btn-sm" data-variant="ghost"
+              data-line-edit="${l.id}">Editar</button></td></tr>`).join('')
+            :`<tr><td colspan="10"><p class="empty">Nenhuma linha nesta seleção.</p></td></tr>`}</tbody></table></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));gap:1rem">
           <div class="card"><div class="card-body"><h2 style="margin-bottom:.8rem">Custo por filial</h2>
             ${bars(byBranch, brl)}</div></div>
@@ -2376,7 +2974,7 @@
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-start;justify-content:space-between">
         <div>
           <h3>${esc(b.name)}</h3>
-          <div class="dim">${esc(b.client)}</div>
+          <div class="dim">${esc(branchClientName(b))}</div>
         </div>
         <div style="display:flex;gap:.35rem;flex-wrap:wrap">
           ${pill(STATUS_LABEL[st] || st, STATUS_TONE[st] || 'neutral')}
@@ -2731,7 +3329,7 @@
             <div class="form-grid">
               <div class="field"><label for="d-assignee">Atendente</label><select id="d-assignee">
                 <option value=""${!t.assignee?' selected':''}>Não atribuído</option>
-                ${AGENTS.map(a=>`<option${t.assignee===a?' selected':''}>${a}</option>`).join('')}</select></div>
+                ${agentNames().map(a=>`<option${t.assignee===a?' selected':''}>${esc(a)}</option>`).join('')}</select></div>
               <div class="field"><label for="d-queue">Transferir para</label><select id="d-queue">
                 ${db.queues.map(x=>`<option value="${x.slug}"${t.queue===x.slug?' selected':''}>${x.name}</option>`).join('')}</select></div>
               <div class="field form-full"><label for="d-reason">Motivo da transferência <span class="req">*</span></label>
@@ -2831,7 +3429,7 @@
         <div class="form-grid">
           <div class="field"><label for="as-user">Responsável</label><select id="as-user">
             <option value=""${!a.user?' selected':''}>Sem responsável</option>
-            ${AGENTS.concat(['Carla Dias']).map(x=>`<option${a.user===x?' selected':''}>${x}</option>`).join('')}</select></div>
+            ${assignableNames().map(x=>`<option${a.user===x?' selected':''}>${esc(x)}</option>`).join('')}</select></div>
           <div class="field"><label for="as-branch">Filial</label><select id="as-branch" data-area-src="as-area">
             ${db.branches.map(b=>`<option value="${b.id}"${a.branchId===b.id?' selected':''}>${b.name}</option>`).join('')}</select></div>
           <div class="field"><label for="as-area">Área da filial <span class="req">*</span></label><select id="as-area">
@@ -3055,7 +3653,7 @@
         <span class="wall-bar${s==='breached'?' pulse':''}" style="background:${c}"></span>
         <span class="wall-num">#${t.n}</span>
         <span class="wall-title-cell">${esc(t.title)}</span>
-        <span class="wall-cell" style="color:${PRIORITIES[t.prio].color};font-weight:650">${PRIORITIES[t.prio].label}</span>
+        <span class="wall-cell" style="color:${prio(t.prio).color};font-weight:650">${esc(prio(t.prio).label)}</span>
         <span class="wall-cell">${esc(branchShort(t.branchId))}</span>
         <span class="wall-cell">${t.assignee?esc(t.assignee):'Não atribuído'}</span>
         <span class="wall-cell">${STATUS[t.status].label}</span>
@@ -3102,15 +3700,15 @@
           <input type="text" id="sm-name" value="${d?esc(d.name):''}" placeholder="ex.: Meridiano — Infra crítica"></div>
         <div class="field"><label for="sm-contract">Contrato</label>
           <select id="sm-contract"><option value="">Padrão do tenant</option>
-            ${['Meridiano — Padrão','Meridiano — Manaus 24x7'].map(c=>
-              `<option${d&&d.contract===c?' selected':''}>${c}</option>`).join('')}</select></div>
+            ${db.slaContracts.map(k=>
+              `<option value="${k.id}"${d&&d.contractId===k.id?' selected':''}>${esc(k.name)}${k.active?'':' (inativo)'}</option>`).join('')}</select></div>
         <div class="field"><label for="sm-cat">Categoria</label>
           <select id="sm-cat"><option value="">Todas</option>
-            ${['Infraestrutura','Sistemas','Telefonia','Acessos'].map(c=>
-              `<option${d&&d.category===c?' selected':''}>${c}</option>`).join('')}</select></div>
+            ${topCategories().map(c=>
+              `<option value="${c.id}"${d&&d.categoryId===c.id?' selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
         <div class="field"><label for="sm-prio">Prioridade <span class="req">*</span></label>
-          <select id="sm-prio">${Object.entries(PRIORITIES).map(([k,v])=>
-            `<option value="${k}"${d&&d.priority===k?' selected':''}>${v.label}</option>`).join('')}</select></div>
+          <select id="sm-prio">${activePriorities().map(v=>
+            `<option value="${v.key}"${d&&d.priority===v.key?' selected':''}>${esc(v.label)}</option>`).join('')}</select></div>
         <div class="field"><label for="sm-cal">Horário de atendimento</label>
           <select id="sm-cal">${['Comercial','24x7'].map(c=>
             `<option${d&&d.calendar===c?' selected':''}>${c}</option>`).join('')}</select></div>
@@ -3128,6 +3726,92 @@
           cliente não são reescritos.</div>`:''}
         <div class="form-full" id="sm-msg"></div>
       </div>`, { save: d ? 'Salvar alterações' : 'Criar definição' });
+  }
+
+  function categoryModal(id) {
+    const c = id ? categoryById(id) : null;
+    // Uma categoria não pode ser pai de si mesma, e um pai que já tem filhos não
+    // pode virar filho — é o limite de 2 níveis da trigger trg_category_depth.
+    const hasKids = c ? db.categories.some(x => x.parentId === c.id) : false;
+    const options = topCategories().filter(x => !c || x.id !== c.id);
+    modal(c ? `Editar ${c.name}` : 'Nova categoria', `
+      <input type="hidden" id="gm-id" value="${c?c.id:''}">
+      <div class="form-grid">
+        <div class="field form-full"><label for="gm-parent">Categoria-pai</label>
+          <select id="gm-parent"${hasKids?' disabled':''}>
+            <option value="">Nenhuma (categoria de topo)</option>
+            ${options.map(x=>`<option value="${x.id}"${c&&c.parentId===x.id?' selected':''}>${esc(x.name)}</option>`).join('')}
+          </select>
+          <span class="dim">${hasKids?'Esta categoria já tem subcategorias, então não pode virar subcategoria.'
+            :'Deixe em branco para uma categoria de topo.'}</span></div>
+        <div class="field form-full"><label for="gm-name">Nome <span class="req">*</span></label>
+          <input type="text" id="gm-name" maxlength="120" placeholder="Hardware" value="${c?esc(c.name):''}"></div>
+        <div class="field form-full"><label for="gm-desc">Descrição</label>
+          <input type="text" id="gm-desc" maxlength="500" value="${c?esc(c.description):''}"></div>
+        <div class="form-full"><label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem" class="muted">
+          <input type="checkbox" id="gm-active"${!c||c.active?' checked':''}> Categoria ativa
+          <span class="dim">— inativar tira do formulário de abertura, sem mexer em tickets já abertos</span></label></div>
+        <div class="form-full" id="gm-msg"></div>
+      </div>`, { save: c ? 'Salvar alterações' : 'Cadastrar categoria' });
+  }
+
+  function priorityModal(key) {
+    const p = key ? db.priorities.find(x => x.key === key) : null;
+    const used = p ? db.tickets.filter(t => t.prio === p.key && IS_OPEN(t.status)).length : 0;
+    modal(p ? `Editar ${p.label}` : 'Nova prioridade', `
+      <input type="hidden" id="pm-key" value="${p?p.key:''}">
+      <div class="form-grid">
+        <div class="field form-full"><label for="pm-label">Nome <span class="req">*</span></label>
+          <input type="text" id="pm-label" maxlength="60" placeholder="Crítica" value="${p?esc(p.label):''}"></div>
+        <div class="field"><label for="pm-weight">Peso (0 a 100) <span class="req">*</span></label>
+          <input type="number" id="pm-weight" min="0" max="100" value="${p?p.weight:50}">
+          <span class="dim">Quanto maior, mais no topo da fila.</span></div>
+        <div class="field"><label for="pm-color">Cor <span class="req">*</span></label>
+          <input type="color" id="pm-color" value="${p?p.color:'#64748b'}" style="height:2.4rem;padding:.2rem"></div>
+        <div class="field"><label for="pm-order">Ordem de exibição <span class="req">*</span></label>
+          <input type="number" id="pm-order" min="0" max="999" value="${p?p.sortOrder:10}"></div>
+        <div class="field"><label for="pm-tfr">1ª resposta padrão (min)</label>
+          <input type="number" id="pm-tfr" min="1" value="${p?p.tfr:60}"></div>
+        <div class="field"><label for="pm-res">Resolução padrão (min)</label>
+          <input type="number" id="pm-res" min="1" value="${p?p.res:480}"></div>
+        <div class="form-full"><label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem" class="muted">
+          <input type="checkbox" id="pm-active"${!p||p.active?' checked':''}> Prioridade ativa</label></div>
+        ${p?`<div class="form-full alert" data-kind="${used?'warn':'info'}">
+          Chave interna <span class="mono">${esc(p.key)}</span> — não muda ao renomear, senão as
+          definições de SLA que apontam para ela ficariam órfãs.
+          ${used?`<br><strong>${used}</strong> ticket(s) em aberto usam esta prioridade.`:''}</div>`
+          :`<div class="form-full alert" data-kind="info">A chave interna é gerada a partir do nome.</div>`}
+        <div class="form-full" id="pm-msg"></div>
+      </div>`, { save: p ? 'Salvar alterações' : 'Cadastrar prioridade' });
+  }
+
+  function slaContractModal(id) {
+    const k = id ? slaContractById(id) : null;
+    modal(k ? `Editar ${k.name}` : 'Novo contrato de SLA', `
+      <input type="hidden" id="cm2-id" value="${k?k.id:''}">
+      <div class="form-grid">
+        <div class="field form-full"><label for="cm2-name">Nome do contrato <span class="req">*</span></label>
+          <input type="text" id="cm2-name" maxlength="150" placeholder="Contrato padrão 2026" value="${k?esc(k.name):''}"></div>
+        <div class="field"><label for="cm2-client">Cliente <span class="req">*</span></label>
+          <select id="cm2-client">${db.clients.map(c=>
+            `<option value="${c.id}"${k&&k.clientId===c.id?' selected':''}>${esc(c.tradeName||c.legalName)}</option>`).join('')}</select></div>
+        <div class="field"><label for="cm2-branch">Filial</label>
+          <select id="cm2-branch"><option value="">Todas as filiais</option>
+            ${db.branches.map(b=>`<option value="${b.id}"${k&&k.branchId===b.id?' selected':''}>${esc(b.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="cm2-cal">Calendário de atendimento</label>
+          <select id="cm2-cal">${CALENDARS.map(c=>
+            `<option${k&&k.calendar===c?' selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="field"><label for="cm2-from">Vigência início</label>
+          <input type="date" id="cm2-from" value="${k?esc(k.validFrom):''}"></div>
+        <div class="field"><label for="cm2-to">Vigência fim</label>
+          <input type="date" id="cm2-to" value="${k?esc(k.validTo):''}"></div>
+        <div class="field form-full"><label for="cm2-notes">Observações</label>
+          <input type="text" id="cm2-notes" maxlength="1000" value="${k?esc(k.notes):''}"></div>
+        <div class="form-full"><label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem" class="muted">
+          <input type="checkbox" id="cm2-active"${!k||k.active?' checked':''}> Contrato ativo
+          <span class="dim">— inativar não apaga as definições já vinculadas</span></label></div>
+        <div class="form-full" id="cm2-msg"></div>
+      </div>`, { save: k ? 'Salvar alterações' : 'Cadastrar contrato' });
   }
 
   function queueModal(slug) {
@@ -3152,7 +3836,7 @@
             `<option value="${k}"${q.tiebreaker===k?' selected':''}>${v}</option>`).join('')}</select></div>
         <div class="form-full"><label class="dim" style="display:block;margin-bottom:.3rem">Membros</label>
           <div style="border:1px solid var(--border);border-radius:9px;padding:.5rem">
-            ${AGENTS.map(a=>`<label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem;padding:.15rem 0" class="muted">
+            ${agentNames().map(a=>`<label style="display:flex;gap:.4rem;align-items:center;font-size:.82rem;padding:.15rem 0" class="muted">
               <input type="checkbox" class="qm-member" value="${esc(a)}"${q.members.includes(a)?' checked':''}> ${esc(a)}</label>`).join('')}
           </div>
           <p class="dim" style="margin:.35rem 0 0">Remover um atendente não desatribui os tickets dele —
@@ -3211,57 +3895,83 @@
     }).join('') || '<p class="dim">Nenhuma área nesta filial.</p>'}</div>`;
   }
 
-  function assetModal() {
-    const b0 = db.branches[0];
-    modal('Novo ativo', `<div class="form-grid">
+  function assetModal(id) {
+    const a = id ? db.assets.find(x => x.id === id) : null;
+    const bId = a ? a.branchId : db.branches[0].id;
+    modal(a ? `Editar ${a.model || a.tag || 'ativo'}` : 'Novo ativo', `
+    <input type="hidden" id="nm-id" value="${a?a.id:''}">
+    <div class="form-grid">
       <div class="field"><label for="nm-type">Tipo</label>
-        <select id="nm-type">${ASSET_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+        <select id="nm-type">${ASSET_TYPES.map(t=>`<option${a&&a.type===t?' selected':''}>${t}</option>`).join('')}</select></div>
       <div class="field"><label for="nm-model">Marca e modelo <span class="req">*</span></label>
-        <input type="text" id="nm-model" placeholder="Dell Latitude 5450"></div>
-      <div class="field"><label for="nm-tag">Patrimônio</label><input type="text" id="nm-tag" placeholder="PAT-001100"></div>
-      <div class="field"><label for="nm-sn">Nº de série</label><input type="text" id="nm-sn"></div>
+        <input type="text" id="nm-model" placeholder="Dell Latitude 5450" value="${a?esc(a.model):''}"></div>
+      <div class="field"><label for="nm-tag">Patrimônio</label>
+        <input type="text" id="nm-tag" placeholder="PAT-001100" value="${a?esc(a.tag):''}"></div>
+      <div class="field"><label for="nm-sn">Nº de série</label>
+        <input type="text" id="nm-sn" value="${a?esc(a.sn):''}"></div>
       <div class="field"><label for="nm-branch">Filial</label>
         <select id="nm-branch" data-area-src="nm-area">${db.branches.map(b=>
-          `<option value="${b.id}">${b.name}</option>`).join('')}</select></div>
+          `<option value="${b.id}"${bId===b.id?' selected':''}>${esc(b.name)}</option>`).join('')}</select></div>
       <div class="field"><label for="nm-area">Área da filial <span class="req">*</span></label>
-        <select id="nm-area">${areasOf(b0.id).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}</select></div>
+        <select id="nm-area">${areasOf(bId).map(x=>
+          `<option value="${x.id}"${a&&a.areaId===x.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
       <div class="field"><label for="nm-status">Status</label>
         <select id="nm-status">${Object.entries(ASSET_STATUS).map(([k,v])=>
-          `<option value="${k}"${k==='in_stock'?' selected':''}>${v.label}</option>`).join('')}</select></div>
-      <div class="field"><label for="nm-user">Responsável</label><input type="text" id="nm-user"></div>
-      <div class="field"><label for="nm-warranty">Garantia até</label><input type="date" id="nm-warranty"></div>
-      <div class="field"><label for="nm-cost">Valor</label><input type="number" id="nm-cost" step="0.01" min="0"></div>
+          `<option value="${k}"${a?(a.status===k?' selected':''):(k==='in_stock'?' selected':'')}>${v.label}</option>`).join('')}</select></div>
+      <div class="field"><label for="nm-user">Responsável</label>
+        <input type="text" id="nm-user" value="${a?esc(a.user):''}"></div>
+      <div class="field"><label for="nm-warranty">Garantia até</label>
+        <input type="date" id="nm-warranty" value="${a?esc(a.warranty):''}"></div>
+      <div class="field"><label for="nm-cost">Valor</label>
+        <input type="number" id="nm-cost" step="0.01" min="0" value="${a&&a.cost?a.cost:''}"></div>
+      ${a?`<div class="form-full alert" data-kind="info">Trocar responsável ou área por aqui não gera
+        evento de custódia — para registrar o motivo da movimentação, use a aba Custódia na ficha.</div>`:''}
       <div class="form-full" id="nm-msg"></div>
-    </div>`, { save:'Cadastrar ativo' });
+    </div>`, { save: a ? 'Salvar alterações' : 'Cadastrar ativo' });
   }
 
-  function lineModal() {
-    const b0 = db.branches[0];
-    modal('Nova linha telefônica', `<div class="form-grid">
+  function lineModal(id) {
+    const l = id ? db.lines.find(x => x.id === id) : null;
+    const bId = l ? l.branchId : db.branches[0].id;
+    const sel = (v, cur) => v === cur ? ' selected' : '';
+    modal(l ? `Editar ${l.num}` : 'Nova linha telefônica', `
+    <input type="hidden" id="nl-id" value="${l?l.id:''}">
+    <div class="form-grid">
       <div class="field"><label for="nl-num">Número <span class="req">*</span></label>
-        <input type="text" id="nl-num" placeholder="+55 11 98800-0000"></div>
+        <input type="text" id="nl-num" placeholder="+55 11 98800-0000" value="${l?esc(l.num):''}"></div>
       <div class="field"><label for="nl-carrier">Operadora <span class="req">*</span></label>
-        <input type="text" id="nl-carrier" placeholder="Vivo"></div>
-      <div class="field"><label for="nl-plan">Plano</label><input type="text" id="nl-plan"></div>
+        <input type="text" id="nl-carrier" placeholder="Vivo" value="${l?esc(l.carrier):''}"></div>
+      <div class="field"><label for="nl-plan">Plano</label>
+        <input type="text" id="nl-plan" value="${l?esc(l.plan):''}"></div>
       <div class="field"><label for="nl-type">Tipo</label>
-        <select id="nl-type"><option>Pós-pago</option><option>Pré-pago</option><option>Controle</option></select></div>
+        <select id="nl-type">${['Pós-pago','Pré-pago','Controle'].map(t=>
+          `<option${l&&l.type===t?' selected':''}>${t}</option>`).join('')}</select></div>
       <div class="field"><label for="nl-branch">Filial</label>
         <select id="nl-branch" data-area-src="nl-area">${db.branches.map(b=>
-          `<option value="${b.id}">${b.name}</option>`).join('')}</select></div>
+          `<option value="${b.id}"${sel(b.id,bId)}>${esc(b.name)}</option>`).join('')}</select></div>
       <div class="field"><label for="nl-area">Área da empresa <span class="req">*</span></label>
-        <select id="nl-area">${areasOf(b0.id).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}</select></div>
+        <select id="nl-area">${areasOf(bId).map(a=>
+          `<option value="${a.id}"${l&&l.areaId===a.id?' selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
       <div class="field"><label for="nl-status">Status</label>
         <select id="nl-status">${Object.entries(LINE_STATUS).map(([k,v])=>
-          `<option value="${k}"${k==='active'?' selected':''}>${v.label}</option>`).join('')}</select></div>
-      <div class="field"><label for="nl-user">Responsável</label><input type="text" id="nl-user"></div>
-      <div class="field"><label for="nl-cost">Custo mensal</label><input type="number" id="nl-cost" step="0.01" min="0"></div>
-      <div class="field"><label for="nl-contract">Nº do contrato</label><input type="text" id="nl-contract"></div>
-      <div class="field"><label for="nl-cstart">Início da vigência</label><input type="date" id="nl-cstart"></div>
-      <div class="field"><label for="nl-cend">Fim da vigência</label><input type="date" id="nl-cend"></div>
-      <div class="field"><label for="nl-loyalty">Fidelidade até</label><input type="date" id="nl-loyalty"></div>
-      <div class="field"><label for="nl-cancel">Cancelamento</label><input type="date" id="nl-cancel"></div>
+          `<option value="${k}"${l?sel(k,l.status):(k==='active'?' selected':'')}>${v.label}</option>`).join('')}</select></div>
+      <div class="field"><label for="nl-user">Responsável</label>
+        <input type="text" id="nl-user" value="${l?esc(l.user):''}"></div>
+      <div class="field"><label for="nl-cost">Custo mensal</label>
+        <input type="number" id="nl-cost" step="0.01" min="0" value="${l&&l.cost?l.cost:''}"></div>
+      <div class="field"><label for="nl-contract">Nº do contrato</label>
+        <input type="text" id="nl-contract" value="${l?esc(l.contractNumber):''}"></div>
+      <div class="field"><label for="nl-cstart">Início da vigência</label>
+        <input type="date" id="nl-cstart" value="${l?esc(l.contractStart):''}"></div>
+      <div class="field"><label for="nl-cend">Fim da vigência</label>
+        <input type="date" id="nl-cend" value="${l?esc(l.contractEnd):''}"></div>
+      <div class="field"><label for="nl-loyalty">Fidelidade até</label>
+        <input type="date" id="nl-loyalty" value="${l?esc(l.loyalty):''}"></div>
+      <div class="field"><label for="nl-cancel">Cancelamento</label>
+        <input type="date" id="nl-cancel" value="${l?esc(l.cancelledOn||''):''}">
+        <span class="dim">Obrigatório se o status for cancelada.</span></div>
       <div class="form-full" id="nl-msg"></div>
-    </div>`, { save:'Cadastrar linha' });
+    </div>`, { save: l ? 'Salvar alterações' : 'Cadastrar linha' });
   }
 
   function linkModal() {
@@ -3356,10 +4066,12 @@
 
   /* ===================== Navegação ===================== */
   const NAV = [
-    ['novidades','Novidades',true], ['painel','Painel',false], ['tickets','Tickets',false],
-    ['novo','Abrir ticket',false], ['sla','SLA e filas',true], ['inventario','Inventário',true],
-    ['telefonia','Telefonia',true], ['links','Links de Internet',true],
-    ['integracoes','Integrações',true], ['mapas','Mapas',true]
+    ['novidades','Novidades',false], ['painel','Painel',false], ['tickets','Tickets',false],
+    ['novo','Abrir ticket',false], ['sla','SLA e filas',false], ['inventario','Inventário',false],
+    ['telefonia','Telefonia',false], ['links','Links de Internet',false],
+    ['clientes','Clientes e filiais',true], ['fornecedores','Fornecedores',true],
+    ['usuarios','Usuários',true], ['integracoes','Integrações',false], ['mapas','Mapas',false],
+    ['conta','Minha conta',true]
   ];
   let current = 'novidades';
   const wallVisible = () => !document.getElementById('wall-stage').classList.contains('hidden');
@@ -3561,6 +4273,13 @@
     if (T.closest('.sel-t') || T.tagName === 'INPUT') { /* segue para change */ }
     const rowT = T.closest('[data-ticket]');
     if (rowT && T.tagName !== 'INPUT') { drawerTicket(rowT.dataset.ticket); return; }
+    // Os botões de edição ficam DENTRO das linhas clicáveis que abrem a ficha.
+    // Testar o botão primeiro é o que impede a gaveta de roubar o clique.
+    const ae2 = T.closest('[data-asset-edit]');
+    if (ae2) { assetModal(ae2.dataset.assetEdit); return; }
+    const le2 = T.closest('[data-line-edit]');
+    if (le2) { lineModal(le2.dataset.lineEdit); return; }
+
     const rowA = T.closest('[data-asset]');
     if (rowA) { assetTab = 'dados'; drawerAsset(rowA.dataset.asset); return; }
     const rowL = T.closest('[data-line]');
@@ -3640,8 +4359,62 @@
     const qe = T.closest('[data-queue-edit]');
     if (qe) { queueModal(qe.dataset.queueEdit); return; }
     if (T.id === 'areas-open') { areasModal(); return; }
-    if (T.id === 'asset-new') { assetModal(); return; }
-    if (T.id === 'line-new') { lineModal(); return; }
+    if (T.id === 'asset-new') { assetModal(null); return; }
+    if (T.id === 'line-new') { lineModal(null); return; }
+
+    /* --- Cadastros: clientes, filiais, fornecedores, contratos, usuários ---
+       Os botões "Editar" moram dentro de linhas clicáveis (que abrem a ficha).
+       Este bloco vem ANTES do tratamento da linha, e cada ramo retorna — é o que
+       impede a ficha de abrir por baixo do modal. */
+    if (T.id === 'client-new') { clientModal(null); return; }
+    const ce = T.closest('[data-client-edit]');
+    if (ce) { clientModal(ce.dataset.clientEdit); return; }
+    const bn = T.closest('[data-branch-new]');
+    if (bn) { branchModal(null, bn.dataset.branchNew); return; }
+    const be = T.closest('[data-branch-edit]');
+    if (be) { branchModal(be.dataset.branchEdit); return; }
+
+    if (T.id === 'supplier-new') { supplierModal(null); return; }
+    const fe = T.closest('[data-supplier-edit]');
+    if (fe) { supplierModal(fe.dataset.supplierEdit); return; }
+    const kn = T.closest('[data-contract-new]');
+    if (kn) { contractModal(null, kn.dataset.contractNew); return; }
+    const ke = T.closest('[data-contract-edit]');
+    if (ke) { contractModal(ke.dataset.contractEdit); return; }
+
+    if (T.id === 'cat-new') { categoryModal(null); return; }
+    const cte = T.closest('[data-cat-edit]');
+    if (cte) { categoryModal(cte.dataset.catEdit); return; }
+    if (T.id === 'prio-new') { priorityModal(null); return; }
+    const pe = T.closest('[data-prio-edit]');
+    if (pe) { priorityModal(pe.dataset.prioEdit); return; }
+    if (T.id === 'slac-new') { slaContractModal(null); return; }
+    const kc = T.closest('[data-slac-edit]');
+    if (kc) { slaContractModal(kc.dataset.slacEdit); return; }
+
+    if (T.id === 'user-new') { userModal(null); return; }
+    const ue = T.closest('[data-user-edit]');
+    if (ue) { userModal(ue.dataset.userEdit); return; }
+    if (T.id === 'temp-dismiss') { lastTempPassword = null; render(); return; }
+
+    // Trocar a própria senha
+    if (T.id === 'pw-save') {
+      const pw = document.getElementById('pw-new').value;
+      const confirm = document.getElementById('pw-confirm').value;
+      const msg = document.getElementById('pw-msg');
+      const failPw = m => { msg.innerHTML = `<div class="alert" data-kind="error">${esc(m)}</div>`; };
+      if (pw.length < 8) return failPw('A senha precisa ter pelo menos 8 caracteres.');
+      if (pw !== confirm) return failPw('As senhas não coincidem.');
+      // Protótipo: nenhuma senha é guardada aqui — o app real chama o Supabase Auth.
+      msg.innerHTML = `<div class="alert" data-kind="info">Senha trocada. Neste protótipo nada é
+        gravado — no app real a troca vai para o Supabase Auth.</div>`;
+      document.getElementById('pw-new').value = '';
+      document.getElementById('pw-confirm').value = '';
+      lastTempPassword = null;
+      toast('Senha atualizada');
+      return;
+    }
+
     if (T.id === 'link-new') { linkModal(); return; }
     if (T.id === 'bulk-open') { bulkModal(); return; }
     if (T.id === 'bulk-clear') { selected.clear(); render(); return; }
@@ -3756,6 +4529,231 @@
 
     // Salvar de modal
     if (T.id === 'modal-save') {
+      /* Cada bloco identifica o formulário aberto por um campo exclusivo dele.
+         `fail` escreve no <div> de mensagem do próprio modal, em vez de fechar:
+         perder o que foi digitado por causa de um campo errado é o pior desfecho
+         possível de um cadastro longo. */
+      const failIn = elId => m => {
+        document.getElementById(elId).innerHTML = `<div class="alert" data-kind="error">${esc(m)}</div>`;
+      };
+
+      // --- Cliente ---
+      if (document.getElementById('cm-legal')) {
+        const fail = failIn('cm-msg');
+        const id = document.getElementById('cm-id').value;
+        const legalName = document.getElementById('cm-legal').value.trim();
+        if (legalName.length < 2) return fail('Informe a razão social.');
+        const cnpj = document.getElementById('cm-cnpj').value.trim();
+        const dup = db.clients.find(c => c.id !== id && cnpj && c.cnpj === cnpj);
+        if (dup) return fail(`O CNPJ já está em uso por "${dup.tradeName || dup.legalName}".`);
+        const payload = { legalName, tradeName:document.getElementById('cm-trade').value.trim(),
+          cnpj, contractRef:document.getElementById('cm-ref').value.trim(),
+          status:document.getElementById('cm-status').value };
+        if (id) { Object.assign(clientById(id), payload); syncClientName(id); }
+        else db.clients.push(Object.assign({ id:nid('c') }, payload));
+        save(); closeModal(); render(); toast(id ? 'Cliente atualizado' : 'Cliente cadastrado'); return;
+      }
+
+      // --- Filial ---
+      if (document.getElementById('bm-name')) {
+        const fail = failIn('bm-msg');
+        const id = document.getElementById('bm-id').value;
+        const name = document.getElementById('bm-name').value.trim();
+        if (name.length < 2) return fail('Informe o nome da filial.');
+        const uf = document.getElementById('bm-state').value.trim().toUpperCase();
+        if (uf && uf.length !== 2) return fail('A UF tem exatamente 2 letras.');
+        const email = document.getElementById('bm-email').value.trim();
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail('E-mail de contato inválido.');
+        const clientId = document.getElementById('bm-client').value;
+        const payload = { clientId, name, code:document.getElementById('bm-code').value.trim(),
+          cnpj:document.getElementById('bm-cnpj').value.trim(),
+          city:document.getElementById('bm-city').value.trim(), state:uf,
+          timezone:document.getElementById('bm-tz').value,
+          calendar:document.getElementById('bm-cal').value,
+          contactName:document.getElementById('bm-contact').value.trim(),
+          contactEmail:email, contactPhone:document.getElementById('bm-phone').value.trim(),
+          active:document.getElementById('bm-active').checked };
+        if (id) Object.assign(branchById(id), payload);
+        else {
+          // Filial nova nasce sem endereço nem coordenada: quem preenche isso é
+          // a tela de Mapas, e é lá que o aviso de "sem localização" aparece.
+          const b = Object.assign({ id:nid('b'), short:name.slice(0,18),
+            street:'', number:'', complement:null, district:'', cep:'',
+            lat:null, lng:null, precision:null, geoStatus:'pending', stale:false,
+            geoReport:null, address:null }, payload);
+          db.branches.push(b);
+          DEFAULT_AREAS.forEach(([an, kind], i) =>
+            db.areas.push({ id:nid('ar'), branchId:b.id, name:an, kind, active:true, order:(i+1)*10 }));
+        }
+        syncClientName(clientId);
+        save(); closeModal(); render(); toast(id ? 'Filial atualizada' : 'Filial cadastrada'); return;
+      }
+
+      // --- Fornecedor ---
+      if (document.getElementById('fm-name')) {
+        const fail = failIn('fm-msg');
+        const id = document.getElementById('fm-id').value;
+        const name = document.getElementById('fm-name').value.trim();
+        if (name.length < 2) return fail('Informe o nome do fornecedor.');
+        const email = document.getElementById('fm-email').value.trim();
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail('E-mail inválido.');
+        const ratingRaw = document.getElementById('fm-rating').value.trim();
+        const rating = ratingRaw === '' ? null : Number(ratingRaw);
+        if (rating !== null && !(rating >= 0 && rating <= 5)) return fail('Informe um número entre 0 e 5.');
+        const cnpj = document.getElementById('fm-cnpj').value.trim();
+        const dup = db.suppliers.find(x => x.id !== id && cnpj && x.cnpj === cnpj);
+        if (dup) return fail(`Já existe um fornecedor com este CNPJ ("${dup.name}").`);
+        const payload = { name, legalName:document.getElementById('fm-legal').value.trim(),
+          cnpj, email, phone:document.getElementById('fm-phone').value.trim(),
+          services:document.getElementById('fm-services').value.split(',').map(x=>x.trim()).filter(Boolean),
+          rating, active:document.getElementById('fm-active').checked };
+        if (id) Object.assign(supplierById(id), payload);
+        else db.suppliers.push(Object.assign({ id:nid('s') }, payload));
+        save(); closeModal(); render(); toast(id ? 'Fornecedor atualizado' : 'Fornecedor cadastrado'); return;
+      }
+
+      // --- Contrato de fornecedor ---
+      if (document.getElementById('km-supplier')) {
+        const fail = failIn('km-msg');
+        const id = document.getElementById('km-id').value;
+        const startsOn = document.getElementById('km-start').value;
+        const endsOn = document.getElementById('km-end').value;
+        if (startsOn && endsOn && endsOn < startsOn) return fail('A vigência final não pode ser anterior ao início.');
+        const num = v => { const n = document.getElementById(v).value.trim(); return n === '' ? null : Number(n); };
+        const resp = num('km-resp'), reso = num('km-reso');
+        if ((resp !== null && !(resp > 0)) || (reso !== null && !(reso > 0)))
+          return fail('Os prazos de SLA precisam ser maiores que zero.');
+        const payload = { supplierId:document.getElementById('km-supplier').value,
+          number:document.getElementById('km-number').value.trim(),
+          description:document.getElementById('km-desc').value.trim(),
+          startsOn, endsOn, monthlyCost:num('km-cost') ?? 0,
+          responseSla:resp, resolutionSla:reso,
+          active:document.getElementById('km-active').checked };
+        if (id) Object.assign(db.supplierContracts.find(x => x.id === id), payload);
+        else db.supplierContracts.push(Object.assign({ id:nid('sc') }, payload));
+        save(); closeModal(); render(); toast(id ? 'Contrato atualizado' : 'Contrato cadastrado'); return;
+      }
+
+      // --- Categoria ---
+      if (document.getElementById('gm-name')) {
+        const fail = failIn('gm-msg');
+        const id = document.getElementById('gm-id').value;
+        const name = document.getElementById('gm-name').value.trim();
+        if (name.length < 2) return fail('Informe o nome da categoria.');
+        const parentSel = document.getElementById('gm-parent');
+        // O <select> desabilitado (categoria que já tem filhas) não pode perder o pai.
+        const parentId = parentSel.disabled ? (categoryById(id)?.parentId ?? null) : (parentSel.value || null);
+        const dup = db.categories.find(c => c.id !== id && (c.parentId || null) === parentId &&
+          c.name.toLowerCase() === name.toLowerCase());
+        if (dup) return fail('Já existe uma categoria com este nome nesse nível.');
+        const payload = { parentId, name, description:document.getElementById('gm-desc').value.trim(),
+          active:document.getElementById('gm-active').checked };
+        if (id) {
+          const before = catPath(categoryById(id));
+          Object.assign(categoryById(id), payload);
+          // Ticket guarda a categoria como caminho: renomear sem repropagar
+          // deixaria os tickets apontando para um nome que não existe mais.
+          const after = catPath(categoryById(id));
+          if (before !== after) db.tickets.filter(t => t.cat === before).forEach(t => { t.cat = after; });
+          db.slaDefs.filter(d => d.categoryId === id).forEach(d => { d.category = payload.name; });
+        } else db.categories.push(Object.assign({ id:nid('ct') }, payload));
+        save(); closeModal(); render(); toast(id ? 'Categoria atualizada' : 'Categoria cadastrada'); return;
+      }
+
+      // --- Prioridade ---
+      if (document.getElementById('pm-label')) {
+        const fail = failIn('pm-msg');
+        const key = document.getElementById('pm-key').value;
+        const label = document.getElementById('pm-label').value.trim();
+        if (label.length < 2) return fail('Informe o nome da prioridade.');
+        const weight = Number(document.getElementById('pm-weight').value);
+        if (!Number.isInteger(weight) || weight < 0 || weight > 100)
+          return fail('Informe um número inteiro entre 0 e 100 para o peso.');
+        const sortOrder = Number(document.getElementById('pm-order').value);
+        if (!Number.isInteger(sortOrder) || sortOrder < 0) return fail('Ordem de exibição inválida.');
+        const payload = { label, weight, sortOrder,
+          color:document.getElementById('pm-color').value,
+          tfr:Number(document.getElementById('pm-tfr').value) || 60,
+          res:Number(document.getElementById('pm-res').value) || 480,
+          active:document.getElementById('pm-active').checked };
+        if (key) Object.assign(db.priorities.find(p => p.key === key), payload);
+        else {
+          // A chave nasce do nome e nunca é reeditada — as definições de SLA
+          // apontam para ela.
+          const base = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+            .replace(/[^a-z]+/g,'_').replace(/^_+|_+$/g,'');
+          if (!base) return fail('Informe um nome com pelo menos uma letra.');
+          if (db.priorities.some(p => p.key === base))
+            return fail('Já existe uma prioridade com esse nome (ou equivalente).');
+          db.priorities.push(Object.assign({ key:base }, payload));
+        }
+        save(); closeModal(); render(); toast(key ? 'Prioridade atualizada' : 'Prioridade cadastrada'); return;
+      }
+
+      // --- Contrato de SLA ---
+      if (document.getElementById('cm2-name')) {
+        const fail = failIn('cm2-msg');
+        const id = document.getElementById('cm2-id').value;
+        const name = document.getElementById('cm2-name').value.trim();
+        if (name.length < 2) return fail('Informe o nome do contrato.');
+        const validFrom = document.getElementById('cm2-from').value;
+        const validTo = document.getElementById('cm2-to').value;
+        if (validFrom && validTo && validTo < validFrom)
+          return fail('A vigência final não pode ser anterior ao início.');
+        const payload = { name, clientId:document.getElementById('cm2-client').value,
+          branchId:document.getElementById('cm2-branch').value || null,
+          calendar:document.getElementById('cm2-cal').value, validFrom, validTo,
+          notes:document.getElementById('cm2-notes').value.trim(),
+          active:document.getElementById('cm2-active').checked };
+        if (id) {
+          Object.assign(slaContractById(id), payload);
+          db.slaDefs.filter(d => d.contractId === id).forEach(d => { d.contract = name; });
+        } else db.slaContracts.push(Object.assign({ id:nid('k') }, payload));
+        save(); closeModal(); render(); toast(id ? 'Contrato de SLA atualizado' : 'Contrato de SLA cadastrado'); return;
+      }
+
+      // --- Usuário ---
+      if (document.getElementById('um-name')) {
+        const fail = failIn('um-msg');
+        const id = document.getElementById('um-id').value;
+        const name = document.getElementById('um-name').value.trim();
+        if (name.length < 2) return fail('Informe o nome completo.');
+        const emailEl = document.getElementById('um-email');
+        const email = emailEl.value.trim();
+        if (!id && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail('Informe um e-mail válido.');
+        if (!id && db.users.some(u => u.email.toLowerCase() === email.toLowerCase()))
+          return fail('Já existe um usuário com este e-mail.');
+        const role = document.getElementById('um-role').value;
+        const active = document.getElementById('um-active').checked;
+        const branchIds = [...document.querySelectorAll('.um-branch:checked')].map(x => x.value);
+        const existing = id ? userById(id) : null;
+        // Rebaixar ou desativar a si mesmo tranca o próprio acesso — a mesma
+        // trava que a Server Action do app real aplica, não só a UI.
+        if (existing && existing.isMe && (role !== existing.role || !active))
+          return fail('Você não pode alterar o próprio papel nem desativar a própria conta — peça a outro administrador.');
+        if (existing) {
+          Object.assign(existing, { name, phone:document.getElementById('um-phone').value.trim(),
+            role, branchIds, active });
+          // O nome do atendente é retrato em ticket e ativo: repropagar evita
+          // que a atribuição aponte para alguém que "sumiu" da lista.
+          const old = existing.name;
+          if (old !== name) {
+            db.tickets.filter(t => t.assignee === old).forEach(t => { t.assignee = name; });
+            db.assets.filter(a => a.user === old).forEach(a => { a.user = name; });
+            db.lines.filter(l => l.user === old).forEach(l => { l.user = name; });
+            db.queues.forEach(q => { q.members = q.members.map(m => m === old ? name : m); });
+          }
+          save(); closeModal(); render(); toast('Acesso atualizado'); return;
+        }
+        const password = tempPassword();
+        db.users.push({ id:nid('u'), name, email,
+          phone:document.getElementById('um-phone').value.trim(),
+          role, branchIds, active, isMe:false });
+        lastTempPassword = { name, password };
+        save(); closeModal(); current = 'usuarios'; render();
+        toast('Usuário criado — anote a senha temporária'); return;
+      }
+
       if (document.getElementById('sm-name')) {
         const id = document.getElementById('sm-id').value;
         const name = document.getElementById('sm-name').value.trim();
@@ -3766,14 +4764,19 @@
         if (name.length < 3) return fail('Informe o nome da definição.');
         if (!(tfr > 0) || !(res > 0)) return fail('Prazos precisam ser maiores que zero.');
         if (res < tfr) return fail('A resolução não pode ser menor que a primeira resposta.');
-        const contract = document.getElementById('sm-contract').value || null;
-        const category = document.getElementById('sm-cat').value || null;
+        const contractId = document.getElementById('sm-contract').value || null;
+        const categoryId = document.getElementById('sm-cat').value || null;
         const priority = document.getElementById('sm-prio').value;
         // Unicidade: contrato + categoria + prioridade não pode repetir.
-        const dup = db.slaDefs.find(d => d.id !== id && d.contract === contract &&
-          d.category === category && d.priority === priority);
+        const dup = db.slaDefs.find(d => d.id !== id && d.contractId === contractId &&
+          d.categoryId === categoryId && d.priority === priority);
         if (dup) return fail(`Já existe a definição "${dup.name}" para esta combinação.`);
-        const payload = { name, contract, category, priority, tfr, res,
+        // `contract` e `category` seguem como nome, para a listagem e o
+        // casamento por prefixo de resolveSla() não precisarem resolver a FK.
+        const payload = { name, contractId, categoryId,
+          contract: contractId ? (slaContractById(contractId)?.name ?? null) : null,
+          category: categoryId ? (categoryById(categoryId)?.name ?? null) : null,
+          priority, tfr, res,
           calendar:document.getElementById('sm-cal').value,
           active:document.getElementById('sm-active').checked };
         if (id) Object.assign(db.slaDefs.find(d => d.id === id), payload);
@@ -3803,7 +4806,9 @@
         toast(`${r.moved} ticket(s) transferido(s)`); return;
       }
       if (document.getElementById('nm-model')) {
-        const err = createAsset({ type:document.getElementById('nm-type').value,
+        const editing = document.getElementById('nm-id').value;
+        const err = createAsset({ id:editing || undefined,
+          type:document.getElementById('nm-type').value,
           model:document.getElementById('nm-model').value, tag:document.getElementById('nm-tag').value,
           sn:document.getElementById('nm-sn').value, branchId:document.getElementById('nm-branch').value,
           areaId:document.getElementById('nm-area').value, status:document.getElementById('nm-status').value,
@@ -3811,10 +4816,12 @@
           cost:document.getElementById('nm-cost').value });
         if (err) { document.getElementById('nm-msg').innerHTML =
           `<div class="alert" data-kind="error">${esc(err)}</div>`; return; }
-        closeModal(); render(); toast('Ativo cadastrado'); return;
+        closeModal(); render(); toast(editing ? 'Ativo atualizado' : 'Ativo cadastrado'); return;
       }
       if (document.getElementById('nl-num')) {
-        const err = createLine({ num:document.getElementById('nl-num').value,
+        const editingLine = document.getElementById('nl-id').value;
+        const err = createLine({ id:editingLine || undefined,
+          num:document.getElementById('nl-num').value,
           carrier:document.getElementById('nl-carrier').value, plan:document.getElementById('nl-plan').value,
           type:document.getElementById('nl-type').value, branchId:document.getElementById('nl-branch').value,
           areaId:document.getElementById('nl-area').value, status:document.getElementById('nl-status').value,
@@ -3826,7 +4833,7 @@
           cancelledOn:document.getElementById('nl-cancel').value });
         if (err) { document.getElementById('nl-msg').innerHTML =
           `<div class="alert" data-kind="error">${esc(err)}</div>`; return; }
-        closeModal(); render(); toast('Linha cadastrada'); return;
+        closeModal(); render(); toast(editingLine ? 'Linha atualizada' : 'Linha cadastrada'); return;
       }
       if (document.getElementById('nk-carrier')) {
         const ip = document.getElementById('nk-ip').value.trim();
