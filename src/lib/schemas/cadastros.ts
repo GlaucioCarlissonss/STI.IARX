@@ -4,6 +4,8 @@ import {
   optionalUuid,
   optionalNonNegativeNumber,
   optionalNumberInRange,
+  optionalPositiveInt,
+  intInRange,
 } from '../form-schemas'
 
 /**
@@ -133,3 +135,82 @@ export const supplierSchema = z.object({
     .transform((v) => (v === '' ? [] : v.split(',').map((s) => s.trim()).filter(Boolean))),
   rating: optionalNumberInRange(0, 5),
 })
+
+/* --- Contrato de fornecedor ---------------------------------------------- */
+
+export const supplierContractSchema = z
+  .object({
+    supplier_id: z.string().uuid('Selecione o fornecedor.'),
+    contract_number: emptyToNull,
+    description: emptyToNull,
+    starts_on: emptyToNull,
+    ends_on: emptyToNull,
+    monthly_cost: optionalNonNegativeNumber,
+    response_sla_minutes: optionalPositiveInt,
+    resolution_sla_minutes: optionalPositiveInt,
+  })
+  // Espelha a constraint `sc_valid_period` do banco.
+  .refine((v) => !v.ends_on || !v.starts_on || v.ends_on >= v.starts_on, {
+    message: 'A vigência final não pode ser anterior ao início.',
+    path: ['ends_on'],
+  })
+
+/* --- Categoria de ticket -------------------------------------------------- */
+
+export const categorySchema = z.object({
+  parent_id: optionalUuid,
+  name: z.string().trim().min(2, 'Informe o nome da categoria.'),
+  description: emptyToNull,
+})
+
+/* --- Prioridade de ticket -------------------------------------------------
+ *
+ * `key` não é campo do formulário: é derivada do `label` no servidor (ver
+ * `sla/actions.ts`) e nunca reeditada — mudar a chave depois de criada
+ * quebraria o vínculo com `sla_definitions`.
+ */
+
+export const prioritySchema = z.object({
+  label: z.string().trim().min(2, 'Informe o nome da prioridade.'),
+  weight: intInRange(0, 100),
+  color: z
+    .string()
+    .trim()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'Cor inválida.'),
+  sort_order: intInRange(0, 999),
+})
+
+/* --- Contrato de SLA por cliente ------------------------------------------ */
+
+export const slaContractSchema = z
+  .object({
+    client_id: z.string().uuid('Selecione o cliente.'),
+    branch_id: optionalUuid,
+    name: z.string().trim().min(2, 'Informe o nome do contrato.'),
+    business_hours_id: optionalUuid,
+    valid_from: emptyToNull,
+    valid_to: emptyToNull,
+    notes: emptyToNull,
+  })
+  // Espelha a constraint `slac_valid_period` do banco.
+  .refine((v) => !v.valid_to || !v.valid_from || v.valid_to >= v.valid_from, {
+    message: 'A vigência final não pode ser anterior ao início.',
+    path: ['valid_to'],
+  })
+
+/* --- Definição de SLA ------------------------------------------------------ */
+
+export const slaDefinitionSchema = z
+  .object({
+    contract_id: optionalUuid,
+    category_id: optionalUuid,
+    priority_id: z.string().uuid('Selecione a prioridade.'),
+    first_response_minutes: intInRange(1, 100_000),
+    resolution_minutes: intInRange(1, 100_000),
+    business_hours_id: optionalUuid,
+  })
+  // Espelha a constraint `slad_resolution_after_response` do banco.
+  .refine((v) => v.resolution_minutes >= v.first_response_minutes, {
+    message: 'A resolução não pode ser mais curta que a primeira resposta.',
+    path: ['resolution_minutes'],
+  })

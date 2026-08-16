@@ -32,9 +32,10 @@ Supabase — PostgreSQL, Auth, Realtime, Storage, Edge Functions
 | **Telefonia** | Cadastro de linhas, vínculo com aparelho, relatório de custos por filial e operadora |
 | **Fornecedores** | Cadastro, serviços, avaliação, contratos com SLA contratado |
 | **Clientes e filiais** | Grupos econômicos com N filiais, fuso e calendário próprios |
-| **Edição dos cadastros** | Cliente, filial, ativo, linha e fornecedor são editáveis e inativáveis pela interface, com a mesma regra de validação do cadastro |
+| **Edição dos cadastros** | Cliente, filial, ativo, linha, fornecedor e seus contratos são editáveis e inativáveis pela interface, com a mesma regra de validação do cadastro |
+| **Configuração de SLA** | Categorias (2 níveis), prioridades, contratos de SLA por cliente e definições — tudo cadastrável em `/sla`, além do relatório de compliance |
 | **Geolocalização** | Endereço estruturado obrigatório, geocodificação com nível de precisão, tratamento das 6 exceções, mapa em satélite e log append-only de cada tentativa |
-| **Usuários** | 6 papéis, visibilidade por filial (1 ou N), proteção contra auto-escalonamento |
+| **Usuários** | 6 papéis, visibilidade por filial (1 ou N), proteção contra auto-escalonamento, criação de conta com senha temporária e troca de senha em `/conta` |
 | **Integration Hub** | Handler Bitrix24 e handler genérico, idempotência, retry com backoff, supressão de eco, logs e mapeamento editável |
 | **Auditoria** | Trigger em 18 tabelas + histórico dedicado de tickets |
 
@@ -146,7 +147,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 105 testes: mapeamento, coordenadas, geolocalização, provedores sem chave e cadastros
+npm test              # 122 testes: mapeamento, coordenadas, geolocalização, provedores sem chave e cadastros
 npm run db:validate   # migrações + seed + 127 asserções em PostgreSQL real
 ```
 
@@ -222,11 +223,11 @@ feriado, fora de expediente).
   telefonia — banco pronto (migrações `0013`–`0016`), interface pendente; a
   especificação de cada um está em
   [docs/06-lacunas-e-roadmap.md](docs/06-lacunas-e-roadmap.md).
-- Convite de usuário e recuperação de senha: `/usuarios` altera papel e filiais
-  de quem já existe, mas não cria conta nova.
+- Recuperação de senha ("esqueci minha senha"): existe troca de senha logado
+  (`/conta`) e criação de usuário com senha temporária (`/usuarios`), mas não
+  um fluxo de redefinição para quem está deslogado.
 - Importação em massa de ativos por CSV (RF-INV-04, prioridade *Should*).
-- Edição de definições de SLA, categorias e regras de fila pela UI — hoje são
-  cadastrados por SQL; as telas são de leitura.
+- Edição de regras de fila (`queue_rules`) pela UI — hoje cadastradas por SQL.
 - Fechamento automático de tickets resolvidos: a preferência
   (`tenants.auto_close_after_days`) existe, falta o job agendado.
 - Envio de e-mail em alertas de proximidade de breach — os estados são

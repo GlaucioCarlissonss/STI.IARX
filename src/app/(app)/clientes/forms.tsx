@@ -1,6 +1,7 @@
 'use client'
 
 import type { Branch, Client } from '@/lib/types'
+import type { BusinessHoursOption } from '@/lib/data/lookups'
 import { ActionForm, SubmitButton } from '@/components/action-form'
 import { Field, inputClass } from '@/components/ui'
 import {
@@ -27,12 +28,6 @@ const TIMEZONES = [
   'America/Boa_Vista',
   'America/Noronha',
 ]
-
-export interface BusinessHoursOption {
-  id: string
-  name: string
-  is_24x7: boolean
-}
 
 /*
  * Os campos ficam em componentes próprios porque cadastrar e editar usam

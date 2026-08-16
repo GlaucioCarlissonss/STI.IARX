@@ -1,8 +1,16 @@
+import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/session'
+import { getBranches, getBusinessHours, getCategories, getClients, getPriorities } from '@/lib/data/lookups'
 import { formatDate, formatMinutes } from '@/lib/format'
+import type { Category, Priority, SlaContract } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
+import { EditPanel } from '@/components/edit-panel'
+import { EditCategoryForm, NewCategoryForm } from './category-forms'
+import { EditPriorityForm, NewPriorityForm } from './priority-forms'
+import { EditSlaContractForm, NewSlaContractForm } from './sla-contract-forms'
+import { EditSlaDefinitionForm, NewSlaDefinitionForm, type SlaDefinitionDefaults } from './sla-definition-forms'
 
 export const metadata: Metadata = { title: 'SLA' }
 
@@ -17,11 +25,7 @@ interface ComplianceRow {
   response_compliance_pct: number | null
 }
 
-interface DefinitionRow {
-  id: string
-  first_response_minutes: number
-  resolution_minutes: number
-  is_active: boolean
+interface DefinitionRow extends SlaDefinitionDefaults {
   priority: { label: string; color: string } | null
   category: { name: string } | null
   contract: { name: string } | null
@@ -39,7 +43,19 @@ export default async function SlaPage() {
   await requireRole(['super_admin', 'admin', 'gestor'])
   const supabase = await createClient()
 
-  const [{ data: compliance }, { data: definitions }, { count: uncoveredCount }] = await Promise.all([
+  const [
+    { data: compliance },
+    { data: definitions },
+    { count: uncoveredCount },
+    { data: allCategories },
+    { data: allPriorities },
+    { data: contracts },
+    clients,
+    branches,
+    businessHours,
+    activeCategories,
+    activePriorities,
+  ] = await Promise.all([
     supabase
       .from('vw_sla_compliance')
       .select(
@@ -51,13 +67,36 @@ export default async function SlaPage() {
     supabase
       .from('sla_definitions')
       .select(
-        'id, first_response_minutes, resolution_minutes, is_active, priority:ticket_priorities(label, color), category:ticket_categories(name), contract:sla_contracts(name)',
+        'id, contract_id, category_id, priority_id, first_response_minutes, resolution_minutes, business_hours_id, is_active, priority:ticket_priorities(label, color), category:ticket_categories(name), contract:sla_contracts(name)',
       )
       .order('resolution_minutes')
       .returns<DefinitionRow[]>(),
     // Cobertura: tickets que nenhuma definição de SLA alcançou. É o relatório
     // que revela buracos de configuração antes que o cliente reclame.
     supabase.from('sla_tracking').select('ticket_id', { count: 'exact', head: true }).eq('coverage', 'uncovered'),
+    // As duas consultas abaixo trazem TODAS as linhas (ativas e inativas): é a
+    // tela de gestão, diferente de `getCategories()`/`getPriorities()` — que
+    // filtram só o que pode ser escolhido ao abrir um ticket.
+    supabase
+      .from('ticket_categories')
+      .select('id, parent_id, name, description, is_active')
+      .order('name')
+      .returns<Category[]>(),
+    supabase
+      .from('ticket_priorities')
+      .select('id, key, label, weight, color, sort_order, is_active')
+      .order('sort_order')
+      .returns<Priority[]>(),
+    supabase
+      .from('sla_contracts')
+      .select('id, client_id, branch_id, name, business_hours_id, valid_from, valid_to, is_active, notes')
+      .order('name')
+      .returns<SlaContract[]>(),
+    getClients(),
+    getBranches(),
+    getBusinessHours(),
+    getCategories(),
+    getPriorities(),
   ])
 
   // Com `{ count: 'exact', head: true }` o Supabase devolve `data: null` e o
@@ -66,11 +105,23 @@ export default async function SlaPage() {
   // SLA aplicável" nunca aparecia, mesmo com cobertura furada de verdade.
   const semSla = uncoveredCount ?? 0
 
+  const categories = allCategories ?? []
+  const priorities = allPriorities ?? []
+  const slaContracts = contracts ?? []
+  const topLevelCategories = categories.filter((c) => c.parent_id === null)
+  const contractLookups = { clients, branches, businessHours }
+  const definitionLookups = {
+    contracts: slaContracts,
+    categories: activeCategories,
+    priorities: activePriorities,
+    businessHours,
+  }
+
   return (
     <>
       <PageHeader
         title="SLA"
-        description="Compliance por período e fila, e as definições vigentes."
+        description="Compliance por período e fila, e a configuração de categorias, prioridades, contratos e definições."
       />
 
       {semSla > 0 && (
@@ -127,31 +178,143 @@ export default async function SlaPage() {
         )}
       </section>
 
-      <section>
-        <h2 className="mb-3 text-lg font-semibold text-[var(--color-ink)]">Definições vigentes</h2>
-        {definitions && definitions.length > 0 ? (
-          <Table head={['Contrato', 'Categoria', 'Prioridade', 'Primeira resposta', 'Resolução', '']}>
-            {definitions.map((d) => (
-              <tr key={d.id}>
-                <Td className="text-[var(--color-ink-2)]">
-                  {d.contract?.name ?? 'Padrão do tenant'}
-                </Td>
-                <Td className="text-[var(--color-ink-2)]">{d.category?.name ?? 'Todas'}</Td>
-                <Td>
-                  <span className="font-semibold" style={{ color: d.priority?.color }}>
-                    {d.priority?.label ?? '—'}
-                  </span>
-                </Td>
-                <Td className="tabular-nums">{formatMinutes(d.first_response_minutes)}</Td>
-                <Td className="tabular-nums">{formatMinutes(d.resolution_minutes)}</Td>
-                <Td>{d.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}</Td>
-              </tr>
+      <h2 className="mb-3 text-lg font-semibold text-[var(--color-ink)]">Configuração</h2>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card title="Categorias">
+          <div className="flex flex-col gap-3">
+            {categories.length === 0 && <EmptyState title="Nenhuma categoria cadastrada" />}
+            {topLevelCategories.map((parent) => {
+              const children = categories.filter((c) => c.parent_id === parent.id)
+              return (
+                <div key={parent.id} className="rounded-lg border border-[var(--color-border)] p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-[var(--color-ink)]">{parent.name}</span>
+                    <div className="flex items-center gap-2">
+                      {parent.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
+                      <EditPanel title={`Editar ${parent.name}`}>
+                        <EditCategoryForm category={parent} topLevel={topLevelCategories} />
+                      </EditPanel>
+                    </div>
+                  </div>
+                  {children.length > 0 && (
+                    <ul className="mt-2 flex flex-col gap-1.5 border-l border-[var(--color-border)] pl-3">
+                      {children.map((child) => (
+                        <li key={child.id} className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm text-[var(--color-ink-2)]">{child.name}</span>
+                          <div className="flex items-center gap-2">
+                            {child.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
+                            <EditPanel title={`Editar ${child.name}`}>
+                              <EditCategoryForm category={child} topLevel={topLevelCategories} />
+                            </EditPanel>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+            <EditPanel label="+ Nova categoria">
+              <NewCategoryForm topLevel={topLevelCategories} />
+            </EditPanel>
+          </div>
+        </Card>
+
+        <Card title="Prioridades">
+          <div className="flex flex-col gap-2">
+            {priorities.length === 0 && <EmptyState title="Nenhuma prioridade cadastrada" />}
+            {priorities.map((p) => (
+              <div
+                key={p.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] p-3"
+              >
+                <span className="inline-flex items-center gap-2 font-medium" style={{ color: p.color }}>
+                  <span aria-hidden="true" className="inline-block size-2.5 rounded-full" style={{ background: p.color }} />
+                  {p.label}
+                  <span className="text-xs text-[var(--color-ink-3)]">peso {p.weight}</span>
+                </span>
+                <div className="flex items-center gap-2">
+                  {p.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
+                  <EditPanel title={`Editar ${p.label}`}>
+                    <EditPriorityForm priority={p} />
+                  </EditPanel>
+                </div>
+              </div>
             ))}
-          </Table>
-        ) : (
-          <EmptyState title="Nenhuma definição de SLA cadastrada" />
-        )}
-      </section>
+          </div>
+
+          <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+            <EditPanel label="+ Nova prioridade">
+              <NewPriorityForm />
+            </EditPanel>
+          </div>
+        </Card>
+
+        <Card title="Contratos de SLA">
+          <div className="flex flex-col gap-2">
+            {slaContracts.length === 0 && <EmptyState title="Nenhum contrato de SLA cadastrado" />}
+            {slaContracts.map((c) => (
+              <div
+                key={c.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] p-3"
+              >
+                <span className="font-medium text-[var(--color-ink)]">{c.name}</span>
+                <div className="flex items-center gap-2">
+                  {c.is_active ? <Badge tone="ok">Ativo</Badge> : <Badge>Inativo</Badge>}
+                  <EditPanel title={`Editar ${c.name}`}>
+                    <EditSlaContractForm contract={c} {...contractLookups} />
+                  </EditPanel>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+            <EditPanel label="+ Novo contrato de SLA">
+              <NewSlaContractForm {...contractLookups} />
+            </EditPanel>
+          </div>
+        </Card>
+
+        <Card title="Definições de SLA">
+          {definitions && definitions.length > 0 ? (
+            <Table head={['Contrato', 'Categoria', 'Prioridade', '1ª resposta', 'Resolução', '', '']}>
+              {definitions.map((d) => (
+                <Fragment key={d.id}>
+                  <tr>
+                    <Td className="text-[var(--color-ink-2)]">{d.contract?.name ?? 'Padrão do tenant'}</Td>
+                    <Td className="text-[var(--color-ink-2)]">{d.category?.name ?? 'Todas'}</Td>
+                    <Td>
+                      <span className="font-semibold" style={{ color: d.priority?.color }}>
+                        {d.priority?.label ?? '—'}
+                      </span>
+                    </Td>
+                    <Td className="tabular-nums">{formatMinutes(d.first_response_minutes)}</Td>
+                    <Td className="tabular-nums">{formatMinutes(d.resolution_minutes)}</Td>
+                    <Td>{d.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}</Td>
+                    <Td>
+                      <EditPanel title="Editar definição de SLA">
+                        <EditSlaDefinitionForm definition={d} {...definitionLookups} />
+                      </EditPanel>
+                    </Td>
+                  </tr>
+                </Fragment>
+              ))}
+            </Table>
+          ) : (
+            <EmptyState title="Nenhuma definição de SLA cadastrada" />
+          )}
+
+          <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+            <EditPanel label="+ Nova definição de SLA">
+              <NewSlaDefinitionForm {...definitionLookups} />
+            </EditPanel>
+          </div>
+        </Card>
+      </div>
     </>
   )
 }

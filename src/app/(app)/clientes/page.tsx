@@ -1,26 +1,22 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
-import { createClient } from '@/lib/supabase/server'
-import { requireRole } from '@/lib/session'
-import { getBranches, getClients } from '@/lib/data/lookups'
+import { requireRole, canManageRecords } from '@/lib/session'
+import { getBranches, getBusinessHours, getClients } from '@/lib/data/lookups'
 import { formatCnpj } from '@/lib/format'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
-import { requireSession, canManageRecords } from '@/lib/session'
 import { EditBranchForm, EditClientForm, NewClientForm, NewBranchForm } from './forms'
 
 export const metadata: Metadata = { title: 'Clientes e filiais' }
 
 export default async function ClientesPage() {
-  await requireRole(['super_admin', 'admin', 'gestor'])
-  const { profile } = await requireSession()
+  const { profile } = await requireRole(['super_admin', 'admin', 'gestor'])
   const editable = canManageRecords(profile.role)
-  const supabase = await createClient()
 
-  const [clients, branches, { data: businessHours }] = await Promise.all([
+  const [clients, branches, businessHours] = await Promise.all([
     getClients(),
     getBranches(),
-    supabase.from('business_hours').select('id, name, is_24x7').order('name'),
+    getBusinessHours(),
   ])
 
   return (
@@ -98,7 +94,7 @@ export default async function ClientesPage() {
                                   <EditBranchForm
                                     branch={b}
                                     clients={clients}
-                                    businessHours={businessHours ?? []}
+                                    businessHours={businessHours}
                                   />
                                 </EditPanel>
                               </Td>
@@ -123,7 +119,7 @@ export default async function ClientesPage() {
             <NewClientForm />
           </Card>
           <Card title="Nova filial">
-            <NewBranchForm clients={clients} businessHours={businessHours ?? []} />
+            <NewBranchForm clients={clients} businessHours={businessHours} />
           </Card>
         </div>
       </div>

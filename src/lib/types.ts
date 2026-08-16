@@ -142,12 +142,15 @@ export interface Priority {
   weight: number
   color: string
   sort_order: number
+  is_active: boolean
 }
 
 export interface Category {
   id: string
   parent_id: string | null
   name: string
+  description: string | null
+  is_active: boolean
 }
 
 export interface Branch {
@@ -218,6 +221,31 @@ export interface Supplier {
   services: string[]
   rating: number | null
   is_active: boolean
+}
+
+export interface SupplierContract {
+  id: string
+  supplier_id: string
+  contract_number: string | null
+  description: string | null
+  starts_on: string | null
+  ends_on: string | null
+  monthly_cost: number | null
+  response_sla_minutes: number | null
+  resolution_sla_minutes: number | null
+  is_active: boolean
+}
+
+export interface SlaContract {
+  id: string
+  client_id: string
+  branch_id: string | null
+  name: string
+  business_hours_id: string | null
+  valid_from: string | null
+  valid_to: string | null
+  is_active: boolean
+  notes: string | null
 }
 
 export interface Integration {

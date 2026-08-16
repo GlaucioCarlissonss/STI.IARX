@@ -41,3 +41,23 @@ export function optionalNumberInRange(min: number, max: number) {
       message: `Informe um número entre ${min} e ${max}.`,
     })
 }
+
+/** Obrigatório, inteiro, dentro do intervalo — peso de prioridade, ordem de exibição, minutos de SLA. */
+export function intInRange(min: number, max: number) {
+  return z
+    .string()
+    .trim()
+    .transform((v) => Number(v))
+    .refine((v) => Number.isInteger(v) && v >= min && v <= max, {
+      message: `Informe um número inteiro entre ${min} e ${max}.`,
+    })
+}
+
+/** `""` → `null`; caso contrário inteiro positivo (SLA contratado, em minutos). */
+export const optionalPositiveInt = z
+  .string()
+  .trim()
+  .transform((v) => (v === '' ? null : Number(v)))
+  .refine((v) => v === null || (Number.isInteger(v) && v > 0), {
+    message: 'Informe um número inteiro maior que zero.',
+  })

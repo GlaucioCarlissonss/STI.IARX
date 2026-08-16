@@ -5,38 +5,39 @@ import type { Branch, UserRole } from '@/lib/types'
 import { roleLabel } from '@/lib/i18n'
 import { ActionForm, SubmitButton } from '@/components/action-form'
 import { Field, inputClass } from '@/components/ui'
-import { updateUserAccess } from './actions'
+import { createUserAccount } from './actions'
+import { ASSIGNABLE, TENANT_WIDE } from './user-access-form'
 
-/** Também usado pelo formulário de criação de usuário — uma lista só, sem risco de divergir. */
-export const ASSIGNABLE: UserRole[] = ['admin', 'gestor', 'atendente', 'solicitante', 'visualizador']
-
-/** Papéis que já enxergam o tenant inteiro — para eles, marcar filial é inócuo. */
-export const TENANT_WIDE: UserRole[] = ['admin', 'gestor']
-
-export function UserAccessForm({
-  userId,
-  currentRole,
-  isActive,
-  assignedBranchIds,
-  branches,
-}: {
-  userId: string
-  currentRole: UserRole
-  isActive: boolean
-  assignedBranchIds: string[]
-  branches: Branch[]
-}) {
-  const [role, setRole] = useState<UserRole>(currentRole)
+export function NewUserForm({ branches }: { branches: Branch[] }) {
+  const [role, setRole] = useState<UserRole>('atendente')
   const scopedByBranch = !TENANT_WIDE.includes(role)
 
   return (
-    <ActionForm action={updateUserAccess} className="flex flex-col gap-3">
-      <input type="hidden" name="user_id" value={userId} />
+    <ActionForm action={createUserAccount} className="flex flex-col gap-4">
+      <Field label="Nome completo" htmlFor="full_name" required>
+        <input id="full_name" name="full_name" required maxLength={150} className={inputClass} />
+      </Field>
 
-      <Field label="Papel" htmlFor={`role-${userId}`}>
+      <Field label="E-mail" htmlFor="new-user-email" required>
+        <input
+          id="new-user-email"
+          name="email"
+          type="email"
+          required
+          maxLength={200}
+          className={inputClass}
+        />
+      </Field>
+
+      <Field label="Telefone" htmlFor="new-user-phone">
+        <input id="new-user-phone" name="phone" maxLength={30} className={inputClass} />
+      </Field>
+
+      <Field label="Papel" htmlFor="new-user-role" required>
         <select
-          id={`role-${userId}`}
+          id="new-user-role"
           name="role"
+          required
           value={role}
           onChange={(e) => setRole(e.target.value as UserRole)}
           className={inputClass}
@@ -53,7 +54,7 @@ export function UserAccessForm({
         <fieldset className="flex flex-col gap-1.5">
           <legend className="text-sm font-medium text-[var(--color-ink)]">Filiais visíveis</legend>
           <p className="text-xs text-[var(--color-ink-3)]">
-            A primeira marcada vira a filial principal, usada como padrão ao abrir tickets.
+            A primeira marcada vira a filial principal.
           </p>
           <div className="max-h-36 overflow-y-auto rounded-lg border border-[var(--color-border)] p-2">
             {branches.map((b) => (
@@ -61,12 +62,7 @@ export function UserAccessForm({
                 key={b.id}
                 className="flex items-center gap-2 py-0.5 text-sm text-[var(--color-ink-2)]"
               >
-                <input
-                  type="checkbox"
-                  name="branch_ids"
-                  value={b.id}
-                  defaultChecked={assignedBranchIds.includes(b.id)}
-                />
+                <input type="checkbox" name="branch_ids" value={b.id} />
                 {b.name}
               </label>
             ))}
@@ -78,14 +74,12 @@ export function UserAccessForm({
         </p>
       )}
 
-      <label className="flex items-center gap-2 text-sm text-[var(--color-ink-2)]">
-        <input type="checkbox" name="is_active" defaultChecked={isActive} />
-        Usuário ativo
-      </label>
+      <p className="text-xs text-[var(--color-ink-3)]">
+        Uma senha temporária é gerada e mostrada uma única vez após o cadastro — repasse-a com
+        segurança e peça para a pessoa trocá-la em &quot;Minha conta&quot; no primeiro acesso.
+      </p>
 
-      <SubmitButton variant="secondary" pendingLabel="Salvando…">
-        Salvar acesso
-      </SubmitButton>
+      <SubmitButton pendingLabel="Criando…">Criar usuário</SubmitButton>
     </ActionForm>
   )
 }

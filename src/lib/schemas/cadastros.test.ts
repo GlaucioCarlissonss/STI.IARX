@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   assetSchema,
   branchSchema,
+  categorySchema,
   clientSchema,
+  prioritySchema,
   recordId,
+  slaContractSchema,
+  slaDefinitionSchema,
+  supplierContractSchema,
   supplierSchema,
   telecomLineSchema,
 } from './cadastros'
@@ -190,6 +195,146 @@ describe('supplierSchema', () => {
   it('recusa e-mail inválido em português', () => {
     expect(firstError(supplierSchema.safeParse({ ...base, email: 'arroba-faltando' }))).toBe(
       'E-mail inválido.',
+    )
+  })
+})
+
+describe('supplierContractSchema', () => {
+  const base = {
+    supplier_id: UUID,
+    contract_number: '',
+    description: '',
+    starts_on: '2026-01-01',
+    ends_on: '2026-12-31',
+    monthly_cost: '',
+    response_sla_minutes: '',
+    resolution_sla_minutes: '',
+  }
+
+  it('aceita um contrato mínimo', () => {
+    const parsed = supplierContractSchema.parse(base)
+    expect(parsed.starts_on).toBe('2026-01-01')
+    expect(parsed.response_sla_minutes).toBeNull()
+  })
+
+  it('recusa vigência final anterior ao início — espelha sc_valid_period', () => {
+    expect(
+      firstError(supplierContractSchema.safeParse({ ...base, ends_on: '2025-01-01' })),
+    ).toBe('A vigência final não pode ser anterior ao início.')
+  })
+
+  it('recusa SLA contratado não inteiro ou zero', () => {
+    expect(
+      firstError(supplierContractSchema.safeParse({ ...base, response_sla_minutes: '0' })),
+    ).toBe('Informe um número inteiro maior que zero.')
+  })
+
+  it('exige fornecedor', () => {
+    expect(firstError(supplierContractSchema.safeParse({ ...base, supplier_id: '' }))).toBe(
+      'Selecione o fornecedor.',
+    )
+  })
+})
+
+describe('categorySchema', () => {
+  it('exige nome com mensagem em português', () => {
+    expect(firstError(categorySchema.safeParse({ parent_id: '', name: 'X', description: '' }))).toBe(
+      'Informe o nome da categoria.',
+    )
+  })
+
+  it('aceita categoria de topo (sem pai)', () => {
+    const parsed = categorySchema.parse({ parent_id: '', name: 'Hardware', description: '' })
+    expect(parsed.parent_id).toBeNull()
+  })
+
+  it('aceita subcategoria com pai válido', () => {
+    const parsed = categorySchema.parse({ parent_id: UUID, name: 'Notebook', description: '' })
+    expect(parsed.parent_id).toBe(UUID)
+  })
+})
+
+describe('prioritySchema', () => {
+  const base = { label: 'Crítica', weight: '90', color: '#ef4444', sort_order: '1' }
+
+  it('aceita uma prioridade completa', () => {
+    const parsed = prioritySchema.parse(base)
+    expect(parsed.weight).toBe(90)
+    expect(parsed.color).toBe('#ef4444')
+  })
+
+  it('recusa peso fora de 0–100', () => {
+    expect(firstError(prioritySchema.safeParse({ ...base, weight: '150' }))).toBe(
+      'Informe um número inteiro entre 0 e 100.',
+    )
+  })
+
+  it('recusa cor fora do formato hexadecimal', () => {
+    expect(firstError(prioritySchema.safeParse({ ...base, color: 'vermelho' }))).toBe(
+      'Cor inválida.',
+    )
+  })
+
+  it('não tem campo key — é derivada no servidor, não no formulário', () => {
+    expect('key' in prioritySchema.shape).toBe(false)
+  })
+})
+
+describe('slaContractSchema', () => {
+  const base = {
+    client_id: UUID,
+    branch_id: '',
+    name: 'Contrato padrão 2026',
+    business_hours_id: '',
+    valid_from: '2026-01-01',
+    valid_to: '2026-12-31',
+    notes: '',
+  }
+
+  it('aceita um contrato de SLA completo', () => {
+    expect(slaContractSchema.parse(base).name).toBe('Contrato padrão 2026')
+  })
+
+  it('recusa vigência final anterior ao início — espelha slac_valid_period', () => {
+    expect(firstError(slaContractSchema.safeParse({ ...base, valid_to: '2025-01-01' }))).toBe(
+      'A vigência final não pode ser anterior ao início.',
+    )
+  })
+
+  it('exige cliente', () => {
+    expect(firstError(slaContractSchema.safeParse({ ...base, client_id: '' }))).toBe(
+      'Selecione o cliente.',
+    )
+  })
+})
+
+describe('slaDefinitionSchema', () => {
+  const base = {
+    contract_id: '',
+    category_id: '',
+    priority_id: UUID,
+    first_response_minutes: '30',
+    resolution_minutes: '240',
+    business_hours_id: '',
+  }
+
+  it('aceita uma definição padrão do tenant (sem contrato nem categoria)', () => {
+    const parsed = slaDefinitionSchema.parse(base)
+    expect(parsed.contract_id).toBeNull()
+    expect(parsed.resolution_minutes).toBe(240)
+  })
+
+  it('recusa resolução mais curta que a primeira resposta — espelha slad_resolution_after_response', () => {
+    expect(
+      firstError(
+        slaDefinitionSchema.safeParse({ ...base, first_response_minutes: '300', resolution_minutes: '60' }),
+      ),
+    ).toBe('A resolução não pode ser mais curta que a primeira resposta.')
+  })
+
+  it('exige prioridade', () => {
+    expect(firstError(slaDefinitionSchema.safeParse({ ...base, priority_id: '' }))).toBe(
+      'Selecione a prioridade.',
     )
   })
 })

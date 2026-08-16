@@ -14,7 +14,7 @@ export const getPriorities = cache(async (): Promise<Priority[]> => {
   const supabase = await createClient()
   const { data } = await supabase
     .from('ticket_priorities')
-    .select('id, key, label, weight, color, sort_order')
+    .select('id, key, label, weight, color, sort_order, is_active')
     .eq('is_active', true)
     .order('sort_order')
   return data ?? []
@@ -36,7 +36,7 @@ export const getCategories = cache(async (): Promise<Category[]> => {
   const supabase = await createClient()
   const { data } = await supabase
     .from('ticket_categories')
-    .select('id, parent_id, name')
+    .select('id, parent_id, name, description, is_active')
     .eq('is_active', true)
     .order('name')
   return data ?? []
@@ -61,6 +61,18 @@ export const getClients = cache(async (): Promise<Client[]> => {
     .select('id, legal_name, trade_name, cnpj, contract_ref, status')
     .is('deleted_at', null)
     .order('legal_name')
+  return data ?? []
+})
+
+export interface BusinessHoursOption {
+  id: string
+  name: string
+  is_24x7: boolean
+}
+
+export const getBusinessHours = cache(async (): Promise<BusinessHoursOption[]> => {
+  const supabase = await createClient()
+  const { data } = await supabase.from('business_hours').select('id, name, is_24x7').order('name')
   return data ?? []
 })
 

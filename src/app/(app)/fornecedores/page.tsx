@@ -1,26 +1,15 @@
+import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, canManageRecords } from '@/lib/session'
 import { formatCnpj, formatCurrency, formatDate, formatMinutes } from '@/lib/format'
-import type { Supplier } from '@/lib/types'
+import type { Supplier, SupplierContract } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
 import { EditSupplierForm, NewSupplierForm } from './supplier-forms'
+import { EditSupplierContractForm, NewSupplierContractForm } from './supplier-contract-forms'
 
 export const metadata: Metadata = { title: 'Fornecedores' }
-
-interface ContractRow {
-  id: string
-  supplier_id: string
-  contract_number: string | null
-  description: string | null
-  starts_on: string | null
-  ends_on: string | null
-  monthly_cost: number | null
-  response_sla_minutes: number | null
-  resolution_sla_minutes: number | null
-  is_active: boolean
-}
 
 export default async function FornecedoresPage() {
   const { profile } = await requireRole(['super_admin', 'admin', 'gestor'])
@@ -40,11 +29,11 @@ export default async function FornecedoresPage() {
         'id, supplier_id, contract_number, description, starts_on, ends_on, monthly_cost, response_sla_minutes, resolution_sla_minutes, is_active',
       )
       .order('starts_on', { ascending: false })
-      .returns<ContractRow[]>(),
+      .returns<SupplierContract[]>(),
   ])
 
   const list = suppliers ?? []
-  const bySupplier = new Map<string, ContractRow[]>()
+  const bySupplier = new Map<string, SupplierContract[]>()
   for (const c of contracts ?? []) {
     bySupplier.set(c.supplier_id, [...(bySupplier.get(c.supplier_id) ?? []), c])
   }
@@ -96,22 +85,45 @@ export default async function FornecedoresPage() {
 
                 {supplierContracts.length > 0 && (
                   <div className="mt-4">
-                    <Table head={['Contrato', 'Vigência', 'Custo mensal', 'SLA resposta', 'SLA resolução']}>
+                    <Table
+                      head={[
+                        'Contrato',
+                        'Vigência',
+                        'Custo mensal',
+                        'SLA resposta',
+                        'SLA resolução',
+                        'Situação',
+                      ]}
+                    >
                       {supplierContracts.map((c) => (
-                        <tr key={c.id}>
-                          <Td>
-                            <span className="font-medium text-[var(--color-ink)]">
-                              {c.contract_number ?? '—'}
-                            </span>
-                            <p className="text-xs text-[var(--color-ink-3)]">{c.description ?? ''}</p>
-                          </Td>
-                          <Td className="text-[var(--color-ink-2)]">
-                            {formatDate(c.starts_on)} → {c.ends_on ? formatDate(c.ends_on) : 'indeterminado'}
-                          </Td>
-                          <Td className="tabular-nums">{formatCurrency(c.monthly_cost)}</Td>
-                          <Td className="tabular-nums">{formatMinutes(c.response_sla_minutes)}</Td>
-                          <Td className="tabular-nums">{formatMinutes(c.resolution_sla_minutes)}</Td>
-                        </tr>
+                        <Fragment key={c.id}>
+                          <tr>
+                            <Td>
+                              <span className="font-medium text-[var(--color-ink)]">
+                                {c.contract_number ?? '—'}
+                              </span>
+                              <p className="text-xs text-[var(--color-ink-3)]">{c.description ?? ''}</p>
+                            </Td>
+                            <Td className="text-[var(--color-ink-2)]">
+                              {formatDate(c.starts_on)} → {c.ends_on ? formatDate(c.ends_on) : 'indeterminado'}
+                            </Td>
+                            <Td className="tabular-nums">{formatCurrency(c.monthly_cost)}</Td>
+                            <Td className="tabular-nums">{formatMinutes(c.response_sla_minutes)}</Td>
+                            <Td className="tabular-nums">{formatMinutes(c.resolution_sla_minutes)}</Td>
+                            <Td>
+                              {c.is_active ? <Badge tone="ok">Ativo</Badge> : <Badge>Inativo</Badge>}
+                            </Td>
+                          </tr>
+                          {editable && (
+                            <tr>
+                              <Td className="bg-[var(--color-surface-2)]" colSpan={6}>
+                                <EditPanel title={`Editar contrato ${c.contract_number ?? ''}`}>
+                                  <EditSupplierContractForm contract={c} />
+                                </EditPanel>
+                              </Td>
+                            </tr>
+                          )}
+                        </Fragment>
                       ))}
                     </Table>
                   </div>
@@ -120,9 +132,12 @@ export default async function FornecedoresPage() {
                 {/* Ocupa a largura do cartão: espremido na coluna dos selos, o
                     formulário viraria uma tira de campos de 6rem. */}
                 {editable && (
-                  <div className="mt-4">
+                  <div className="mt-4 flex flex-col gap-3">
                     <EditPanel title={`Editar ${s.name}`}>
                       <EditSupplierForm supplier={s} />
+                    </EditPanel>
+                    <EditPanel label="+ Novo contrato">
+                      <NewSupplierContractForm supplierId={s.id} />
                     </EditPanel>
                   </div>
                 )}
