@@ -1146,5 +1146,250 @@ end
 $$;
 reset role;
 
+
+-- =============================================================================
+\echo '=== 22. Perfis de acesso e permissões granulares (0017) ==='
+-- =============================================================================
+reset role;
+
+-- O catálogo do banco tem de casar com PERMISSION_CATALOG de src/lib/permissions.ts.
+-- A contagem é a trava mais barata contra divergência: acrescentar permissão no
+-- TypeScript sem regenerar o INSERT derruba o CI aqui, em vez de virar um
+-- checkbox que não governa nada.
+do $$
+begin
+  perform app.assert((select count(*) from public.permission_catalog) = 108,
+    'catálogo de permissões tem as 108 entradas geradas de src/lib/permissions.ts');
+  perform app.assert(
+    not exists (
+      select 1 from public.permission_catalog c
+      where c.screen is not null
+        and not exists (select 1 from public.permission_catalog p where p.key = c.module)
+    ),
+    'toda tela do catálogo tem o módulo dela cadastrado');
+  perform app.assert(
+    not exists (
+      select 1 from public.permission_catalog c
+      where c.action is not null
+        and not exists (
+          select 1 from public.permission_catalog p
+          where p.key = c.module || '.' || c.screen)
+    ),
+    'toda ação do catálogo tem a tela dela cadastrada');
+end
+$$;
+
+-- Todo tenant nasce com os perfis de sistema, e todo usuário com papel
+-- conhecido recebe um. Sem isso o ambiente subiria com tudo negado.
+do $$
+begin
+  perform app.assert(
+    (select count(distinct system_key) from public.access_profiles
+     where tenant_id = 'a0000000-0000-4000-8000-000000000001' and is_system) = 9,
+    'os 9 perfis de sistema são semeados por tenant');
+  perform app.assert(
+    not exists (
+      select 1 from public.profiles
+      where tenant_id is not null and role <> 'super_admin' and access_profile_id is null
+    ),
+    'nenhum usuário de tenant ficou sem perfil de acesso');
+end
+$$;
+
+-- Grant fora do teto do perfil é recusado na escrita — o checkbox não chega a
+-- existir marcado no banco.
+do $$
+declare
+  v_profile uuid;
+begin
+  insert into public.access_profiles (tenant_id, name, base_role)
+  values ('a0000000-0000-4000-8000-000000000001', 'Teste Teto', 'gestor')
+  returning id into v_profile;
+
+  begin
+    insert into public.permission_grants (tenant_id, profile_id, permission_key)
+    values ('a0000000-0000-4000-8000-000000000001', v_profile, 'usuarios.perfis.editar');
+    perform app.assert(false, 'grant acima do teto do perfil não deveria ser aceito');
+  exception when check_violation then
+    perform app.assert(true, 'grant acima do teto do perfil é recusado');
+  end;
+
+  delete from public.access_profiles where id = v_profile;
+end
+$$;
+
+-- Perfil de sistema é contrato da plataforma: aceita ativar/inativar e nada mais.
+do $$
+begin
+  begin
+    update public.access_profiles set name = 'Renomeado'
+    where tenant_id = 'a0000000-0000-4000-8000-000000000001' and system_key = 'visualizador';
+    perform app.assert(false, 'perfil de sistema não deveria aceitar renomeação');
+  exception when insufficient_privilege then
+    perform app.assert(true, 'perfil de sistema recusa renomeação');
+  end;
+end
+$$;
+
+-- Herança de negação, com perfil controlado: só consulta de inventário.
+do $$
+declare
+  v_profile uuid;
+  v_antigo  uuid;
+begin
+  select access_profile_id into v_antigo from public.profiles
+  where id = '22220000-0000-4000-8000-000000000002';
+
+  perform set_config('request.jwt.claims', '', true);
+  insert into public.access_profiles (tenant_id, name, base_role)
+  values ('a0000000-0000-4000-8000-000000000001', 'Teste Granular', 'gestor')
+  returning id into v_profile;
+
+  insert into public.permission_grants (tenant_id, profile_id, permission_key)
+  values ('a0000000-0000-4000-8000-000000000001', v_profile, 'inventario'),
+         ('a0000000-0000-4000-8000-000000000001', v_profile, 'inventario.ativos'),
+         ('a0000000-0000-4000-8000-000000000001', v_profile, 'inventario.ativos.ver');
+
+  update public.profiles set access_profile_id = v_profile
+  where id = '22220000-0000-4000-8000-000000000002';
+
+  set local role rls_tester;
+  set local request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+  perform app.assert(app.has_permission('inventario.ativos.ver'),
+    'permissão concedida em módulo, tela e ação é exercível');
+  perform app.assert(not app.has_permission('inventario.ativos.criar'),
+    'liberar a tela NÃO libera a ação não concedida');
+  perform app.assert(not app.has_permission('sla.definicoes.criar'),
+    'módulo não concedido nega ação de outro módulo');
+
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  -- Grant órfão: a ação sobrevive, o módulo não. É o caso da despromoção mal
+  -- feita, em que a versão ingênua de has_permission liberaria a ação.
+  delete from public.permission_grants
+  where profile_id = v_profile and permission_key = 'inventario';
+
+  set local role rls_tester;
+  set local request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+  perform app.assert(not app.has_permission('inventario.ativos.ver'),
+    'grant órfão de ação, sem o módulo, não vale — negação herda para baixo');
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  update public.profiles set access_profile_id = v_antigo
+  where id = '22220000-0000-4000-8000-000000000002';
+  delete from public.access_profiles where id = v_profile;
+end
+$$;
+
+-- effective_base_role: o perfil restringe o RLS e nunca o eleva.
+do $$
+declare
+  v_restrito uuid;
+  v_alto     uuid;
+  v_antigo_g uuid;
+  v_antigo_a uuid;
+begin
+  select access_profile_id into v_antigo_g from public.profiles
+  where id = '22220000-0000-4000-8000-000000000002';
+  select access_profile_id into v_antigo_a from public.profiles
+  where id = '22220000-0000-4000-8000-000000000003';
+
+  perform set_config('request.jwt.claims', '', true);
+  insert into public.access_profiles (tenant_id, name, base_role)
+  values ('a0000000-0000-4000-8000-000000000001', 'Teste Restrito', 'visualizador')
+  returning id into v_restrito;
+  insert into public.access_profiles (tenant_id, name, base_role)
+  values ('a0000000-0000-4000-8000-000000000001', 'Teste Alto', 'admin')
+  returning id into v_alto;
+
+  -- Gestor com perfil de teto visualizador perde a escrita.
+  update public.profiles set access_profile_id = v_restrito
+  where id = '22220000-0000-4000-8000-000000000002';
+  set local role rls_tester;
+  set local request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+  perform app.assert(app.effective_base_role() = 'visualizador',
+    'perfil mais restrito rebaixa o papel efetivo do gestor');
+  perform app.assert(not app.can_manage_records(),
+    'gestor com perfil de teto visualizador perde can_manage_records');
+  reset role;
+
+  -- Atendente com perfil de teto admin NÃO é promovido.
+  update public.profiles set access_profile_id = v_alto
+  where id = '22220000-0000-4000-8000-000000000003';
+  set local role rls_tester;
+  set local request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+  perform app.assert(app.effective_base_role() = 'atendente',
+    'perfil de teto alto não promove o papel do usuário');
+  perform app.assert(not app.can_manage_config(),
+    'atendente com perfil de teto admin continua sem can_manage_config');
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  update public.profiles set access_profile_id = v_antigo_g
+  where id = '22220000-0000-4000-8000-000000000002';
+  update public.profiles set access_profile_id = v_antigo_a
+  where id = '22220000-0000-4000-8000-000000000003';
+  delete from public.access_profiles where id in (v_restrito, v_alto);
+end
+$$;
+
+-- Ninguém troca o próprio perfil de acesso: a trigger de 0012 só olhava
+-- `role` e `tenant_id`, então esta era uma porta aberta para auto-promoção.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_outro uuid;
+begin
+  select id into v_outro from public.access_profiles
+  where tenant_id = 'a0000000-0000-4000-8000-000000000001' and system_key = 'visualizador';
+  begin
+    update public.profiles set access_profile_id = v_outro
+    where id = '22220000-0000-4000-8000-000000000001';
+    perform app.assert(false, 'admin não deveria trocar o próprio perfil de acesso');
+  exception when insufficient_privilege then
+    perform app.assert(true, 'trocar o próprio perfil de acesso é recusado');
+  end;
+end
+$$;
+
+-- Atendente não administra perfis nem concede permissão a si mesmo.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.access_profiles) >= 9,
+    'atendente lê os perfis do tenant (o formulário de usuário precisa listar)');
+  begin
+    insert into public.access_profiles (tenant_id, name, base_role)
+    values ('a0000000-0000-4000-8000-000000000001', 'Perfil Pirata', 'admin');
+    perform app.assert(false, 'atendente não deveria criar perfil de acesso');
+  exception when insufficient_privilege then
+    perform app.assert(true, 'atendente é barrado ao criar perfil de acesso');
+  end;
+end
+$$;
+
+-- Isolamento entre tenants.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000099","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert(
+    not exists (
+      select 1 from public.access_profiles
+      where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
+    'tenant 2 não vê perfil de acesso do tenant 1');
+  perform app.assert(
+    not exists (
+      select 1 from public.permission_grants
+      where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
+    'tenant 2 não vê concessão do tenant 1');
+  perform app.assert((select count(*) from public.permission_catalog) = 108,
+    'catálogo é global: visível para qualquer tenant');
+end
+$$;
+reset role;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'
