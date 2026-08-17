@@ -31,6 +31,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: '/inventario', label: 'Inventário', show: show('inventario.ativos.ver') },
     { href: '/telefonia', label: 'Telefonia', show: show('telefonia.linhas.ver') },
     { href: '/fornecedores', label: 'Fornecedores', show: show('fornecedores.cadastro.ver') },
+    {
+      href: '/financeiro/centros-de-custo',
+      label: 'Centros de custo',
+      show: show('financeiro.centros_custo.ver'),
+    },
+    {
+      href: '/financeiro/contas-bancarias',
+      label: 'Contas bancárias',
+      show: show('financeiro.contas_bancarias.ver'),
+    },
     { href: '/clientes', label: 'Clientes e filiais', show: show('clientes.grupos.ver') },
     { href: '/usuarios', label: 'Usuários', show: show('usuarios.usuarios.ver') },
     { href: '/perfis', label: 'Perfis de acesso', show: show('usuarios.perfis.ver') },

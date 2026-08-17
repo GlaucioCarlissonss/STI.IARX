@@ -261,6 +261,65 @@ export interface SlaContract {
   notes: string | null
 }
 
+/* --- Financeiro ---------------------------------------------------------- */
+
+export interface CostCenter {
+  id: string
+  parent_id: string | null
+  code: string
+  name: string
+  description: string | null
+  branch_id: string | null
+  is_active: boolean
+}
+
+export type BankAccountType = 'checking' | 'savings' | 'payment' | 'investment'
+export type BankAccountStatus = 'active' | 'inactive' | 'blocked'
+
+export interface BankAccount {
+  id: string
+  name: string
+  bank_code: string | null
+  bank_name: string
+  agency: string | null
+  account_number: string | null
+  account_type: BankAccountType
+  holder_name: string | null
+  holder_document: string | null
+  opening_balance: number
+  credit_limit: number
+  status: BankAccountStatus
+  notes: string | null
+}
+
+/** Linha de `vw_bank_account_balances` — saldo derivado, nunca gravado. */
+export interface BankAccountBalance {
+  bank_account_id: string
+  name: string
+  bank_name: string
+  account_type: BankAccountType
+  status: BankAccountStatus
+  opening_balance: number
+  credit_limit: number
+  total_in: number
+  total_out: number
+  current_balance: number
+  unreconciled_count: number
+  last_movement_on: string | null
+}
+
+export interface BankMovement {
+  id: string
+  bank_account_id: string
+  direction: 'in' | 'out'
+  amount: number
+  moved_on: string
+  description: string
+  cost_center_id: string | null
+  transfer_group: string | null
+  reconciled_at: string | null
+}
+
 export interface Integration {
   id: string
   name: string

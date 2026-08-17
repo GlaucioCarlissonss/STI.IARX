@@ -1391,5 +1391,167 @@ end
 $$;
 reset role;
 
+
+-- =============================================================================
+\echo '=== 23. Base do financeiro: centros de custo e contas (0018) ==='
+-- =============================================================================
+reset role;
+
+-- Correção estrutural: sem esta unique, nenhum título poderá referenciar o
+-- contrato do fornecedor por FK composta.
+do $$
+begin
+  perform app.assert(
+    exists (
+      select 1 from pg_constraint
+      where conname = 'uq_supplier_contracts_id_tenant'
+        and conrelid = 'public.supplier_contracts'::regclass),
+    'supplier_contracts passou a ter unique (id, tenant_id) para FK composta');
+end
+$$;
+
+-- Profundidade de centro de custo: 3 níveis passam, o 4º não.
+do $$
+declare
+  n1 uuid; n2 uuid; n3 uuid;
+begin
+  perform set_config('request.jwt.claims', '', true);
+  insert into public.cost_centers (tenant_id, code, name)
+  values ('a0000000-0000-4000-8000-000000000001', 'CC-1', 'Operação') returning id into n1;
+  insert into public.cost_centers (tenant_id, code, name, parent_id)
+  values ('a0000000-0000-4000-8000-000000000001', 'CC-1.1', 'Campo', n1) returning id into n2;
+  insert into public.cost_centers (tenant_id, code, name, parent_id)
+  values ('a0000000-0000-4000-8000-000000000001', 'CC-1.1.1', 'Enfermagem', n2) returning id into n3;
+  perform app.assert(true, 'centro de custo aceita 3 níveis');
+
+  begin
+    insert into public.cost_centers (tenant_id, code, name, parent_id)
+    values ('a0000000-0000-4000-8000-000000000001', 'CC-1.1.1.1', 'Quarto nível', n3);
+    perform app.assert(false, 'centro de custo não deveria aceitar o 4º nível');
+  exception when check_violation then
+    perform app.assert(true, 'centro de custo recusa o 4º nível');
+  end;
+
+  -- Ciclo: apontar o avô para o neto giraria para sempre sem a saída da trigger.
+  begin
+    update public.cost_centers set parent_id = n3 where id = n1;
+    perform app.assert(false, 'hierarquia não deveria aceitar ciclo');
+  exception when check_violation then
+    perform app.assert(true, 'hierarquia de centro de custo recusa ciclo');
+  end;
+
+  -- Código é único por tenant, ignorando maiúsculas.
+  begin
+    insert into public.cost_centers (tenant_id, code, name)
+    values ('a0000000-0000-4000-8000-000000000001', 'cc-1', 'Duplicado');
+    perform app.assert(false, 'código de centro de custo deveria ser único por tenant');
+  exception when unique_violation then
+    perform app.assert(true, 'código de centro de custo é único por tenant (case-insensitive)');
+  end;
+
+  delete from public.cost_centers where id in (n3, n2, n1);
+end
+$$;
+
+-- Saldo derivado e transferência de dupla entrada.
+do $$
+declare
+  ca uuid; cb uuid; grp uuid := gen_random_uuid();
+  v_saldo numeric;
+begin
+  perform set_config('request.jwt.claims', '', true);
+  insert into public.bank_accounts (tenant_id, name, bank_name, account_number, opening_balance)
+  values ('a0000000-0000-4000-8000-000000000001', 'Operação', 'Banco X', '111', 1000)
+  returning id into ca;
+  insert into public.bank_accounts (tenant_id, name, bank_name, account_number, opening_balance)
+  values ('a0000000-0000-4000-8000-000000000001', 'Investimento', 'Banco X', '222', 500)
+  returning id into cb;
+
+  insert into public.bank_account_movements
+    (tenant_id, bank_account_id, direction, amount, moved_on, description)
+  values ('a0000000-0000-4000-8000-000000000001', ca, 'in', 250, current_date, 'Recebimento'),
+         ('a0000000-0000-4000-8000-000000000001', ca, 'out', 100, current_date, 'Taxa');
+
+  select current_balance into v_saldo from public.vw_bank_account_balances where bank_account_id = ca;
+  perform app.assert(v_saldo = 1150,
+    'saldo da conta é derivado: inicial 1000 + 250 - 100 = 1150');
+
+  -- Valor negativo é recusado: o sinal é responsabilidade de `direction`.
+  begin
+    insert into public.bank_account_movements
+      (tenant_id, bank_account_id, direction, amount, moved_on, description)
+    values ('a0000000-0000-4000-8000-000000000001', ca, 'out', -50, current_date, 'Absurdo');
+    perform app.assert(false, 'movimentação de valor negativo não deveria ser aceita');
+  exception when check_violation then
+    perform app.assert(true, 'movimentação exige valor positivo');
+  end;
+
+  -- Transferência válida: duas metades, contas distintas, mesmo valor.
+  insert into public.bank_account_movements
+    (tenant_id, bank_account_id, direction, amount, moved_on, description, transfer_group)
+  values ('a0000000-0000-4000-8000-000000000001', ca, 'out', 300, current_date, 'Para investimento', grp),
+         ('a0000000-0000-4000-8000-000000000001', cb, 'in',  300, current_date, 'Da operação', grp);
+  perform app.assert(
+    (select current_balance from public.vw_bank_account_balances where bank_account_id = ca) = 850
+    and (select current_balance from public.vw_bank_account_balances where bank_account_id = cb) = 800,
+    'transferência interna move saldo das duas contas por dupla entrada');
+
+  delete from public.bank_account_movements where bank_account_id in (ca, cb);
+  delete from public.bank_accounts where id in (ca, cb);
+end
+$$;
+
+-- Meia transferência é recusada no COMMIT — a trigger é deferrable justamente
+-- para a primeira metade não derrubar a inserção da segunda.
+do $$
+declare
+  ca uuid;
+begin
+  perform set_config('request.jwt.claims', '', true);
+  begin
+    insert into public.bank_accounts (tenant_id, name, bank_name, account_number)
+    values ('a0000000-0000-4000-8000-000000000001', 'Temp', 'Banco Y', '999') returning id into ca;
+    insert into public.bank_account_movements
+      (tenant_id, bank_account_id, direction, amount, moved_on, description, transfer_group)
+    values ('a0000000-0000-4000-8000-000000000001', ca, 'out', 10, current_date, 'Meia', gen_random_uuid());
+    -- Força a checagem diferida sem encerrar o bloco externo.
+    set constraints all immediate;
+    perform app.assert(false, 'meia transferência não deveria passar');
+  exception when check_violation then
+    perform app.assert(true, 'transferência com uma só metade é recusada');
+  end;
+end
+$$;
+
+-- Isolamento e escrita restrita a quem administra registros.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  begin
+    insert into public.bank_accounts (tenant_id, name, bank_name)
+    values ('a0000000-0000-4000-8000-000000000001', 'Pirata', 'Banco Z');
+    perform app.assert(false, 'atendente não deveria criar conta bancária');
+  exception when insufficient_privilege then
+    perform app.assert(true, 'atendente é barrado ao criar conta bancária');
+  end;
+end
+$$;
+
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000099","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert(
+    not exists (select 1 from public.cost_centers
+                where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
+    'tenant 2 não vê centro de custo do tenant 1');
+  perform app.assert(
+    not exists (select 1 from public.vw_bank_account_balances
+                where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
+    'vw_bank_account_balances respeita RLS via security_invoker');
+end
+$$;
+reset role;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

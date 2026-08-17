@@ -214,3 +214,82 @@ export const slaDefinitionSchema = z
     message: 'A resolução não pode ser mais curta que a primeira resposta.',
     path: ['resolution_minutes'],
   })
+
+/* --- Financeiro: centro de custo ------------------------------------------ */
+
+export const costCenterSchema = z.object({
+  parent_id: optionalUuid,
+  code: z.string().trim().min(1, 'Informe o código do centro de custo.').max(30),
+  name: z.string().trim().min(2, 'Informe o nome do centro de custo.'),
+  description: emptyToNull,
+  branch_id: optionalUuid,
+})
+
+/* --- Financeiro: conta bancária ------------------------------------------- */
+
+export const bankAccountTypeSchema = z.enum(['checking', 'savings', 'payment', 'investment'])
+export const bankAccountStatusSchema = z.enum(['active', 'inactive', 'blocked'])
+
+export const bankAccountSchema = z.object({
+  name: z.string().trim().min(2, 'Informe um nome para identificar a conta.'),
+  bank_name: z.string().trim().min(2, 'Informe o banco.'),
+  bank_code: emptyToNull,
+  agency: emptyToNull,
+  account_number: emptyToNull,
+  account_type: bankAccountTypeSchema,
+  holder_name: emptyToNull,
+  holder_document: emptyToNull,
+  // Saldo inicial pode ser negativo: conta que entra no sistema já no vermelho
+  // é situação real, e recusá-la obrigaria a mentir o número de partida.
+  opening_balance: z
+    .string()
+    .trim()
+    .transform((v) => (v === '' ? 0 : Number(v)))
+    .refine((v) => Number.isFinite(v), { message: 'Saldo inicial inválido.' }),
+  credit_limit: optionalNonNegativeNumber.transform((v) => v ?? 0),
+  status: bankAccountStatusSchema,
+  notes: emptyToNull,
+})
+
+/* --- Financeiro: movimentação --------------------------------------------- */
+
+export const bankMovementSchema = z.object({
+  bank_account_id: z.string().uuid('Selecione a conta.'),
+  direction: z.enum(['in', 'out']),
+  amount: z
+    .string()
+    .trim()
+    .transform((v) => Number(v))
+    .refine((v) => Number.isFinite(v) && v > 0, {
+      message: 'O valor precisa ser maior que zero.',
+    }),
+  moved_on: z.string().trim().min(10, 'Informe a data.'),
+  description: z.string().trim().min(2, 'Descreva a movimentação.'),
+  cost_center_id: optionalUuid,
+})
+
+/**
+ * Transferência entre contas.
+ *
+ * Origem e destino diferentes é regra de negócio, não detalhe de UI: uma
+ * transferência para a própria conta gravaria duas linhas que se anulam e
+ * poluiriam o extrato com um fato que não aconteceu.
+ */
+export const bankTransferSchema = z
+  .object({
+    from_account_id: z.string().uuid('Selecione a conta de origem.'),
+    to_account_id: z.string().uuid('Selecione a conta de destino.'),
+    amount: z
+      .string()
+      .trim()
+      .transform((v) => Number(v))
+      .refine((v) => Number.isFinite(v) && v > 0, {
+        message: 'O valor precisa ser maior que zero.',
+      }),
+    moved_on: z.string().trim().min(10, 'Informe a data.'),
+    description: z.string().trim().min(2, 'Descreva a transferência.'),
+  })
+  .refine((v) => v.from_account_id !== v.to_account_id, {
+    message: 'Origem e destino precisam ser contas diferentes.',
+    path: ['to_account_id'],
+  })
