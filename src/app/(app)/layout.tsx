@@ -33,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: '/fornecedores', label: 'Fornecedores', show: show('fornecedores.cadastro.ver') },
     { href: '/clientes', label: 'Clientes e filiais', show: show('clientes.grupos.ver') },
     { href: '/usuarios', label: 'Usuários', show: show('usuarios.usuarios.ver') },
+    { href: '/perfis', label: 'Perfis de acesso', show: show('usuarios.perfis.ver') },
     { href: '/integracoes', label: 'Integrações', show: show('integracoes.hub.ver') },
     { href: '/mapas', label: 'Mapas', show: show('mapas.geolocalizacao.ver') },
     { href: '/tv', label: 'Painéis de TV', show: show('tv.tokens.ver') },

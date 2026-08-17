@@ -4,10 +4,11 @@ import { requireScreen, allowed } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
 import { roleLabel } from '@/lib/i18n'
 import { formatDateTime } from '@/lib/format'
-import type { Profile } from '@/lib/types'
+import type { AccessProfile, Profile } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader } from '@/components/ui'
 import { UserAccessForm } from './user-access-form'
 import { NewUserForm } from './new-user-form'
+import { AccessProfileForm } from './access-profile-form'
 
 export const metadata: Metadata = { title: 'Usuários' }
 
@@ -54,6 +55,15 @@ export default async function UsuariosPage() {
     allowed('usuarios.usuarios.editar_acesso'),
     allowed('usuarios.usuarios.criar'),
   ])
+
+  const { data: accessProfiles } = await supabase
+    .from('access_profiles')
+    .select('id, name, description, base_role, is_system, system_key, is_active')
+    .eq('is_active', true)
+    .order('is_system', { ascending: false })
+    .order('name')
+    .returns<AccessProfile[]>()
+  const perfilPorId = new Map((accessProfiles ?? []).map((ap) => [ap.id, ap]))
   const online = onlineUserIds(users ?? [])
 
   return (
@@ -98,6 +108,14 @@ export default async function UsuariosPage() {
                       ? 'Nenhuma filial vinculada — não enxerga tickets de filial alguma.'
                       : `${assigned.length} filial(is) vinculada(s).`}
                 </p>
+                <p className="mt-1 text-xs text-[var(--color-ink-2)]">
+                  Perfil de acesso:{' '}
+                  <strong>
+                    {u.access_profile_id
+                      ? (perfilPorId.get(u.access_profile_id)?.name ?? 'perfil inativo')
+                      : 'nenhum (cai no papel puro)'}
+                  </strong>
+                </p>
                 <p className="mt-1 text-xs text-[var(--color-ink-3)]">
                   Última atividade: {formatDateTime(u.last_seen_at)}
                 </p>
@@ -111,6 +129,13 @@ export default async function UsuariosPage() {
                       assignedBranchIds={assigned}
                       branches={branches}
                     />
+                    <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+                      <AccessProfileForm
+                        userId={u.id}
+                        currentProfileId={u.access_profile_id}
+                        profiles={accessProfiles ?? []}
+                      />
+                    </div>
                   </div>
                 )}
                 {podeEditarAcesso && u.id === profile.id && (
