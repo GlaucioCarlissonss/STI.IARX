@@ -81,7 +81,9 @@ export const getAgents = cache(async (): Promise<Profile[]> => {
   const supabase = await createClient()
   const { data } = await supabase
     .from('profiles')
-    .select('id, tenant_id, role, full_name, email, phone, is_active, last_seen_at')
+    .select(
+      'id, tenant_id, role, full_name, email, phone, is_active, last_seen_at, access_profile_id',
+    )
     .eq('is_active', true)
     .in('role', ['atendente', 'gestor', 'admin'])
     .order('full_name')

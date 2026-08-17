@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords } from '@/lib/session'
+import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import { PRECISION_LABEL, formatCoordinates, parseCoordinates, roundCoordinates } from '@/lib/maps'
 import {
@@ -36,6 +36,8 @@ export async function setBranchCoordinates(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('mapas.geolocalizacao.editar_endereco')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão para alterar a localização.' }
 
   const parsed = coordsSchema.safeParse({
@@ -121,6 +123,8 @@ export async function saveBranchAddress(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('mapas.geolocalizacao.editar_endereco')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão para alterar o cadastro.' }
 
   const parsed = addressSchema.safeParse(Object.fromEntries(formData.entries()))
@@ -203,6 +207,8 @@ interface BranchAddressRow {
  */
 export async function geocodeBranch(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('mapas.geolocalizacao.geocodificar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão para alterar a localização.' }
 
   const branchId = formData.get('branch_id')
@@ -333,6 +339,8 @@ export async function confirmGeocodeCandidate(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('mapas.geolocalizacao.geocodificar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão para alterar a localização.' }
 
   const parsed = confirmSchema.safeParse(Object.fromEntries(formData.entries()))

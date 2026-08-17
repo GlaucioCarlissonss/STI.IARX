@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords } from '@/lib/session'
+import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import {
   branchSchema,
@@ -26,6 +26,8 @@ export async function createClientRecord(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('clientes.grupos.criar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = clientSchema.safeParse(Object.fromEntries(formData))
@@ -50,6 +52,8 @@ export async function updateClientRecord(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('clientes.grupos.editar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
@@ -84,6 +88,8 @@ export async function updateClientRecord(
  */
 export async function setClientStatus(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('clientes.grupos.inativar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
@@ -109,6 +115,8 @@ export async function setClientStatus(_prev: ActionState, formData: FormData): P
 
 export async function createBranch(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('clientes.filiais.criar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = branchSchema.safeParse(Object.fromEntries(formData))
@@ -127,6 +135,8 @@ export async function createBranch(_prev: ActionState, formData: FormData): Prom
 
 export async function updateBranch(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('clientes.filiais.editar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
@@ -154,6 +164,8 @@ export async function updateBranch(_prev: ActionState, formData: FormData): Prom
 
 export async function setBranchActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('clientes.filiais.inativar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z

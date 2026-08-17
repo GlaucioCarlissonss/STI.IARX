@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords } from '@/lib/session'
+import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
 import { lineStatusLabel, lineTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
@@ -27,7 +27,7 @@ const statusTone: Record<string, 'ok' | 'warn' | 'neutral'> = {
 }
 
 export default async function TelefoniaPage() {
-  const { profile } = await requireSession()
+  await requireScreen('telefonia.linhas.ver')
   const supabase = await createClient()
 
   const [{ data: lines }, { data: costs }, branches, agents, { data: devices }] = await Promise.all([
@@ -53,7 +53,10 @@ export default async function TelefoniaPage() {
       .is('deleted_at', null),
   ])
 
-  const editable = canManageRecords(profile.role)
+  const [podeEditar, podeCriar] = await Promise.all([
+    allowed('telefonia.linhas.editar'),
+    allowed('telefonia.linhas.criar'),
+  ])
   const list = lines ?? []
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const userName = new Map(agents.map((a) => [a.id, a.full_name]))
@@ -109,7 +112,7 @@ export default async function TelefoniaPage() {
                   <Td className="tabular-nums">{formatCurrency(l.monthly_cost)}</Td>
                   <Td className="text-[var(--color-ink-2)]">{formatDate(l.loyalty_until)}</Td>
                 </tr>
-                {editable && (
+                {podeEditar && (
                   <tr>
                     <Td className="bg-[var(--color-surface-2)]" colSpan={8}>
                       <EditPanel title={`Editar ${l.phone_number}`}>
@@ -156,7 +159,7 @@ export default async function TelefoniaPage() {
           </section>
         </div>
 
-        {editable && (
+        {podeCriar && (
           <Card title="Nova linha">
             <NewLineForm
               branches={branches}

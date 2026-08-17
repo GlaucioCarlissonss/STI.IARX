@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { requireRole } from '@/lib/session'
+import { requireScreen } from '@/lib/session'
 import { getBranches, getBusinessHours, getCategories, getClients, getPriorities } from '@/lib/data/lookups'
 import { formatDate, formatMinutes } from '@/lib/format'
 import type { Category, Priority, SlaContract } from '@/lib/types'
@@ -40,7 +40,7 @@ function complianceTone(pct: number | null) {
 }
 
 export default async function SlaPage() {
-  await requireRole(['super_admin', 'admin', 'gestor'])
+  await requireScreen('sla.compliance.ver')
   const supabase = await createClient()
 
   const [

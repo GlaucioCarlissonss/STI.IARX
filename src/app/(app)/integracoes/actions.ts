@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageConfig } from '@/lib/session'
+import { requireSession, canManageConfig, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 
 const toggleSchema = z.object({
@@ -17,6 +17,8 @@ export async function setIntegrationStatus(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('integracoes.hub.editar')
+  if ('error' in gate) return gate
   if (!canManageConfig(profile.role)) return { error: 'Apenas administradores.' }
 
   const parsed = toggleSchema.safeParse({
@@ -52,6 +54,8 @@ export async function setReverseSync(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('integracoes.hub.editar')
+  if ('error' in gate) return gate
   if (!canManageConfig(profile.role)) return { error: 'Apenas administradores.' }
 
   const parsed = reverseSyncSchema.safeParse({
@@ -93,6 +97,8 @@ export async function setInboundToken(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('integracoes.hub.rotacionar_token')
+  if ('error' in gate) return gate
   if (!canManageConfig(profile.role)) return { error: 'Apenas administradores.' }
 
   const parsed = tokenSchema.safeParse({

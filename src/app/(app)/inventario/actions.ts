@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords } from '@/lib/session'
+import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import { assetSchema, assetStatusSchema, recordId } from '@/lib/schemas/cadastros'
 
@@ -12,6 +12,8 @@ const DUPLICATE = 'Já existe um ativo com este patrimônio ou número de série
 
 export async function createAsset(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('inventario.ativos.criar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão para cadastrar ativos.' }
 
   const parsed = assetSchema.safeParse(Object.fromEntries(formData))
@@ -44,6 +46,8 @@ export async function createAsset(_prev: ActionState, formData: FormData): Promi
  */
 export async function updateAsset(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('inventario.ativos.editar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
@@ -81,6 +85,8 @@ export async function changeAssetStatus(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('inventario.ativos.mudar_status')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z

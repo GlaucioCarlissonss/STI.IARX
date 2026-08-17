@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requireRole } from '@/lib/session'
+import { requireScreen } from '@/lib/session'
 import { integrationOutcomeLabel, integrationStatusLabel } from '@/lib/i18n'
 import { formatDateTime, formatNumber } from '@/lib/format'
 import type { Integration, IntegrationLog } from '@/lib/types'
@@ -49,7 +49,7 @@ const eventTone: Record<string, 'ok' | 'breach' | 'warn' | 'neutral'> = {
 
 export default async function IntegracaoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  await requireRole(['super_admin', 'admin'])
+  await requireScreen('integracoes.hub.ver')
   const supabase = await createClient()
 
   const { data: integration } = await supabase

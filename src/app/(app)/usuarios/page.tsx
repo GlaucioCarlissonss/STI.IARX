@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { requireRole, canManageConfig } from '@/lib/session'
+import { requireScreen, allowed } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
 import { roleLabel } from '@/lib/i18n'
 import { formatDateTime } from '@/lib/format'
@@ -30,13 +30,15 @@ function onlineUserIds(users: Profile[]): Set<string> {
 }
 
 export default async function UsuariosPage() {
-  const { profile } = await requireRole(['super_admin', 'admin', 'gestor'])
+  const { profile } = await requireScreen('usuarios.usuarios.ver')
   const supabase = await createClient()
 
   const [{ data: users }, { data: links }, branches] = await Promise.all([
     supabase
       .from('profiles')
-      .select('id, tenant_id, role, full_name, email, phone, is_active, last_seen_at')
+      .select(
+        'id, tenant_id, role, full_name, email, phone, is_active, last_seen_at, access_profile_id',
+      )
       .order('full_name')
       .returns<Profile[]>(),
     supabase.from('user_branches').select('user_id, branch_id, is_primary'),
@@ -48,7 +50,10 @@ export default async function UsuariosPage() {
     branchesByUser.set(link.user_id, [...(branchesByUser.get(link.user_id) ?? []), link.branch_id])
   }
 
-  const editable = canManageConfig(profile.role)
+  const [podeEditarAcesso, podeCriarUsuario] = await Promise.all([
+    allowed('usuarios.usuarios.editar_acesso'),
+    allowed('usuarios.usuarios.criar'),
+  ])
   const online = onlineUserIds(users ?? [])
 
   return (
@@ -58,7 +63,7 @@ export default async function UsuariosPage() {
         description="Papel e visibilidade por filial. Um atendente vinculado a várias filiais enxerga os tickets e ativos de todas elas."
       />
 
-      {!editable && (
+      {!podeEditarAcesso && (
         <p className="mb-4 text-sm text-[var(--color-ink-2)]">
           Você tem acesso de leitura. Apenas administradores alteram papéis e filiais.
         </p>
@@ -97,7 +102,7 @@ export default async function UsuariosPage() {
                   Última atividade: {formatDateTime(u.last_seen_at)}
                 </p>
 
-                {editable && u.role !== 'super_admin' && u.id !== profile.id && (
+                {podeEditarAcesso && u.role !== 'super_admin' && u.id !== profile.id && (
                   <div className="mt-4 border-t border-[var(--color-border)] pt-4">
                     <UserAccessForm
                       userId={u.id}
@@ -108,7 +113,7 @@ export default async function UsuariosPage() {
                     />
                   </div>
                 )}
-                {editable && u.id === profile.id && (
+                {podeEditarAcesso && u.id === profile.id && (
                   // A trigger de auditoria só barra ESCALONAMENTO de papel —
                   // rebaixar a si mesmo ou desativar a própria conta passa, e um
                   // admin sozinho no tenant ficaria trancado do lado de fora sem
@@ -122,7 +127,7 @@ export default async function UsuariosPage() {
           })}
         </div>
 
-        {editable && (
+        {podeCriarUsuario && (
           <Card title="Novo usuário">
             <NewUserForm branches={branches} />
           </Card>

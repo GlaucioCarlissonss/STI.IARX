@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords } from '@/lib/session'
+import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import { recordId, telecomLineSchema, telecomStatusSchema } from '@/lib/schemas/cadastros'
 
@@ -14,6 +14,8 @@ export async function createTelecomLine(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('telefonia.linhas.criar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão para cadastrar linhas.' }
 
   const parsed = telecomLineSchema.safeParse(Object.fromEntries(formData))
@@ -40,6 +42,8 @@ export async function updateTelecomLine(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('telefonia.linhas.editar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
@@ -80,6 +84,8 @@ export async function setTelecomLineStatus(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('telefonia.linhas.mudar_status')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z

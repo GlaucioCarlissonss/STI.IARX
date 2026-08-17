@@ -116,7 +116,23 @@ function TextField({
  * depois mapa. Deixar o botão de geocodificar acima do endereço convidaria a
  * geolocalizar cadastro incompleto — que é exatamente o que o fluxo barra.
  */
-export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
+/**
+ * Painel de endereço e geolocalização de uma filial.
+ *
+ * As quatro permissões chegam por prop, decididas no servidor. Antes desta
+ * revisão o painel não consultava papel nenhum e a página era só
+ * `requireSession()`: os botões de gravar endereço e geocodificar apareciam para
+ * solicitante e visualizador, e só falhavam depois do clique, no servidor.
+ */
+export function BranchGeoPanel({
+  branch,
+  podeEditarEndereco,
+  podeGeocodificar,
+}: {
+  branch: BranchAddress
+  podeEditarEndereco: boolean
+  podeGeocodificar: boolean
+}) {
   const [addressState, saveAddress, savingAddress] = useActionState(saveBranchAddress, {})
   const [geoState, runGeocode, geocoding] = useActionState(geocodeBranch, {})
   const [confirmState, confirm, confirming] = useActionState(confirmGeocodeCandidate, {})
@@ -176,6 +192,9 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
       )}
 
       {/* 1. Endereço estruturado. Os quatro obrigatórios estão marcados. */}
+      {/* Campo editável sem botão de salvar convida a digitar e perder o que
+          foi digitado. `fieldset disabled` desliga os campos de uma vez. */}
+      <fieldset disabled={!podeEditarEndereco} style={{ border: 0, padding: 0, margin: 0 }}>
       <form action={saveAddress} className="grid gap-3 sm:grid-cols-6">
         <input type="hidden" name="branch_id" value={branch.branchId} />
         <div className="sm:col-span-3">
@@ -220,17 +239,28 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
           />
         </div>
         <div className="flex items-end gap-2 sm:col-span-6">
-          <Button type="submit" disabled={savingAddress}>
-            {savingAddress ? 'Salvando…' : 'Salvar endereço'}
-          </Button>
-          <span className="text-xs text-[var(--color-ink-3)]">
-            Logradouro, número, bairro e CEP são obrigatórios para geolocalizar.
-          </span>
+          {podeEditarEndereco ? (
+            <>
+              <Button type="submit" disabled={savingAddress}>
+                {savingAddress ? 'Salvando…' : 'Salvar endereço'}
+              </Button>
+              <span className="text-xs text-[var(--color-ink-3)]">
+                Logradouro, número, bairro e CEP são obrigatórios para geolocalizar.
+              </span>
+            </>
+          ) : (
+            <span className="text-xs text-[var(--color-ink-3)]">
+              Você tem acesso de leitura ao endereço desta filial.
+            </span>
+          )}
         </div>
       </form>
+      </fieldset>
 
       {/* 2. Geocodificação a partir do cadastro. */}
+      {(podeGeocodificar || podeEditarEndereco) && (
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+        {podeGeocodificar && (
         <form action={runGeocode}>
           <input type="hidden" name="branch_id" value={branch.branchId} />
           <Button
@@ -242,7 +272,9 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
             {geocoding ? 'Geolocalizando…' : 'Geolocalizar pelo endereço'}
           </Button>
         </form>
+        )}
 
+        {podeEditarEndereco && (
         <form action={setCoords} className="flex flex-1 flex-wrap items-center gap-2">
           <input type="hidden" name="branch_id" value={branch.branchId} />
           <input
@@ -255,7 +287,9 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
             Definir manualmente
           </Button>
         </form>
+        )}
       </div>
+      )}
 
       {!branch.addressComplete && (
         <p id={`geocode-hint-${branch.branchId}`} className="mt-2 text-xs text-[var(--color-warn-ink)]">
@@ -290,13 +324,15 @@ export function BranchGeoPanel({ branch }: { branch: BranchAddress }) {
                 >
                   conferir
                 </a>
-                <form action={confirm} className="ml-auto">
-                  <input type="hidden" name="branch_id" value={branch.branchId} />
-                  <input type="hidden" name="candidate_id" value={c.id} />
-                  <Button type="submit" disabled={confirming}>
-                    Confirmar este
-                  </Button>
-                </form>
+                {podeGeocodificar && (
+                  <form action={confirm} className="ml-auto">
+                    <input type="hidden" name="branch_id" value={branch.branchId} />
+                    <input type="hidden" name="candidate_id" value={c.id} />
+                    <Button type="submit" disabled={confirming}>
+                      Confirmar este
+                    </Button>
+                  </form>
+                )}
               </li>
             ))}
           </ul>

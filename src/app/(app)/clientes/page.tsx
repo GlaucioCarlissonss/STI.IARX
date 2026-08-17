@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
-import { requireRole, canManageRecords } from '@/lib/session'
+import { requireScreen, allowed } from '@/lib/session'
 import { getBranches, getBusinessHours, getClients } from '@/lib/data/lookups'
 import { formatCnpj } from '@/lib/format'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
@@ -10,8 +10,14 @@ import { EditBranchForm, EditClientForm, NewClientForm, NewBranchForm } from './
 export const metadata: Metadata = { title: 'Clientes e filiais' }
 
 export default async function ClientesPage() {
-  const { profile } = await requireRole(['super_admin', 'admin', 'gestor'])
-  const editable = canManageRecords(profile.role)
+  await requireScreen('clientes.grupos.ver')
+  const [podeEditarCliente, podeCriarCliente, podeEditarFilial, podeCriarFilial] =
+    await Promise.all([
+      allowed('clientes.grupos.editar'),
+      allowed('clientes.grupos.criar'),
+      allowed('clientes.filiais.editar'),
+      allowed('clientes.filiais.criar'),
+    ])
 
   const [clients, branches, businessHours] = await Promise.all([
     getClients(),
@@ -50,7 +56,7 @@ export default async function ClientesPage() {
 
                 {/* Largura do cartão inteiro: na coluna dos selos o formulário
                     seria uma tira estreita de campos. */}
-                {editable && (
+                {podeEditarCliente && (
                   <div className="mt-4">
                     <EditPanel title={`Editar ${c.trade_name ?? c.legal_name}`}>
                       <EditClientForm client={c} />
@@ -87,7 +93,7 @@ export default async function ClientesPage() {
                               {b.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
                             </Td>
                           </tr>
-                          {editable && (
+                          {podeEditarFilial && (
                             <tr>
                               <Td className="bg-[var(--color-surface-2)]" colSpan={5}>
                                 <EditPanel title={`Editar ${b.name}`}>
@@ -115,12 +121,16 @@ export default async function ClientesPage() {
         </div>
 
         <div className="flex flex-col gap-6">
-          <Card title="Novo cliente">
-            <NewClientForm />
-          </Card>
-          <Card title="Nova filial">
-            <NewBranchForm clients={clients} businessHours={businessHours} />
-          </Card>
+          {podeCriarCliente && (
+            <Card title="Novo cliente">
+              <NewClientForm />
+            </Card>
+          )}
+          {podeCriarFilial && (
+            <Card title="Nova filial">
+              <NewBranchForm clients={clients} businessHours={businessHours} />
+            </Card>
+          )}
         </div>
       </div>
     </>

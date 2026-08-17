@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { requireSession, canWorkTickets } from '@/lib/session'
+import { requireScreen, canWorkTickets } from '@/lib/session'
 import { getAgents, getBranches, getCategories, getPriorities, getQueues, groupCategories } from '@/lib/data/lookups'
 import { PageHeader } from '@/components/ui'
 import { NewTicketForm } from './new-ticket-form'
@@ -7,7 +7,7 @@ import { NewTicketForm } from './new-ticket-form'
 export const metadata: Metadata = { title: 'Abrir ticket' }
 
 export default async function NewTicketPage() {
-  const { profile } = await requireSession()
+  const { profile } = await requireScreen('helpdesk.tickets.criar')
 
   const [priorities, queues, categories, branches, agents] = await Promise.all([
     getPriorities(),

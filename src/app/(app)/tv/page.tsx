@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { requireRole } from '@/lib/session'
+import { requireScreen } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
 import { formatDateTime } from '@/lib/format'
 import { Badge, Card, PageHeader, Table, Td } from '@/components/ui'
@@ -21,7 +21,7 @@ interface TokenRow {
 }
 
 export default async function TvAdminPage() {
-  await requireRole(['super_admin', 'admin', 'gestor'])
+  await requireScreen('tv.tokens.ver')
   const supabase = await createClient()
 
   const [{ data: tokens }, { data: layouts }, branches] = await Promise.all([

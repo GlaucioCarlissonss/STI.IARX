@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession } from '@/lib/session'
+import { requireSession, requirePermission } from '@/lib/session'
 
 /**
  * Server Actions de ticket — o ÚNICO caminho de escrita a partir da UI (ADR-011).
@@ -43,6 +43,8 @@ const createTicketSchema = z.object({
 
 export async function createTicket(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('helpdesk.tickets.criar')
+  if ('error' in gate) return gate
 
   const parsed = createTicketSchema.safeParse({
     title: formData.get('title'),
@@ -101,6 +103,8 @@ const statusSchema = z.object({
 
 export async function changeStatus(_prev: ActionState, formData: FormData): Promise<ActionState> {
   await requireSession()
+  const gate = await requirePermission('helpdesk.tickets.mudar_status')
+  if ('error' in gate) return gate
 
   const parsed = statusSchema.safeParse({
     ticket_id: formData.get('ticket_id'),
@@ -133,6 +137,8 @@ const assignSchema = z.object({
 
 export async function assignTicket(_prev: ActionState, formData: FormData): Promise<ActionState> {
   await requireSession()
+  const gate = await requirePermission('helpdesk.tickets.atribuir')
+  if ('error' in gate) return gate
 
   const parsed = assignSchema.safeParse({
     ticket_id: formData.get('ticket_id'),
@@ -161,6 +167,8 @@ const transferSchema = z.object({
 /** Transferência entre filas com motivo obrigatório (RF-FIL-05). */
 export async function transferQueue(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('helpdesk.tickets.transferir')
+  if ('error' in gate) return gate
 
   const parsed = transferSchema.safeParse({
     ticket_id: formData.get('ticket_id'),
@@ -208,6 +216,8 @@ const commentSchema = z.object({
 
 export async function addComment(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('helpdesk.tickets.comentar')
+  if ('error' in gate) return gate
 
   const parsed = commentSchema.safeParse({
     ticket_id: formData.get('ticket_id'),
@@ -216,6 +226,16 @@ export async function addComment(_prev: ActionState, formData: FormData): Promis
   })
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
+  }
+
+  // Comentário interno é uma permissão à parte, checada aqui e não no gate de
+  // cima: a visibilidade só se conhece depois de ler o formulário. Sem isto um
+  // solicitante conseguia escrever na parte do ticket que ele não deveria nem
+  // ler — bastava mandar `visibility=internal`, já que o campo vinha do cliente
+  // e nada o confrontava com o papel de quem enviou.
+  if (parsed.data.visibility === 'internal') {
+    const internal = await requirePermission('helpdesk.tickets.comentar_interno')
+    if ('error' in internal) return { error: 'Sem permissão para comentário interno.' }
   }
 
   const supabase = await createClient()

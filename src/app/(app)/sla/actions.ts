@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords } from '@/lib/session'
+import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import {
   categorySchema,
@@ -19,6 +19,8 @@ const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem
 
 export async function createCategory(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.categorias.criar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = categorySchema.safeParse(Object.fromEntries(formData))
@@ -45,6 +47,8 @@ export async function createCategory(_prev: ActionState, formData: FormData): Pr
 
 export async function updateCategory(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.categorias.editar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
@@ -75,6 +79,8 @@ export async function updateCategory(_prev: ActionState, formData: FormData): Pr
 
 export async function setCategoryActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.categorias.inativar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
@@ -115,6 +121,8 @@ function slugifyKey(label: string): string {
 
 export async function createPriority(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.prioridades.criar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = prioritySchema.safeParse(Object.fromEntries(formData))
@@ -141,6 +149,8 @@ export async function createPriority(_prev: ActionState, formData: FormData): Pr
 
 export async function updatePriority(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.prioridades.editar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
@@ -166,6 +176,8 @@ export async function updatePriority(_prev: ActionState, formData: FormData): Pr
 
 export async function setPriorityActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.prioridades.inativar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
@@ -193,6 +205,8 @@ export async function setPriorityActive(_prev: ActionState, formData: FormData):
 
 export async function createSlaContract(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.contratos.criar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = slaContractSchema.safeParse(Object.fromEntries(formData))
@@ -211,6 +225,8 @@ export async function createSlaContract(_prev: ActionState, formData: FormData):
 
 export async function updateSlaContract(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.contratos.editar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
@@ -238,6 +254,8 @@ export async function setSlaContractActive(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.contratos.inativar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
@@ -268,6 +286,8 @@ export async function createSlaDefinition(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.definicoes.criar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = slaDefinitionSchema.safeParse(Object.fromEntries(formData))
@@ -296,6 +316,8 @@ export async function updateSlaDefinition(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.definicoes.editar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
@@ -330,6 +352,8 @@ export async function setSlaDefinitionActive(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('sla.definicoes.inativar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z

@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { requireRole, canManageRecords } from '@/lib/session'
+import { requireScreen, allowed } from '@/lib/session'
 import { formatCnpj, formatCurrency, formatDate, formatMinutes } from '@/lib/format'
 import type { Supplier, SupplierContract } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
@@ -12,8 +12,13 @@ import { EditSupplierContractForm, NewSupplierContractForm } from './supplier-co
 export const metadata: Metadata = { title: 'Fornecedores' }
 
 export default async function FornecedoresPage() {
-  const { profile } = await requireRole(['super_admin', 'admin', 'gestor'])
-  const editable = canManageRecords(profile.role)
+  await requireScreen('fornecedores.cadastro.ver')
+  const [podeEditar, podeCriar, podeEditarContrato, podeCriarContrato] = await Promise.all([
+    allowed('fornecedores.cadastro.editar'),
+    allowed('fornecedores.cadastro.criar'),
+    allowed('fornecedores.contratos.editar'),
+    allowed('fornecedores.contratos.criar'),
+  ])
   const supabase = await createClient()
 
   const [{ data: suppliers }, { data: contracts }] = await Promise.all([
@@ -114,7 +119,7 @@ export default async function FornecedoresPage() {
                               {c.is_active ? <Badge tone="ok">Ativo</Badge> : <Badge>Inativo</Badge>}
                             </Td>
                           </tr>
-                          {editable && (
+                          {podeEditarContrato && (
                             <tr>
                               <Td className="bg-[var(--color-surface-2)]" colSpan={6}>
                                 <EditPanel title={`Editar contrato ${c.contract_number ?? ''}`}>
@@ -131,14 +136,18 @@ export default async function FornecedoresPage() {
 
                 {/* Ocupa a largura do cartão: espremido na coluna dos selos, o
                     formulário viraria uma tira de campos de 6rem. */}
-                {editable && (
+                {(podeEditar || podeCriarContrato) && (
                   <div className="mt-4 flex flex-col gap-3">
-                    <EditPanel title={`Editar ${s.name}`}>
-                      <EditSupplierForm supplier={s} />
-                    </EditPanel>
-                    <EditPanel label="+ Novo contrato">
-                      <NewSupplierContractForm supplierId={s.id} />
-                    </EditPanel>
+                    {podeEditar && (
+                      <EditPanel title={`Editar ${s.name}`}>
+                        <EditSupplierForm supplier={s} />
+                      </EditPanel>
+                    )}
+                    {podeCriarContrato && (
+                      <EditPanel label="+ Novo contrato">
+                        <NewSupplierContractForm supplierId={s.id} />
+                      </EditPanel>
+                    )}
                   </div>
                 )}
               </Card>
@@ -146,9 +155,11 @@ export default async function FornecedoresPage() {
           })}
         </div>
 
-        <Card title="Novo fornecedor">
-          <NewSupplierForm />
-        </Card>
+        {podeCriar && (
+          <Card title="Novo fornecedor">
+            <NewSupplierForm />
+          </Card>
+        )}
       </div>
     </>
   )

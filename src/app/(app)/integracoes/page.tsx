@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { requireRole } from '@/lib/session'
+import { requireScreen } from '@/lib/session'
 import { integrationStatusLabel } from '@/lib/i18n'
 import { formatDateTime, formatNumber } from '@/lib/format'
 import type { Integration } from '@/lib/types'
@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: 'Integrações' }
 const statusTone = { active: 'ok', paused: 'neutral', error: 'breach' } as const
 
 export default async function IntegracoesPage() {
-  await requireRole(['super_admin', 'admin'])
+  await requireScreen('integracoes.hub.ver')
   const supabase = await createClient()
 
   const [{ data: integrations }, { data: pending }] = await Promise.all([

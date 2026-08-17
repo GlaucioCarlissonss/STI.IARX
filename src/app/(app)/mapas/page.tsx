@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession } from '@/lib/session'
+import { requireScreen, allowed } from '@/lib/session'
 import { isPreciseEnough, type GeocodePrecision } from '@/lib/maps'
 import { Badge, PageHeader, StatTile } from '@/components/ui'
 import { type MapPoint } from '@/components/branch-map'
@@ -88,7 +88,11 @@ export default async function MapasPage({
   searchParams: Promise<{ dominio?: string }>
 }) {
   const { dominio } = await searchParams
-  await requireSession()
+  await requireScreen('mapas.geolocalizacao.ver')
+  const [podeEditarEndereco, podeGeocodificar] = await Promise.all([
+    allowed('mapas.geolocalizacao.editar_endereco'),
+    allowed('mapas.geolocalizacao.geocodificar'),
+  ])
 
   const domain = DOMAINS.find((d) => d.key === dominio) ?? DOMAINS[0]
   const supabase = await createClient()
@@ -313,7 +317,12 @@ export default async function MapasPage({
 
         <div className="flex flex-col gap-3">
           {addressRows.map((b) => (
-            <BranchGeoPanel key={b.branchId} branch={b} />
+            <BranchGeoPanel
+              key={b.branchId}
+              branch={b}
+              podeEditarEndereco={podeEditarEndereco}
+              podeGeocodificar={podeGeocodificar}
+            />
           ))}
         </div>
       </section>

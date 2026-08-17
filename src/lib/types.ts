@@ -39,6 +39,19 @@ export interface Profile {
   phone: string | null
   is_active: boolean
   last_seen_at: string | null
+  /** Perfil de acesso; nulo cai no papel puro (ver `permissionsFromRole`). */
+  access_profile_id: string | null
+}
+
+/** Perfil de acesso — teto de RLS mais a matriz de permissões. */
+export interface AccessProfile {
+  id: string
+  name: string
+  description: string | null
+  base_role: Exclude<UserRole, 'super_admin'>
+  is_system: boolean
+  system_key: string | null
+  is_active: boolean
 }
 
 export interface Tenant {

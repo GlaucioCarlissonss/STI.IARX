@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canWorkTickets } from '@/lib/session'
+import { requireScreen, canWorkTickets } from '@/lib/session'
 import { getAgents, getQueues } from '@/lib/data/lookups'
 import { formatDateTime, formatMinutes, formatRelative, formatTimeRemaining } from '@/lib/format'
 import { changeSourceLabel, ticketFieldLabel, ticketStatusLabel } from '@/lib/i18n'
@@ -28,7 +28,7 @@ export async function generateMetadata({
 
 export default async function TicketPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const { profile } = await requireSession()
+  const { profile } = await requireScreen('helpdesk.tickets.ver')
   const supabase = await createClient()
 
   const { data: ticket } = await supabase

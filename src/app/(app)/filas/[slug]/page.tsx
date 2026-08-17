@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession } from '@/lib/session'
+import { requireScreen } from '@/lib/session'
 import type { EnrichedTicket } from '@/lib/types'
 import { EmptyState, PageHeader } from '@/components/ui'
 import { TicketList } from '@/components/ticket-list'
@@ -18,7 +18,7 @@ export async function generateMetadata({
 
 export default async function FilaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  await requireSession()
+  await requireScreen('helpdesk.filas.ver')
   const supabase = await createClient()
 
   const { data: queue } = await supabase

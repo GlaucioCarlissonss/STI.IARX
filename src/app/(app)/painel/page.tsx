@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords } from '@/lib/session'
+import { requireScreen, canManageRecords } from '@/lib/session'
 import { formatMinutes } from '@/lib/format'
 import type { DashboardMetrics, EnrichedTicket } from '@/lib/types'
 import { Card, EmptyState, PageHeader, StatTile } from '@/components/ui'
@@ -11,7 +11,7 @@ import { RealtimeRefresh } from '@/components/realtime-refresh'
 export const metadata: Metadata = { title: 'Painel' }
 
 export default async function PainelPage() {
-  const { profile } = await requireSession()
+  const { profile } = await requireScreen('helpdesk.painel.ver')
   const supabase = await createClient()
 
   const [{ data: metrics }, { data: online }, { data: atRisk }, { data: mine }] = await Promise.all([

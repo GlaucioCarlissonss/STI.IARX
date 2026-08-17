@@ -2,14 +2,14 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession } from '@/lib/session'
+import { requireScreen } from '@/lib/session'
 import type { EnrichedTicket } from '@/lib/types'
 import { Badge, Card, PageHeader } from '@/components/ui'
 
 export const metadata: Metadata = { title: 'Filas' }
 
 export default async function FilasPage() {
-  await requireSession()
+  await requireScreen('helpdesk.filas.ver')
   const supabase = await createClient()
 
   const [{ data: queues }, { data: openTickets }] = await Promise.all([

@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords } from '@/lib/session'
+import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
 import { assetStatusLabel, assetTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
@@ -21,7 +21,7 @@ const statusTone: Record<string, 'ok' | 'warn' | 'neutral' | 'breach'> = {
 }
 
 export default async function InventarioPage() {
-  const { profile } = await requireSession()
+  await requireScreen('inventario.ativos.ver')
   const supabase = await createClient()
 
   const [{ data: assets }, branches, agents, { data: suppliers }] = await Promise.all([
@@ -38,7 +38,10 @@ export default async function InventarioPage() {
     supabase.from('suppliers').select('id, name').is('deleted_at', null).order('name'),
   ])
 
-  const editable = canManageRecords(profile.role)
+  const [podeEditar, podeCriar] = await Promise.all([
+    allowed('inventario.ativos.editar'),
+    allowed('inventario.ativos.criar'),
+  ])
   const list = assets ?? []
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const userName = new Map(agents.map((a) => [a.id, a.full_name]))
@@ -120,7 +123,7 @@ export default async function InventarioPage() {
                     </Td>
                     <Td className="text-[var(--color-ink-2)]">{formatDate(a.warranty_until)}</Td>
                   </tr>
-                  {editable && (
+                  {podeEditar && (
                     <tr>
                       <Td className="bg-[var(--color-surface-2)]" colSpan={7}>
                         <EditPanel title={`Editar ${[a.brand, a.model].filter(Boolean).join(' ') || a.asset_tag || 'ativo'}`}>
@@ -146,7 +149,7 @@ export default async function InventarioPage() {
           )}
         </div>
 
-        {editable && (
+        {podeCriar && (
           <Card title="Novo ativo">
             <NewAssetForm branches={branches} agents={agents} suppliers={suppliers ?? []} />
           </Card>

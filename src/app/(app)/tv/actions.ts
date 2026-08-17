@@ -4,7 +4,7 @@ import { randomBytes, createHash } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords } from '@/lib/session'
+import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 
 const createTokenSchema = z.object({
@@ -34,6 +34,8 @@ export async function createDashboardToken(
   formData: FormData,
 ): Promise<TokenActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('tv.tokens.criar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão para emitir tokens.' }
 
   const parsed = createTokenSchema.safeParse({
@@ -71,6 +73,8 @@ export async function revokeDashboardToken(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('tv.tokens.revogar')
+  if ('error' in gate) return gate
   if (!canManageRecords(profile.role)) return { error: 'Sem permissão para revogar tokens.' }
 
   const id = formData.get('token_id')

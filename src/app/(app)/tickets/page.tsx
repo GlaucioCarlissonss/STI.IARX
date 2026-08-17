@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession } from '@/lib/session'
+import { requireScreen } from '@/lib/session'
 import { getPriorities, getQueues } from '@/lib/data/lookups'
 import { ticketStatusLabel } from '@/lib/i18n'
 import type { EnrichedTicket, TicketStatus } from '@/lib/types'
@@ -25,7 +25,7 @@ export default async function TicketsPage({
   searchParams: Promise<{ status?: string; fila?: string; prioridade?: string; busca?: string }>
 }) {
   const params = await searchParams
-  await requireSession()
+  await requireScreen('helpdesk.tickets.ver')
 
   const supabase = await createClient()
   const [queues, priorities] = await Promise.all([getQueues(), getPriorities()])

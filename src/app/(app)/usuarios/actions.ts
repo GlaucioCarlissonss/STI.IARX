@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { requireSession, canManageConfig } from '@/lib/session'
+import { requireSession, canManageConfig, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import { emptyToNull } from '@/lib/form-schemas'
 
@@ -30,6 +30,8 @@ export async function updateUserAccess(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('usuarios.usuarios.editar_acesso')
+  if ('error' in gate) return gate
   if (!canManageConfig(profile.role)) {
     return { error: 'Apenas administradores podem alterar acessos.' }
   }
@@ -118,6 +120,8 @@ export async function createUserAccount(
   formData: FormData,
 ): Promise<ActionState> {
   const { profile } = await requireSession()
+  const gate = await requirePermission('usuarios.usuarios.criar')
+  if ('error' in gate) return gate
   if (!canManageConfig(profile.role)) {
     return { error: 'Apenas administradores podem criar usuários.' }
   }

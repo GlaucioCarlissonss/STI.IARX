@@ -1,29 +1,41 @@
 import Link from 'next/link'
-import { requireSession, touchPresence, canManageConfig, canManageRecords } from '@/lib/session'
+import { requireSession, touchPresence } from '@/lib/session'
+import { can } from '@/lib/permissions'
 import { roleLabel } from '@/lib/i18n'
 import { initials } from '@/lib/format'
 import { signOut } from '@/app/login/actions'
 import { NavLink } from '@/components/nav-link'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { profile, tenant } = await requireSession()
+  const { profile, tenant, permissions } = await requireSession()
 
   // Presença para o contador do painel de TV (RF-DSH-02).
   await touchPresence(profile.id)
 
+  /*
+   * O menu passa a espelhar a permissão de CONSULTA de cada tela, em vez dos
+   * helpers de papel. Duas razões: um item que aparece e cai em redirect é pior
+   * que um item ausente; e manter a lista do menu em sincronia com os gates das
+   * páginas à mão já tinha produzido uma divergência — `/usuarios` aparecia para
+   * gestor e a edição lá dentro exigia admin.
+   *
+   * `/conta` fica sempre visível: trocar a própria senha não é permissão de
+   * módulo, é direito de quem tem conta.
+   */
+  const show = (perm: string) => can(permissions, perm)
   const nav = [
-    { href: '/painel', label: 'Painel', show: true },
-    { href: '/tickets', label: 'Tickets', show: true },
-    { href: '/filas', label: 'Filas', show: true },
-    { href: '/sla', label: 'SLA', show: canManageRecords(profile.role) },
-    { href: '/inventario', label: 'Inventário', show: true },
-    { href: '/telefonia', label: 'Telefonia', show: true },
-    { href: '/fornecedores', label: 'Fornecedores', show: canManageRecords(profile.role) },
-    { href: '/clientes', label: 'Clientes e filiais', show: canManageRecords(profile.role) },
-    { href: '/usuarios', label: 'Usuários', show: canManageRecords(profile.role) },
-    { href: '/integracoes', label: 'Integrações', show: canManageConfig(profile.role) },
-    { href: '/mapas', label: 'Mapas', show: true },
-    { href: '/tv', label: 'Painéis de TV', show: canManageRecords(profile.role) },
+    { href: '/painel', label: 'Painel', show: show('helpdesk.painel.ver') },
+    { href: '/tickets', label: 'Tickets', show: show('helpdesk.tickets.ver') },
+    { href: '/filas', label: 'Filas', show: show('helpdesk.filas.ver') },
+    { href: '/sla', label: 'SLA', show: show('sla.compliance.ver') },
+    { href: '/inventario', label: 'Inventário', show: show('inventario.ativos.ver') },
+    { href: '/telefonia', label: 'Telefonia', show: show('telefonia.linhas.ver') },
+    { href: '/fornecedores', label: 'Fornecedores', show: show('fornecedores.cadastro.ver') },
+    { href: '/clientes', label: 'Clientes e filiais', show: show('clientes.grupos.ver') },
+    { href: '/usuarios', label: 'Usuários', show: show('usuarios.usuarios.ver') },
+    { href: '/integracoes', label: 'Integrações', show: show('integracoes.hub.ver') },
+    { href: '/mapas', label: 'Mapas', show: show('mapas.geolocalizacao.ver') },
+    { href: '/tv', label: 'Painéis de TV', show: show('tv.tokens.ver') },
     { href: '/conta', label: 'Minha conta', show: true },
   ].filter((item) => item.show)
 
