@@ -32,6 +32,8 @@ Supabase — PostgreSQL, Auth, Realtime, Storage, Edge Functions
 | **Telefonia** | Cadastro de linhas, vínculo com aparelho, relatório de custos por filial e operadora |
 | **Fornecedores** | Cadastro, serviços, avaliação, contratos com SLA contratado |
 | **Clientes e filiais** | Grupos econômicos com N filiais, fuso e calendário próprios |
+| **Permissões granulares** | Perfis de acesso com matriz módulo → tela → ação. O papel base é o teto de RLS do perfil, então atribuir perfil só restringe — nunca promove |
+| **Financeiro (base)** | Centros de custo hierárquicos (3 níveis) e contas bancárias com saldo derivado, extrato, conciliação e transferência por dupla entrada |
 | **Edição dos cadastros** | Cliente, filial, ativo, linha, fornecedor e seus contratos são editáveis e inativáveis pela interface, com a mesma regra de validação do cadastro |
 | **Configuração de SLA** | Categorias (2 níveis), prioridades, contratos de SLA por cliente e definições — tudo cadastrável em `/sla`, além do relatório de compliance |
 | **Geolocalização** | Endereço estruturado obrigatório, geocodificação com nível de precisão, tratamento das 6 exceções, mapa em satélite e log append-only de cada tentativa |
@@ -147,8 +149,8 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 122 testes: mapeamento, coordenadas, geolocalização, provedores sem chave e cadastros
-npm run db:validate   # migrações + seed + 127 asserções em PostgreSQL real
+npm test              # 149 testes: mapeamento, coordenadas, geolocalização, cadastros e herança de permissão
+npm run db:validate   # migrações + seed + 173 asserções em PostgreSQL real
 ```
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
@@ -257,6 +259,7 @@ aceitável. A resolução depende de uma atualização do Next.
 | [01 — Requisitos](docs/01-requisitos.md) | Requisitos rastreáveis, matriz de permissões, lacunas e decisões por padrão |
 | [02 — Benchmarking](docs/02-benchmarking.md) | Freshservice, Jira SM, Zendesk, GLPI, ManageEngine — padrões adotados e 10 antipatterns evitados |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Visão geral e 12 ADRs com alternativas rejeitadas |
-| [04 — Modelo de dados](docs/04-modelo-dados.md) | 46 tabelas, funções, triggers, views e estratégia de índices |
+| [04 — Modelo de dados](docs/04-modelo-dados.md) | 52 tabelas, funções, triggers, views e estratégia de índices |
 | [05 — Bitrix24](docs/05-integracao-bitrix24.md) | Estudo da API, mapeamento, configuração passo a passo e limitações |
 | [06 — Lacunas e Roadmap](docs/06-lacunas-e-roadmap.md) | Especificação dos 11 módulos pendentes, cronograma em lotes e 14 lacunas globais |
+| [07 — Financeiro e Permissões](docs/07-financeiro-e-permissoes.md) | Permissões granulares, financeiro (contas a pagar/receber, fluxo de caixa) e controle de despesas: 9 módulos no template, matriz de permissões e 15 lacunas |
