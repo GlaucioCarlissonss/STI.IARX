@@ -11,13 +11,25 @@ export const metadata: Metadata = { title: 'Clientes e filiais' }
 
 export default async function ClientesPage() {
   await requireScreen('clientes.grupos.ver')
-  const [podeEditarCliente, podeCriarCliente, podeEditarFilial, podeCriarFilial] =
-    await Promise.all([
-      allowed('clientes.grupos.editar'),
-      allowed('clientes.grupos.criar'),
-      allowed('clientes.filiais.editar'),
-      allowed('clientes.filiais.criar'),
-    ])
+  /*
+   * `clientes.filiais.ver` governa a seção de filiais inteira — tabela e
+   * formulário de cadastro. Antes ela existia no catálogo e não era consultada
+   * em lugar nenhum: o administrador desmarcava e continuava tudo visível, que
+   * é pior que não ter a chave.
+   */
+  const [
+    podeEditarCliente,
+    podeCriarCliente,
+    podeVerFilial,
+    podeEditarFilial,
+    podeCriarFilial,
+  ] = await Promise.all([
+    allowed('clientes.grupos.editar'),
+    allowed('clientes.grupos.criar'),
+    allowed('clientes.filiais.ver'),
+    allowed('clientes.filiais.editar'),
+    allowed('clientes.filiais.criar'),
+  ])
 
   const [clients, branches, businessHours] = await Promise.all([
     getClients(),
@@ -64,57 +76,59 @@ export default async function ClientesPage() {
                   </div>
                 )}
 
-                <div className="mt-4">
-                  {clientBranches.length > 0 ? (
-                    <Table
-                      head={[
-                        'Filial',
-                        'Código',
-                        'Cidade / UF',
-                        'Fuso horário',
-                        'Situação',
-                      ]}
-                    >
-                      {clientBranches.map((b) => (
-                        // O painel de edição ocupa uma linha própria, não a
-                        // última célula: dentro de uma coluna estreita o
-                        // formulário ficaria espremido a ponto de atrapalhar.
-                        <Fragment key={b.id}>
-                          <tr>
-                            <Td className="font-medium text-[var(--color-ink)]">{b.name}</Td>
-                            <Td className="font-mono text-xs text-[var(--color-ink-2)]">
-                              {b.code ?? '—'}
-                            </Td>
-                            <Td className="text-[var(--color-ink-2)]">
-                              {[b.city, b.state].filter(Boolean).join(' / ') || '—'}
-                            </Td>
-                            <Td className="text-[var(--color-ink-2)]">{b.timezone}</Td>
-                            <Td>
-                              {b.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
-                            </Td>
-                          </tr>
-                          {podeEditarFilial && (
+                {podeVerFilial && (
+                  <div className="mt-4">
+                    {clientBranches.length > 0 ? (
+                      <Table
+                        head={[
+                          'Filial',
+                          'Código',
+                          'Cidade / UF',
+                          'Fuso horário',
+                          'Situação',
+                        ]}
+                      >
+                        {clientBranches.map((b) => (
+                          // O painel de edição ocupa uma linha própria, não a
+                          // última célula: dentro de uma coluna estreita o
+                          // formulário ficaria espremido a ponto de atrapalhar.
+                          <Fragment key={b.id}>
                             <tr>
-                              <Td className="bg-[var(--color-surface-2)]" colSpan={5}>
-                                <EditPanel title={`Editar ${b.name}`}>
-                                  <EditBranchForm
-                                    branch={b}
-                                    clients={clients}
-                                    businessHours={businessHours}
-                                  />
-                                </EditPanel>
+                              <Td className="font-medium text-[var(--color-ink)]">{b.name}</Td>
+                              <Td className="font-mono text-xs text-[var(--color-ink-2)]">
+                                {b.code ?? '—'}
+                              </Td>
+                              <Td className="text-[var(--color-ink-2)]">
+                                {[b.city, b.state].filter(Boolean).join(' / ') || '—'}
+                              </Td>
+                              <Td className="text-[var(--color-ink-2)]">{b.timezone}</Td>
+                              <Td>
+                                {b.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
                               </Td>
                             </tr>
-                          )}
-                        </Fragment>
-                      ))}
-                    </Table>
-                  ) : (
-                    <p className="text-sm italic text-[var(--color-ink-3)]">
-                      Nenhuma filial cadastrada para este cliente.
-                    </p>
-                  )}
-                </div>
+                            {podeEditarFilial && (
+                              <tr>
+                                <Td className="bg-[var(--color-surface-2)]" colSpan={5}>
+                                  <EditPanel title={`Editar ${b.name}`}>
+                                    <EditBranchForm
+                                      branch={b}
+                                      clients={clients}
+                                      businessHours={businessHours}
+                                    />
+                                  </EditPanel>
+                                </Td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        ))}
+                      </Table>
+                    ) : (
+                      <p className="text-sm italic text-[var(--color-ink-3)]">
+                        Nenhuma filial cadastrada para este cliente.
+                      </p>
+                    )}
+                  </div>
+                )}
               </Card>
             )
           })}
@@ -126,7 +140,7 @@ export default async function ClientesPage() {
               <NewClientForm />
             </Card>
           )}
-          {podeCriarFilial && (
+          {podeVerFilial && podeCriarFilial && (
             <Card title="Nova filial">
               <NewBranchForm clients={clients} businessHours={businessHours} />
             </Card>

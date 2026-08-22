@@ -13,12 +13,19 @@ export const metadata: Metadata = { title: 'Fornecedores' }
 
 export default async function FornecedoresPage() {
   await requireScreen('fornecedores.cadastro.ver')
-  const [podeEditar, podeCriar, podeEditarContrato, podeCriarContrato] = await Promise.all([
-    allowed('fornecedores.cadastro.editar'),
-    allowed('fornecedores.cadastro.criar'),
-    allowed('fornecedores.contratos.editar'),
-    allowed('fornecedores.contratos.criar'),
-  ])
+  /*
+   * `fornecedores.contratos.ver` governa a seção de contratos. Sem ela nem a
+   * consulta sai: a chave existia no catálogo sem ser lida em lugar nenhum, o
+   * que fazia o administrador desmarcar e nada mudar.
+   */
+  const [podeEditar, podeCriar, podeVerContrato, podeEditarContrato, podeCriarContrato] =
+    await Promise.all([
+      allowed('fornecedores.cadastro.editar'),
+      allowed('fornecedores.cadastro.criar'),
+      allowed('fornecedores.contratos.ver'),
+      allowed('fornecedores.contratos.editar'),
+      allowed('fornecedores.contratos.criar'),
+    ])
   const supabase = await createClient()
 
   const [{ data: suppliers }, { data: contracts }] = await Promise.all([
@@ -28,13 +35,15 @@ export default async function FornecedoresPage() {
       .is('deleted_at', null)
       .order('name')
       .returns<Supplier[]>(),
-    supabase
-      .from('supplier_contracts')
-      .select(
-        'id, supplier_id, contract_number, description, starts_on, ends_on, monthly_cost, response_sla_minutes, resolution_sla_minutes, is_active',
-      )
-      .order('starts_on', { ascending: false })
-      .returns<SupplierContract[]>(),
+    podeVerContrato
+      ? supabase
+          .from('supplier_contracts')
+          .select(
+            'id, supplier_id, contract_number, description, starts_on, ends_on, monthly_cost, response_sla_minutes, resolution_sla_minutes, is_active',
+          )
+          .order('starts_on', { ascending: false })
+          .returns<SupplierContract[]>()
+      : { data: [] as SupplierContract[] },
   ])
 
   const list = suppliers ?? []
@@ -88,7 +97,7 @@ export default async function FornecedoresPage() {
                   </div>
                 )}
 
-                {supplierContracts.length > 0 && (
+                {podeVerContrato && supplierContracts.length > 0 && (
                   <div className="mt-4">
                     <Table
                       head={[
@@ -136,14 +145,14 @@ export default async function FornecedoresPage() {
 
                 {/* Ocupa a largura do cartão: espremido na coluna dos selos, o
                     formulário viraria uma tira de campos de 6rem. */}
-                {(podeEditar || podeCriarContrato) && (
+                {(podeEditar || (podeVerContrato && podeCriarContrato)) && (
                   <div className="mt-4 flex flex-col gap-3">
                     {podeEditar && (
                       <EditPanel title={`Editar ${s.name}`}>
                         <EditSupplierForm supplier={s} />
                       </EditPanel>
                     )}
-                    {podeCriarContrato && (
+                    {podeVerContrato && podeCriarContrato && (
                       <EditPanel label="+ Novo contrato">
                         <NewSupplierContractForm supplierId={s.id} />
                       </EditPanel>
