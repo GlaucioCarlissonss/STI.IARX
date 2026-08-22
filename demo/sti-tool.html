@@ -86,6 +86,15 @@
     cursor:pointer; font:inherit; font-size:.82rem; padding:.38rem .7rem; border-radius:8px; }
   .icon-btn:hover { background:var(--surface-3); }
 
+  /* Seletor de sessão: é o controle que prova a camada de permissão. Trocar de
+     pessoa aqui muda o menu e os botões, sem recarregar a página. */
+  .whoami { display:flex; align-items:center; gap:.4rem; font-size:.76rem;
+    color:var(--ink-3); white-space:nowrap; }
+  .whoami select { border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); font:inherit; font-size:.8rem; padding:.34rem .5rem;
+    border-radius:8px; max-width:15rem; }
+  @media (max-width:860px) { .whoami { display:none; } }
+
   /* Atalho para leitores de tela e navegação por teclado (WCAG 2.4.1) — sem
      isso, quem usa só teclado precisa passar pelo logo, pelo alternador
      Console/TV, Tema e Restaurar exemplo antes de chegar na nav, em TODA
@@ -388,7 +397,7 @@
 <a href="#view" class="skip-link">Pular para o conteúdo</a>
 
 <div class="banner">
-  <strong>Ferramenta operacional</strong> — as 11 melhorias solicitadas e os cadastros administrativos estão implementados e utilizáveis.
+  <strong>Ferramenta operacional</strong> — as 11 melhorias, os cadastros administrativos, a camada de permissão e a base do financeiro estão implementados e utilizáveis. Troque de pessoa em <strong>Vendo como</strong> para ver o menu e os botões mudarem.
   Comece em <strong>Novidades</strong>. Tudo é gravado neste navegador.
 </div>
 
@@ -399,6 +408,8 @@
       <button type="button" id="mode-console" aria-pressed="true">Console</button>
       <button type="button" id="mode-wall" aria-pressed="false">Painel de TV</button>
     </div>
+    <label class="whoami" for="acting-user">Vendo como
+      <select id="acting-user" aria-label="Usuário da sessão"></select></label>
     <button type="button" class="icon-btn" id="theme-toggle">Tema</button>
     <button type="button" class="icon-btn" id="reset-btn">Restaurar exemplo</button>
   </div>
@@ -444,10 +455,10 @@
 <script>
 (() => {
   'use strict';
-  // v5: os cadastros deixaram de ser constantes do código. Cliente, fornecedor,
-  // categoria, prioridade, contrato e usuário agora são registros editáveis, e
-  // um estado v4 não teria nenhuma dessas coleções — a tela abriria vazia.
-  const KEY = 'sti.helpdesk.v5';
+  // v6: perfis de acesso, permissões granulares e a base do financeiro (centros
+  // de custo e contas bancárias). Um estado v5 não tem `accessProfiles`, e sem
+  // perfil a checagem de permissão nega tudo — a ferramenta abriria sem menu.
+  const KEY = 'sti.helpdesk.v6';
   const MIN = 60000;
 
   /* ===================== Catálogos ===================== */
@@ -516,6 +527,236 @@
     ['Financeiro','administrativa'],['TI','tecnica'],['Logística','apoio'],
     ['Diretoria','administrativa'],['Estoque de TI','apoio']
   ];
+
+
+  /* ===================== Autorização (0017) ===================== */
+  /* Gerado de src/lib/permissions.ts. Um teste em src/lib/permissions.demo.test.ts
+     cobra que as duas listas sejam idênticas: protótipo que promete um
+     controle que a aplicação não tem é pior que protótipo sem controle. */
+  const PERM_CATALOG = [
+    ['helpdesk','helpdesk',null,null,'Helpdesk','visualizador'],
+    ['helpdesk.painel','helpdesk','painel',null,'Painel operacional','visualizador'],
+    ['helpdesk.painel.ver','helpdesk','painel','ver','Abrir o painel','visualizador'],
+    ['helpdesk.tickets','helpdesk','tickets',null,'Tickets','visualizador'],
+    ['helpdesk.tickets.ver','helpdesk','tickets','ver','Consultar tickets','visualizador'],
+    ['helpdesk.tickets.criar','helpdesk','tickets','criar','Abrir ticket','solicitante'],
+    ['helpdesk.tickets.comentar','helpdesk','tickets','comentar','Comentar (público)','solicitante'],
+    ['helpdesk.tickets.comentar_interno','helpdesk','tickets','comentar_interno','Comentar (interno)','atendente'],
+    ['helpdesk.tickets.mudar_status','helpdesk','tickets','mudar_status','Mover status','atendente'],
+    ['helpdesk.tickets.atribuir','helpdesk','tickets','atribuir','Atribuir atendente','atendente'],
+    ['helpdesk.tickets.transferir','helpdesk','tickets','transferir','Transferir de fila','atendente'],
+    ['helpdesk.filas','helpdesk','filas',null,'Filas','visualizador'],
+    ['helpdesk.filas.ver','helpdesk','filas','ver','Consultar filas','visualizador'],
+    ['sla','sla',null,null,'SLA e filas','gestor'],
+    ['sla.compliance','sla','compliance',null,'Compliance de SLA','gestor'],
+    ['sla.compliance.ver','sla','compliance','ver','Ver compliance','gestor'],
+    ['sla.definicoes','sla','definicoes',null,'Definições de SLA','gestor'],
+    ['sla.definicoes.ver','sla','definicoes','ver','Consultar definições','gestor'],
+    ['sla.definicoes.criar','sla','definicoes','criar','Criar definição','gestor'],
+    ['sla.definicoes.editar','sla','definicoes','editar','Editar definição','gestor'],
+    ['sla.definicoes.inativar','sla','definicoes','inativar','Ativar/inativar definição','gestor'],
+    ['sla.contratos','sla','contratos',null,'Contratos de SLA','gestor'],
+    ['sla.contratos.ver','sla','contratos','ver','Consultar contratos de SLA','gestor'],
+    ['sla.contratos.criar','sla','contratos','criar','Criar contrato de SLA','gestor'],
+    ['sla.contratos.editar','sla','contratos','editar','Editar contrato de SLA','gestor'],
+    ['sla.contratos.inativar','sla','contratos','inativar','Ativar/inativar contrato de SLA','gestor'],
+    ['sla.categorias','sla','categorias',null,'Categorias de ticket','gestor'],
+    ['sla.categorias.ver','sla','categorias','ver','Consultar categorias','gestor'],
+    ['sla.categorias.criar','sla','categorias','criar','Criar categoria','gestor'],
+    ['sla.categorias.editar','sla','categorias','editar','Editar categoria','gestor'],
+    ['sla.categorias.inativar','sla','categorias','inativar','Ativar/inativar categoria','gestor'],
+    ['sla.prioridades','sla','prioridades',null,'Prioridades','gestor'],
+    ['sla.prioridades.ver','sla','prioridades','ver','Consultar prioridades','gestor'],
+    ['sla.prioridades.criar','sla','prioridades','criar','Criar prioridade','gestor'],
+    ['sla.prioridades.editar','sla','prioridades','editar','Editar prioridade','gestor'],
+    ['sla.prioridades.inativar','sla','prioridades','inativar','Ativar/inativar prioridade','gestor'],
+    ['inventario','inventario',null,null,'Inventário','visualizador'],
+    ['inventario.ativos','inventario','ativos',null,'Ativos de TI','visualizador'],
+    ['inventario.ativos.ver','inventario','ativos','ver','Consultar ativos','visualizador'],
+    ['inventario.ativos.criar','inventario','ativos','criar','Cadastrar ativo','gestor'],
+    ['inventario.ativos.editar','inventario','ativos','editar','Editar ativo','gestor'],
+    ['inventario.ativos.mudar_status','inventario','ativos','mudar_status','Mover ciclo de vida','gestor'],
+    ['telefonia','telefonia',null,null,'Telefonia','visualizador'],
+    ['telefonia.linhas','telefonia','linhas',null,'Linhas telefônicas','visualizador'],
+    ['telefonia.linhas.ver','telefonia','linhas','ver','Consultar linhas','visualizador'],
+    ['telefonia.linhas.criar','telefonia','linhas','criar','Cadastrar linha','gestor'],
+    ['telefonia.linhas.editar','telefonia','linhas','editar','Editar linha','gestor'],
+    ['telefonia.linhas.mudar_status','telefonia','linhas','mudar_status','Suspender/reativar linha','gestor'],
+    ['clientes','clientes',null,null,'Clientes e filiais','gestor'],
+    ['clientes.grupos','clientes','grupos',null,'Grupos econômicos','gestor'],
+    ['clientes.grupos.ver','clientes','grupos','ver','Consultar clientes','gestor'],
+    ['clientes.grupos.criar','clientes','grupos','criar','Cadastrar cliente','gestor'],
+    ['clientes.grupos.editar','clientes','grupos','editar','Editar cliente','gestor'],
+    ['clientes.grupos.inativar','clientes','grupos','inativar','Mudar situação do cliente','gestor'],
+    ['clientes.filiais','clientes','filiais',null,'Filiais','gestor'],
+    ['clientes.filiais.ver','clientes','filiais','ver','Consultar filiais','gestor'],
+    ['clientes.filiais.criar','clientes','filiais','criar','Cadastrar filial','gestor'],
+    ['clientes.filiais.editar','clientes','filiais','editar','Editar filial','gestor'],
+    ['clientes.filiais.inativar','clientes','filiais','inativar','Ativar/inativar filial','gestor'],
+    ['fornecedores','fornecedores',null,null,'Fornecedores','gestor'],
+    ['fornecedores.cadastro','fornecedores','cadastro',null,'Fornecedores','gestor'],
+    ['fornecedores.cadastro.ver','fornecedores','cadastro','ver','Consultar fornecedores','gestor'],
+    ['fornecedores.cadastro.criar','fornecedores','cadastro','criar','Cadastrar fornecedor','gestor'],
+    ['fornecedores.cadastro.editar','fornecedores','cadastro','editar','Editar fornecedor','gestor'],
+    ['fornecedores.cadastro.inativar','fornecedores','cadastro','inativar','Ativar/inativar fornecedor','gestor'],
+    ['fornecedores.contratos','fornecedores','contratos',null,'Contratos de fornecedor','gestor'],
+    ['fornecedores.contratos.ver','fornecedores','contratos','ver','Consultar contratos','gestor'],
+    ['fornecedores.contratos.criar','fornecedores','contratos','criar','Cadastrar contrato','gestor'],
+    ['fornecedores.contratos.editar','fornecedores','contratos','editar','Editar contrato','gestor'],
+    ['fornecedores.contratos.inativar','fornecedores','contratos','inativar','Ativar/inativar contrato','gestor'],
+    ['mapas','mapas',null,null,'Mapas','visualizador'],
+    ['mapas.geolocalizacao','mapas','geolocalizacao',null,'Geolocalização de filiais','visualizador'],
+    ['mapas.geolocalizacao.ver','mapas','geolocalizacao','ver','Ver mapa','visualizador'],
+    ['mapas.geolocalizacao.editar_endereco','mapas','geolocalizacao','editar_endereco','Gravar endereço e coordenada','gestor'],
+    ['mapas.geolocalizacao.geocodificar','mapas','geolocalizacao','geocodificar','Rodar geocodificação','gestor'],
+    ['financeiro','financeiro',null,null,'Financeiro','gestor'],
+    ['financeiro.centros_custo','financeiro','centros_custo',null,'Centros de custo','gestor'],
+    ['financeiro.centros_custo.ver','financeiro','centros_custo','ver','Consultar centros de custo','gestor'],
+    ['financeiro.centros_custo.criar','financeiro','centros_custo','criar','Cadastrar centro de custo','gestor'],
+    ['financeiro.centros_custo.editar','financeiro','centros_custo','editar','Editar centro de custo','gestor'],
+    ['financeiro.centros_custo.inativar','financeiro','centros_custo','inativar','Ativar/inativar centro de custo','gestor'],
+    ['financeiro.contas_bancarias','financeiro','contas_bancarias',null,'Contas bancárias','gestor'],
+    ['financeiro.contas_bancarias.ver','financeiro','contas_bancarias','ver','Consultar contas e saldos','gestor'],
+    ['financeiro.contas_bancarias.criar','financeiro','contas_bancarias','criar','Cadastrar conta bancária','gestor'],
+    ['financeiro.contas_bancarias.editar','financeiro','contas_bancarias','editar','Editar conta bancária','gestor'],
+    ['financeiro.contas_bancarias.inativar','financeiro','contas_bancarias','inativar','Bloquear/reativar conta','gestor'],
+    ['financeiro.contas_bancarias.movimentar','financeiro','contas_bancarias','movimentar','Lançar entrada/saída','gestor'],
+    ['financeiro.contas_bancarias.transferir','financeiro','contas_bancarias','transferir','Transferir entre contas','gestor'],
+    ['usuarios','usuarios',null,null,'Usuários e acesso','gestor'],
+    ['usuarios.usuarios','usuarios','usuarios',null,'Usuários','gestor'],
+    ['usuarios.usuarios.ver','usuarios','usuarios','ver','Consultar usuários','gestor'],
+    ['usuarios.usuarios.criar','usuarios','usuarios','criar','Criar usuário','admin'],
+    ['usuarios.usuarios.editar_acesso','usuarios','usuarios','editar_acesso','Alterar papel e filiais','admin'],
+    ['usuarios.perfis','usuarios','perfis',null,'Perfis de acesso','admin'],
+    ['usuarios.perfis.ver','usuarios','perfis','ver','Consultar perfis','admin'],
+    ['usuarios.perfis.criar','usuarios','perfis','criar','Criar perfil','admin'],
+    ['usuarios.perfis.editar','usuarios','perfis','editar','Editar perfil e permissões','admin'],
+    ['usuarios.perfis.inativar','usuarios','perfis','inativar','Ativar/inativar perfil','admin'],
+    ['integracoes','integracoes',null,null,'Integrações','admin'],
+    ['integracoes.hub','integracoes','hub',null,'Hub de integrações','admin'],
+    ['integracoes.hub.ver','integracoes','hub','ver','Consultar integrações','admin'],
+    ['integracoes.hub.editar','integracoes','hub','editar','Ligar/desligar e configurar','admin'],
+    ['integracoes.hub.rotacionar_token','integracoes','hub','rotacionar_token','Rotacionar token de entrada','admin'],
+    ['tv','tv',null,null,'Painéis de TV','gestor'],
+    ['tv.tokens','tv','tokens',null,'Tokens de exibição','gestor'],
+    ['tv.tokens.ver','tv','tokens','ver','Consultar tokens','gestor'],
+    ['tv.tokens.criar','tv','tokens','criar','Gerar token','gestor'],
+    ['tv.tokens.revogar','tv','tokens','revogar','Revogar token','gestor'],
+  ];
+
+  const ROLE_RANK = { solicitante:1, visualizador:2, atendente:3, gestor:4, admin:5, super_admin:6 };
+  const MODULE_LABEL_P = {};
+  PERM_CATALOG.forEach(([k,m,s,a,label]) => { if (!s && !a) MODULE_LABEL_P[m] = label; });
+  const permEntry = k => PERM_CATALOG.find(p => p[0] === k);
+
+  /* Herança de NEGAÇÃO: a chave só vale se ela e todos os ancestrais estiverem
+     concedidos. Sem o módulo, nada dentro dele — mesma regra de
+     app.has_permission() na migração 0017 e de can() em src/lib/permissions.ts. */
+  function can(granted, key) {
+    const parts = key.split('.');
+    for (let i = 1; i <= parts.length; i++) {
+      if (!granted.has(parts.slice(0, i).join('.'))) return false;
+    }
+    return true;
+  }
+  function canAnyInModule(granted, module) {
+    if (!granted.has(module)) return false;
+    return PERM_CATALOG.some(([k,m,s,a]) => m === module && a && can(granted, k));
+  }
+
+  /* As MESMAS regras da função app.seed_system_access_profiles (0017:596-633).
+     Expressas como regra sobre o catálogo, não lista de chaves: listar 108
+     chaves nove vezes garantiria esquecer a próxima permissão em algum perfil. */
+  const SYSTEM_PROFILES = [
+    { key:'admin_cliente', name:'Admin do Cliente', baseRole:'admin',
+      desc:'Acesso total ao ambiente do cliente.', rule:() => true },
+    { key:'diretoria', name:'Diretoria', baseRole:'gestor',
+      desc:'Leitura de tudo que o papel gestor alcança, sem escrita.',
+      rule:(m,s,a) => !a || a === 'ver' },
+    { key:'gestor_ti', name:'Gestor de TI', baseRole:'gestor',
+      desc:'Operação de TI completa: helpdesk, inventário, telefonia, mapas, SLA e cadastros.',
+      rule:(m) => ['helpdesk','inventario','telefonia','mapas','sla','clientes','fornecedores','tv'].includes(m) },
+    { key:'operador_ti', name:'Operador de TI', baseRole:'atendente',
+      desc:'Atende ticket e consulta inventário e telefonia; não cadastra.',
+      rule:(m,s,a) => m === 'helpdesk'
+        || (['inventario','telefonia','mapas'].includes(m) && (!a || a === 'ver')) },
+    { key:'gestor_financeiro', name:'Gestor Financeiro', baseRole:'gestor',
+      desc:'Financeiro completo, mais fornecedores e leitura de clientes.',
+      rule:(m,s,a,k) => ['financeiro','fornecedores'].includes(m)
+        || (m === 'clientes' && (!a || a === 'ver'))
+        || ['sla','sla.compliance','sla.compliance.ver'].includes(k) },
+    { key:'operador_financeiro', name:'Operador Financeiro', baseRole:'gestor',
+      desc:'Lança movimentação bancária e consulta; não cadastra conta nem transfere.',
+      rule:(m,s,a) => m === 'financeiro' && (!a || a === 'ver' || a === 'movimentar') },
+    { key:'aprovador_financeiro', name:'Aprovador Financeiro', baseRole:'gestor',
+      desc:'Consulta o financeiro e aprova o que a alçada permitir.',
+      rule:(m,s,a) => m === 'financeiro' && (!a || a === 'ver') },
+    { key:'visualizador', name:'Visualizador', baseRole:'visualizador',
+      desc:'Somente leitura do que o papel visualizador alcança.',
+      rule:(m,s,a) => !a || a === 'ver' },
+    { key:'solicitante', name:'Solicitante', baseRole:'solicitante',
+      desc:'Abre e acompanha os próprios tickets; consulta o que o papel alcança.',
+      rule:() => true }
+  ];
+
+  function grantsFor(p) {
+    return PERM_CATALOG
+      .filter(([k,m,s,a,label,minRole]) =>
+        ROLE_RANK[minRole] <= ROLE_RANK[p.baseRole] && p.rule(m, s, a, k))
+      .map(([k]) => k);
+  }
+
+  function seedProfiles() {
+    return SYSTEM_PROFILES.map(p => ({
+      id:'ap-' + p.key, systemKey:p.key, name:p.name, description:p.desc,
+      baseRole:p.baseRole, isSystem:true, active:true, grants:grantsFor(p)
+    }));
+  }
+
+  /* Fecha a hierarquia para cima: marcar a ação sem marcar a tela e o módulo
+     nega a ação, então a interface concede os ancestrais junto — é o que
+     saveProfileGrants() faz no servidor. */
+  function withAncestors(keys) {
+    const out = new Set();
+    keys.forEach(k => {
+      const parts = k.split('.');
+      for (let i = 1; i <= parts.length; i++) out.add(parts.slice(0, i).join('.'));
+    });
+    return [...out];
+  }
+  /* Chave acima do teto do perfil é inalcançável: guardá-la seria configuração
+     que não produz efeito nenhum. */
+  const unreachableForRole = (keys, baseRole) =>
+    keys.filter(k => {
+      const e = permEntry(k);
+      return e && ROLE_RANK[e[5]] > ROLE_RANK[baseRole];
+    });
+
+  const profileById = id => db.accessProfiles.find(p => p.id === id);
+  function actingProfile() {
+    const me = db.users.find(u => u.id === db.session.userId) || db.users[0];
+    return profileById(me.accessProfileId) || db.accessProfiles[0];
+  }
+  /* Papel efetivo = o MENOR entre o papel do usuário e o teto do perfil. O
+     perfil restringe o RLS, nunca o eleva (app.effective_base_role()). */
+  function effectiveBaseRole() {
+    const me = db.users.find(u => u.id === db.session.userId) || db.users[0];
+    const p = actingProfile();
+    return ROLE_RANK[p.baseRole] < ROLE_RANK[me.role] ? p.baseRole : me.role;
+  }
+  let GRANTED = new Set();
+  function refreshGrants() { GRANTED = new Set(actingProfile().grants); }
+  const may = key => can(GRANTED, key);
+  /* Devolve o HTML só quando a permissão existe. Igual ao <Can> da aplicação, e
+     com a mesma ressalva: esconder o botão é conveniência de interface. A
+     barreira de verdade é a checagem no servidor — aqui, `guard()`. */
+  const ifMay = (key, html) => (may(key) ? html : '');
+  /* O equivalente de requirePermission() no topo de cada Server Action. */
+  function guard(key) {
+    if (may(key)) return true;
+    toast('Sem permissão para esta ação.');
+    return false;
+  }
 
   /* ===================== Dados iniciais ===================== */
   let uid = 1;
@@ -604,8 +845,20 @@
       { id:'u4', name:'Gestor de Serviços', email:'gestor@iaroffice.com.br', phone:'',
         role:'gestor', branchIds:[], active:true, isMe:false },
       { id:'u5', name:'Carla Dias', email:'carla.dias@meridiano.com.br', phone:'',
-        role:'solicitante', branchIds:['b1'], active:true, isMe:false }
+        role:'solicitante', branchIds:['b1'], active:true, isMe:false },
+      /* Diego e Elis têm o MESMO papel `gestor` e perfis de acesso diferentes.
+         É esse contraste que justifica o módulo de permissões existir: sem ele
+         os dois veriam exatamente a mesma coisa. */
+      { id:'u6', name:'Diego Moreira', email:'diego.financeiro@iaroffice.com.br', phone:'',
+        role:'gestor', branchIds:[], active:true, isMe:false },
+      { id:'u7', name:'Elis Prado', email:'elis.aprovadora@iaroffice.com.br', phone:'',
+        role:'gestor', branchIds:[], active:true, isMe:false }
     ];
+    /* Perfil por usuário, espelhando o backfill da migração 0017. */
+    const PERFIL_DE = { u1:'admin_cliente', u2:'operador_ti', u3:'operador_ti',
+                        u4:'gestor_ti', u5:'solicitante',
+                        u6:'operador_financeiro', u7:'aprovador_financeiro' };
+    users.forEach(u => { u.accessProfileId = 'ap-' + PERFIL_DE[u.id]; });
 
     // Endereço ESTRUTURADO: logradouro, número, bairro e CEP são os quatro
     // campos que o fluxo de geolocalização exige. Cada filial cobre um caso:
@@ -845,9 +1098,68 @@
       ]
     };
 
+    const accessProfiles = seedProfiles();
+
+    /* Três níveis em cadeia: hierarquia de um nível só nunca provaria que a
+       regra de profundidade existe. TI-MAO é centro de FILIAL — é o que permite
+       cobrar custo por unidade. */
+    const costCenters = [
+      { id:'cc1', parentId:null,  code:'TI',            name:'Tecnologia da Informação',
+        description:'Centro raiz de todo custo de TI.', branchId:null, active:true },
+      { id:'cc2', parentId:'cc1', code:'TI-INFRA',      name:'Infraestrutura',
+        description:'Conectividade, servidores e nuvem.', branchId:null, active:true },
+      { id:'cc3', parentId:'cc2', code:'TI-INFRA-LINK', name:'Links de internet',
+        description:'Terceiro nível — o limite que a regra permite.', branchId:null, active:true },
+      { id:'cc4', parentId:'cc1', code:'TI-MAO',        name:'TI — Filial Manaus',
+        description:'Custo de TI alocado na filial de Manaus.', branchId:'b3', active:true }
+    ];
+
+    const bankAccounts = [
+      { id:'ba1', name:'Operação', bankCode:'001', bankName:'Banco do Brasil',
+        agency:'1234-5', accountNumber:'98765-4', accountType:'checking',
+        holderName:'IAR Office Serviços de TI Ltda.', holderDocument:'12.345.678/0001-99',
+        openingBalance:42000, creditLimit:20000, status:'active', notes:'' },
+      { id:'ba2', name:'Reserva', bankCode:'077', bankName:'Banco Inter',
+        agency:'0001', accountNumber:'55443-2', accountType:'savings',
+        holderName:'IAR Office Serviços de TI Ltda.', holderDocument:'12.345.678/0001-99',
+        openingBalance:15000, creditLimit:0, status:'active', notes:'' },
+      { id:'ba3', name:'Antiga folha', bankCode:'341', bankName:'Itaú',
+        agency:'4444', accountNumber:'11111-1', accountType:'checking',
+        holderName:'IAR Office Serviços de TI Ltda.', holderDocument:'12.345.678/0001-99',
+        openingBalance:0, creditLimit:0, status:'blocked', notes:'Encerrada em 2025.' }
+    ];
+
+    const dOffset = d => new Date(now - d*864e5).toISOString().slice(0,10);
+    /* Uma movimentação fica sem conciliar de propósito: indicador que nasce
+       zerado não mostra o que ele mede. */
+    const movements = [
+      { id:'mv1', accountId:'ba1', direction:'in',  amount:38000, movedOn:dOffset(20),
+        description:'Recebimento contrato Meridiano — competência anterior',
+        costCenterId:null, transferGroup:null, reconciledAt:now-19*864e5, by:'u6' },
+      { id:'mv2', accountId:'ba1', direction:'out', amount:4800, movedOn:dOffset(12),
+        description:'Link de internet NL-LINK-001',
+        costCenterId:'cc3', transferGroup:null, reconciledAt:now-11*864e5, by:'u6' },
+      { id:'mv3', accountId:'ba1', direction:'out', amount:1900, movedOn:dOffset(5),
+        description:'Link satelital da filial de Manaus',
+        costCenterId:'cc4', transferGroup:null, reconciledAt:null, by:'u6' },
+      /* Transferência interna = DUAS linhas com o mesmo grupo. Meia
+         transferência é recusada no banco por constraint trigger. */
+      { id:'mv4', accountId:'ba1', direction:'out', amount:10000, movedOn:dOffset(3),
+        description:'Aporte na reserva', costCenterId:null,
+        transferGroup:'tg1', reconciledAt:null, by:'u6' },
+      { id:'mv5', accountId:'ba2', direction:'in',  amount:10000, movedOn:dOffset(3),
+        description:'Aporte recebido da conta Operação', costCenterId:null,
+        transferGroup:'tg1', reconciledAt:null, by:'u6' }
+    ];
+
     return { clients, branches, areas, queues, categories, priorities,
              slaContracts, slaDefs, suppliers, supplierContracts, users,
-             tickets, assets, lines, links, integration, nextTicket:1053, uid };
+             tickets, assets, lines, links, integration,
+             accessProfiles, costCenters, bankAccounts, movements,
+             /* Quem está usando o sistema agora. Trocar aqui é o que faz a
+                interface inteira mudar — é a prova que a camada funciona. */
+             session:{ userId:'u2' },
+             nextTicket:1053, uid };
   }
 
   let db;
@@ -862,7 +1174,12 @@
         if (p && Array.isArray(p.tickets) && p.tickets.length && Array.isArray(p.links)
             && Array.isArray(p.clients) && Array.isArray(p.priorities)
             && Array.isArray(p.categories) && Array.isArray(p.users)
-            && Array.isArray(p.suppliers) && Array.isArray(p.slaContracts)) {
+            && Array.isArray(p.suppliers) && Array.isArray(p.slaContracts)
+            // Sem perfil de acesso a checagem de permissão nega tudo e a
+            // ferramenta abriria sem menu nenhum, sem causa visível.
+            && Array.isArray(p.accessProfiles) && p.accessProfiles.length
+            && Array.isArray(p.costCenters) && Array.isArray(p.bankAccounts)
+            && Array.isArray(p.movements) && p.session) {
           uid = p.uid || 5000;
           return p;
         }
@@ -876,6 +1193,7 @@
     catch { toast('Não foi possível gravar — armazenamento do navegador cheio'); }
   }
   db = load();
+  refreshGrants();
 
   /* ===================== Consultas e regras ===================== */
   const branchById = id => db.branches.find(b => b.id === id);
@@ -1937,7 +2255,13 @@
     { n:14, t:'Categorias, prioridades e contratos de SLA', go:'sla',
       d:'O que antes era constante no código virou cadastro: categoria em dois níveis, prioridade com peso e cor, contrato de SLA por cliente e as definições. A prioridade nova já aparece ao abrir ticket.' },
     { n:15, t:'Criar atendente e trocar a própria senha', go:'usuarios',
-      d:'Conta nova com papel e filiais visíveis, e senha temporária mostrada uma única vez. Em Minha conta a pessoa troca essa senha — sem isso ficaria presa a ela.' }
+      d:'Conta nova com papel e filiais visíveis, e senha temporária mostrada uma única vez. Em Minha conta a pessoa troca essa senha — sem isso ficaria presa a ela.' },
+    { n:16, t:'Perfis de acesso e matriz de permissões', go:'perfis',
+      d:'Perfil de acesso por tenant, catálogo de 108 chaves em módulo → tela → ação, e a regra "negação herda, liberação é explícita". Use o seletor "Vendo como" no topo: o menu encolhe e os botões desaparecem conforme o perfil.' },
+    { n:17, t:'Centros de custo hierárquicos', go:'centros',
+      d:'Até 3 níveis, com o 4º e o ciclo recusados. Centro de filial permite cobrar custo de TI por unidade; centro global fica no tenant.' },
+    { n:18, t:'Contas bancárias, extrato e conciliação', go:'contas',
+      d:'Saldo derivado das movimentações — nunca gravado. Transferência interna gera as duas metades num só passo, e meia transferência é recusada.' },
   ];
 
   const views = {};
@@ -1950,11 +2274,22 @@
       gravado neste navegador — abra um ticket, mude um SLA, cadastre um cliente, crie um atendente.</p>
     </div></div>
 
+    <div class="alert" data-kind="ok" style="margin-bottom:.75rem">
+      <strong>Comece pelo seletor "Vendo como", no topo da página.</strong> Troque de
+      <em>Ana Souza — Operador de TI</em> para <em>Diego Moreira — Operador Financeiro</em>: o menu
+      passa de nove itens para cinco, e em Contas bancárias sobra só o botão "Lançar". Troque para
+      <em>Elis Prado — Aprovador Financeiro</em> e não sobra botão nenhum. Diego e Elis têm o
+      <strong>mesmo papel</strong> <span class="mono">gestor</span> — o que os separa é o perfil de
+      acesso, e é exatamente isso que o módulo de permissões existe para permitir.
+    </div>
+
     <div class="alert" data-kind="info" style="margin-bottom:1.25rem">
       <strong>Onde cada coisa vive.</strong> Esta página é a ferramenta navegável — os cartões
       01 a 11 são as melhorias especificadas em <span class="mono">docs/06-lacunas-e-roadmap.md</span>;
-      12 a 15 são os cadastros administrativos. O que vale em produção é o app Next.js em
-      <span class="mono">src/</span> sobre o Supabase; aqui os dados ficam apenas neste navegador.
+      12 a 15 são os cadastros administrativos; 16 a 18 são a camada de permissão e a base do
+      financeiro de <span class="mono">docs/07-financeiro-e-permissoes.md</span>. O que vale em
+      produção é o app Next.js em <span class="mono">src/</span> sobre o Supabase; aqui os dados
+      ficam apenas neste navegador.
     </div>
 
     <div class="news">${IMPROVEMENTS.map(i => `
@@ -2820,6 +3155,13 @@
         <p class="lede">Módulo novo. Contrato, banda, IP, CPE e monitoração ON/OFF por filial.
         Link sem host monitorado aparece como <em>não monitorado</em> — nunca como fora do ar.</p></div>
         <button type="button" class="btn" id="link-new">Novo link</button></div>
+      <div class="alert" data-kind="warn">
+        <strong>Esta tela ainda não tem permissão própria</strong> — ela aparece para qualquer
+        perfil, inclusive os do financeiro. Não é falha da camada de permissão: a tela existe no
+        protótipo e a página equivalente ainda não existe na aplicação, então não há chave no
+        catálogo. Cadastrar a chave antes da tela produziria configuração que não governa nada, que
+        é justamente o defeito corrigido nesta rodada em seis outras chaves.
+      </div>
       ${viewToggle(linkMode,'links')}
       <div class="tiles">
         ${tile('Links na seleção', list.length)}
@@ -3167,6 +3509,418 @@
     const missing = REQUIRED_TARGETS.filter(t =>
       !db.integration.mappings.some(m => m.target === t && (m.source || m.def)));
     return missing;
+  }
+
+  /* ===================== Perfis de acesso (0017) ===================== */
+  const ROLE_LABEL_P = { solicitante:'Solicitante', visualizador:'Visualizador',
+    atendente:'Atendente', gestor:'Gestor', admin:'Admin', super_admin:'Super admin' };
+
+  /* Árvore módulo → tela → ação, montada do catálogo plano. Declarar a árvore à
+     mão significaria declarar cada chave duas vezes. */
+  function catalogTree() {
+    const mods = [];
+    PERM_CATALOG.forEach(([k,m,s,a,label,role]) => {
+      if (!s) { mods.push({ key:k, module:m, label, minRole:role, screens:[] }); return; }
+      const mod = mods.find(x => x.module === m);
+      if (!mod) return;
+      if (!a) { mod.screens.push({ key:k, screen:s, label, minRole:role, actions:[] }); return; }
+      const scr = mod.screens.find(x => x.screen === s);
+      if (scr) scr.actions.push({ key:k, action:a, label, minRole:role });
+    });
+    return mods;
+  }
+
+  views.perfis = () => {
+    const podeEditar = may('usuarios.perfis.editar');
+    const tree = catalogTree();
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Acesso</p><h1>Perfis de acesso</h1>
+        <p class="lede">Cada perfil declara o papel que ele implica e marca, chave por chave, o que
+        alcança. A regra é <strong>negação herda, liberação é explícita</strong>: sem o módulo, nada
+        dentro dele; com o módulo, cada tela e ação ainda precisa ser marcada.</p></div>
+        ${ifMay('usuarios.perfis.criar',
+          `<button type="button" class="btn" id="profile-new">Novo perfil</button>`)}</div>
+
+      <div class="alert" data-kind="info">
+        Perfil do sistema é <strong>atribuível e não editável</strong> — mexer nele quebraria o
+        ambiente de todo mundo que o usa. Para variar, duplique e edite a cópia.
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Perfil</th><th>Papel implicado</th><th>Chaves concedidas</th>
+          <th>Tipo</th><th></th></tr></thead>
+        <tbody>${db.accessProfiles.map(p => {
+          const acoes = p.grants.filter(k => permEntry(k) && permEntry(k)[3]).length;
+          return `<tr>
+            <td><span class="strong">${esc(p.name)}</span>
+              <p class="dim" style="margin:.15rem 0 0">${esc(p.description || '')}</p></td>
+            <td>${pill(ROLE_LABEL_P[p.baseRole] || p.baseRole, 'neutral')}</td>
+            <td class="mono">${acoes} <span class="dim">de ${
+              PERM_CATALOG.filter(e => e[3]).length}</span></td>
+            <td>${p.isSystem ? pill('Sistema','info') : pill('Personalizado','ok')}</td>
+            <td class="row-actions">
+              <button type="button" class="btn btn-sm" data-variant="ghost"
+                data-profile-view="${p.id}">Ver matriz</button>
+              ${podeEditar && !p.isSystem
+                ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                     data-profile-edit="${p.id}">Editar</button>` : ''}
+              ${podeEditar
+                ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                     data-profile-clone="${p.id}">Duplicar</button>` : ''}
+            </td></tr>`;
+        }).join('')}</tbody></table></div>
+
+      <div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>Quem usa qual perfil</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">Diego e Elis têm o mesmo papel
+        <span class="mono">gestor</span> e perfis diferentes. É esse contraste que o módulo de
+        permissões existe para permitir — o papel sozinho não distinguiria os dois.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Pessoa</th><th>Papel</th><th>Perfil de acesso</th>
+            <th>Papel efetivo</th></tr></thead>
+          <tbody>${db.users.filter(u => u.active).map(u => {
+            const p = profileById(u.accessProfileId);
+            const efetivo = p && ROLE_RANK[p.baseRole] < ROLE_RANK[u.role] ? p.baseRole : u.role;
+            return `<tr>
+              <td class="strong">${esc(u.name)}</td>
+              <td class="muted">${esc(ROLE_LABEL_P[u.role] || u.role)}</td>
+              <td>${p ? esc(p.name) : '<span class="dim">sem perfil</span>'}</td>
+              <td>${pill(ROLE_LABEL_P[efetivo] || efetivo, efetivo === u.role ? 'neutral' : 'warn')}
+                ${efetivo !== u.role ? '<span class="dim">perfil restringe</span>' : ''}</td>
+            </tr>`;
+          }).join('')}</tbody></table></div>
+        <p class="dim" style="margin:.8rem 0 0">O papel efetivo é o <strong>menor</strong> entre o
+        papel e o teto do perfil. O perfil só restringe — nunca eleva privilégio de RLS.</p>
+      </div></div>
+
+      <div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>Catálogo de permissões</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">${PERM_CATALOG.length} entradas:
+        ${tree.length} módulos, ${tree.reduce((n,m)=>n+m.screens.length,0)} telas e
+        ${PERM_CATALOG.filter(e=>e[3]).length} ações. O catálogo é global — descreve a superfície
+        da aplicação, que é a mesma para todo tenant. O que é por tenant é a concessão.</p>
+        ${tree.map(m => `<details>
+          <summary><span class="strong">${esc(m.label)}</span>
+            <span class="dim"> · ${m.screens.length} tela(s)</span></summary>
+          <div style="padding:.4rem 0 .6rem 1rem">
+            ${m.screens.map(scr => `<p style="margin:.3rem 0">
+              <span class="strong">${esc(scr.label)}</span>
+              <span class="mono dim"> ${esc(scr.key)}</span><br>
+              ${scr.actions.map(a =>
+                `<span class="mono dim" style="font-size:.72rem">${esc(a.action)}</span>`
+              ).join(' · ')}</p>`).join('')}
+          </div></details>`).join('')}
+      </div></div>`;
+  };
+
+  function profileMatrixModal(id) {
+    const p = profileById(id);
+    if (!p) return;
+    const granted = new Set(p.grants);
+    const editavel = may('usuarios.perfis.editar') && !p.isSystem;
+    modal(`${p.isSystem ? 'Matriz de' : 'Editar'} ${p.name}`, `
+      <input type="hidden" id="pm-id" value="${p.id}">
+      <p class="dim" style="margin:0 0 .6rem">Papel implicado:
+        <strong>${esc(ROLE_LABEL_P[p.baseRole] || p.baseRole)}</strong>. Chave acima desse teto
+        aparece esmaecida e não pode ser concedida — seria configuração sem efeito nenhum.
+        ${p.isSystem ? '<br><strong>Perfil do sistema: somente leitura.</strong>' : ''}</p>
+      ${catalogTree().map(m => {
+        const modOn = granted.has(m.key);
+        return `<details${modOn ? ' open' : ''}>
+          <summary><label style="display:inline-flex;gap:.4rem;align-items:center">
+            <input type="checkbox" data-perm="${m.key}"${modOn?' checked':''}${
+              editavel?'':' disabled'}>
+            <span class="strong">${esc(m.label)}</span></label></summary>
+          <div style="padding:.3rem 0 .5rem 1.2rem">
+            ${m.screens.map(scr => {
+              const acima = ROLE_RANK[scr.minRole] > ROLE_RANK[p.baseRole];
+              return `<div style="margin:.35rem 0">
+                <label style="display:inline-flex;gap:.4rem;align-items:center${
+                  acima?';opacity:.45':''}">
+                  <input type="checkbox" data-perm="${scr.key}"${
+                    granted.has(scr.key)?' checked':''}${(editavel && !acima)?'':' disabled'}>
+                  <span>${esc(scr.label)}</span></label>
+                <div style="padding-left:1.4rem;display:flex;flex-wrap:wrap;gap:.1rem .9rem">
+                  ${scr.actions.map(a => {
+                    const alto = ROLE_RANK[a.minRole] > ROLE_RANK[p.baseRole];
+                    return `<label style="display:inline-flex;gap:.35rem;align-items:center;
+                      font-size:.8rem${alto?';opacity:.45':''}">
+                      <input type="checkbox" data-perm="${a.key}"${
+                        granted.has(a.key)?' checked':''}${(editavel && !alto)?'':' disabled'}>
+                      ${esc(a.label)}</label>`;
+                  }).join('')}
+                </div></div>`;
+            }).join('')}
+          </div></details>`;
+      }).join('')}`, editavel ? { save:'Salvar concessões' } : { noFooter:true });
+  }
+
+  /* ===================== Centros de custo (0018) ===================== */
+  const costCenterById = id => db.costCenters.find(c => c.id === id);
+  const costCenterDepth = c => {
+    let d = 1, cur = c;
+    while (cur && cur.parentId) { cur = costCenterById(cur.parentId); d++; if (d > 9) break; }
+    return d;
+  };
+  const costCenterPath = c => {
+    const parts = []; let cur = c, n = 0;
+    while (cur && n++ < 9) { parts.unshift(cur.code); cur = cur.parentId ? costCenterById(cur.parentId) : null; }
+    return parts.join(' › ');
+  };
+  const movementsOfCostCenter = id => db.movements.filter(m => m.costCenterId === id);
+
+  views.centros = () => {
+    const ordered = [...db.costCenters].sort((a,b) => costCenterPath(a).localeCompare(costCenterPath(b)));
+    const noTerceiro = ordered.filter(c => costCenterDepth(c) === 3).length;
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Financeiro</p><h1>Centros de custo</h1>
+        <p class="lede">Dimensão de rateio de todo lançamento financeiro. A hierarquia vai até
+        <strong>3 níveis</strong> — o quarto é recusado no banco, e o ciclo também.</p></div>
+        ${ifMay('financeiro.centros_custo.criar',
+          `<button type="button" class="btn" id="cc-new">Novo centro</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Centros ativos', db.costCenters.filter(c => c.active).length)}
+        ${tile('No 3º nível', noTerceiro, 'limite da hierarquia', noTerceiro?'warn':'neutral')}
+        ${tile('De filial', db.costCenters.filter(c => c.branchId).length,
+               'custo cobrável por unidade')}
+        ${tile('Sem lançamento', db.costCenters.filter(c => !movementsOfCostCenter(c.id).length).length,
+               'nunca usados no extrato')}
+      </div>
+
+      ${ordered.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Código</th><th>Nome</th><th>Nível</th><th>Filial</th>
+          <th>Lançamentos</th><th>Situação</th><th></th></tr></thead>
+        <tbody>${ordered.map(c => {
+          const d = costCenterDepth(c);
+          const mv = movementsOfCostCenter(c.id);
+          const total = mv.reduce((s,m) => s + (m.direction === 'out' ? m.amount : -m.amount), 0);
+          return `<tr>
+            <td class="mono" style="padding-left:${(d-1)*1.1 + 0.6}rem">${esc(c.code)}</td>
+            <td><span class="strong">${esc(c.name)}</span>
+              ${c.description?`<p class="dim" style="margin:.15rem 0 0">${esc(c.description)}</p>`:''}</td>
+            <td>${pill('nível ' + d, d === 3 ? 'warn' : 'neutral')}</td>
+            <td class="muted">${c.branchId ? esc(branchName(c.branchId)) : '<span class="dim">global</span>'}</td>
+            <td class="mono">${mv.length ? `${mv.length} · ${brl(total)}` : '—'}</td>
+            <td>${c.active ? pill('Ativo','ok') : pill('Inativo','neutral')}</td>
+            <td class="row-actions">${ifMay('financeiro.centros_custo.editar',
+              `<button type="button" class="btn btn-sm" data-variant="ghost"
+                 data-cc-edit="${c.id}">Editar</button>`)}</td></tr>`;
+        }).join('')}</tbody></table></div>`
+        : `<div class="alert" data-kind="info">Nenhum centro de custo cadastrado. Sem centro não há
+           como saber a que área um gasto pertence.</div>`}`;
+  };
+
+  function costCenterModal(id) {
+    const c = id ? costCenterById(id) : null;
+    /* Só entra na lista de pais quem tem profundidade < 3: oferecer um pai de
+       nível 3 seria oferecer um erro que o banco vai recusar. */
+    const pais = db.costCenters.filter(x => costCenterDepth(x) < 3 && (!c || x.id !== c.id));
+    modal(c ? `Editar ${c.code}` : 'Novo centro de custo', `
+      <input type="hidden" id="ccm-id" value="${c?c.id:''}">
+      <div class="form-grid">
+        <div class="field"><label for="ccm-code">Código <span class="req">*</span></label>
+          <input type="text" id="ccm-code" maxlength="30" value="${c?esc(c.code):''}"
+            placeholder="TI-INFRA">
+          <span class="dim">Único por tenant, sem diferenciar maiúsculas.</span></div>
+        <div class="field"><label for="ccm-name">Nome <span class="req">*</span></label>
+          <input type="text" id="ccm-name" maxlength="120" value="${c?esc(c.name):''}"></div>
+        <div class="field"><label for="ccm-parent">Centro pai</label>
+          <select id="ccm-parent"><option value="">Nenhum (raiz)</option>
+            ${pais.map(x => `<option value="${x.id}"${c&&c.parentId===x.id?' selected':''}>${
+              esc(costCenterPath(x))} — ${esc(x.name)}</option>`).join('')}</select>
+          <span class="dim">Só aparecem centros de nível 1 e 2 — o 4º nível é recusado.</span></div>
+        <div class="field"><label for="ccm-branch">Filial</label>
+          <select id="ccm-branch"><option value="">Global do tenant</option>
+            ${db.branches.map(b => `<option value="${b.id}"${c&&c.branchId===b.id?' selected':''}>${
+              esc(b.name)}</option>`).join('')}</select></div>
+        <div class="field form-full"><label for="ccm-desc">Descrição</label>
+          <input type="text" id="ccm-desc" maxlength="200" value="${c?esc(c.description||''):''}"></div>
+        <div class="field form-full"><label style="display:inline-flex;gap:.4rem;align-items:center">
+          <input type="checkbox" id="ccm-active"${!c||c.active?' checked':''}> Ativo</label></div>
+        <div class="form-full" id="ccm-msg"></div>
+      </div>`, { save: c ? 'Salvar' : 'Cadastrar' });
+  }
+
+  /* ===================== Contas bancárias (0018) ===================== */
+  const ACCOUNT_TYPE = { checking:'Corrente', savings:'Poupança',
+    payment:'Pagamento', investment:'Investimento' };
+  const ACCOUNT_STATUS = { active:{label:'Ativa',tone:'ok'},
+    inactive:{label:'Inativa',tone:'neutral'}, blocked:{label:'Bloqueada',tone:'breach'} };
+  const accountById = id => db.bankAccounts.find(a => a.id === id);
+  const movementsOfAccount = id => db.movements.filter(m => m.accountId === id);
+
+  /* O saldo é DERIVADO das movimentações, nunca gravado — igual à view
+     vw_bank_account_balances. Saldo materializado divergiria do extrato no
+     primeiro arredondamento, e aí não se sabe qual dos dois está certo. */
+  function accountBalance(a) {
+    const mv = movementsOfAccount(a.id);
+    const totalIn = mv.filter(m => m.direction === 'in').reduce((s,m) => s + m.amount, 0);
+    const totalOut = mv.filter(m => m.direction === 'out').reduce((s,m) => s + m.amount, 0);
+    return { totalIn, totalOut, current: a.openingBalance + totalIn - totalOut,
+             unreconciled: mv.filter(m => !m.reconciledAt).length };
+  }
+
+  views.contas = () => {
+    const podeMovimentar = may('financeiro.contas_bancarias.movimentar');
+    const saldos = db.bankAccounts.map(a => ({ a, b:accountBalance(a) }));
+    const ativas = saldos.filter(s => s.a.status === 'active');
+    const total = ativas.reduce((s,x) => s + x.b.current, 0);
+    const naoConc = saldos.reduce((s,x) => s + x.b.unreconciled, 0);
+    const estouradas = saldos.filter(s => s.b.current < -s.a.creditLimit);
+    const extrato = [...db.movements].sort((x,y) => y.movedOn.localeCompare(x.movedOn)).slice(0,40);
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Financeiro</p><h1>Contas bancárias</h1>
+        <p class="lede">Saldo, extrato e conciliação. O saldo é <strong>derivado</strong> das
+        movimentações — nunca gravado — para não divergir do extrato no primeiro
+        arredondamento.</p></div>
+        <div class="row-actions">
+          ${ifMay('financeiro.contas_bancarias.criar',
+            `<button type="button" class="btn" id="ba-new">Nova conta</button>`)}
+          ${ifMay('financeiro.contas_bancarias.movimentar',
+            `<button type="button" class="btn" data-variant="ghost" id="mv-new">Lançar</button>`)}
+          ${ifMay('financeiro.contas_bancarias.transferir',
+            `<button type="button" class="btn" data-variant="ghost" id="tr-new">Transferir</button>`)}
+        </div></div>
+
+      <div class="tiles">
+        ${tile('Contas ativas', ativas.length)}
+        ${tile('Saldo consolidado', brl(total), 'soma das contas ativas', total < 0 ? 'breach' : 'ok')}
+        ${tile('Não conciliadas', naoConc, 'sem baixa no extrato', naoConc ? 'warn' : 'neutral')}
+        ${tile('Acima do limite', estouradas.length, 'saldo abaixo do limite de crédito',
+               estouradas.length ? 'crit' : 'neutral')}
+      </div>
+
+      ${saldos.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Conta</th><th>Tipo</th><th>Saldo inicial</th><th>Entradas</th>
+          <th>Saídas</th><th>Saldo atual</th><th>Situação</th><th></th></tr></thead>
+        <tbody>${saldos.map(({a,b}) => `<tr>
+          <td><span class="strong">${esc(a.name)}</span>
+            <p class="dim" style="margin:.15rem 0 0">${esc(a.bankName)}${
+              a.accountNumber?` · ${esc(a.agency||'')}/${esc(a.accountNumber)}`:''}</p></td>
+          <td class="muted">${esc(ACCOUNT_TYPE[a.accountType] || a.accountType)}</td>
+          <td class="mono">${brl(a.openingBalance)}</td>
+          <td class="mono" style="color:var(--ok-ink)">${brl(b.totalIn)}</td>
+          <td class="mono" style="color:var(--breach-ink)">${brl(b.totalOut)}</td>
+          <td class="mono strong">${brl(b.current)}${
+            b.current < -a.creditLimit ? ' <span class="dim">acima do limite</span>' : ''}</td>
+          <td>${pill((ACCOUNT_STATUS[a.status]||ACCOUNT_STATUS.active).label,
+                     (ACCOUNT_STATUS[a.status]||ACCOUNT_STATUS.active).tone)}</td>
+          <td class="row-actions">${ifMay('financeiro.contas_bancarias.editar',
+            `<button type="button" class="btn btn-sm" data-variant="ghost"
+               data-ba-edit="${a.id}">Editar</button>`)}</td></tr>`).join('')}</tbody></table></div>`
+        : `<div class="alert" data-kind="info">Nenhuma conta cadastrada. Sem conta não há como
+           registrar de onde o dinheiro sai nem para onde entra.</div>`}
+
+      ${extrato.length ? `<div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>Extrato consolidado</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">Transferência aparece duas vezes — uma saída e
+        uma entrada — porque é o mesmo fato em duas contas.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Centro de custo</th>
+            <th>Valor</th><th>Conciliação</th></tr></thead>
+          <tbody>${extrato.map(m => {
+            const cc = m.costCenterId ? costCenterById(m.costCenterId) : null;
+            return `<tr>
+              <td class="mono muted">${esc(m.movedOn.split('-').reverse().join('/'))}</td>
+              <td class="muted">${esc(accountById(m.accountId)?.name || '—')}</td>
+              <td>${esc(m.description)}${m.transferGroup?' '+pill('transferência','info'):''}</td>
+              <td class="mono dim">${cc ? esc(cc.code) : '—'}</td>
+              <td class="mono strong" style="color:var(--${m.direction==='in'?'ok':'breach'}-ink)">
+                ${m.direction === 'in' ? '+' : '−'} ${brl(m.amount)}</td>
+              <td>${podeMovimentar
+                ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                     data-mv-toggle="${m.id}">${m.reconciledAt?'Desfazer':'Conciliar'}</button>`
+                : (m.reconciledAt ? pill('Conciliada','ok') : pill('Pendente','warn'))}</td>
+            </tr>`;
+          }).join('')}</tbody></table></div>
+      </div></div>` : ''}`;
+  };
+
+  function accountModal(id) {
+    const a = id ? accountById(id) : null;
+    modal(a ? `Editar ${a.name}` : 'Nova conta bancária', `
+      <input type="hidden" id="bam-id" value="${a?a.id:''}">
+      <div class="form-grid">
+        <div class="field form-full"><label for="bam-name">Nome da conta <span class="req">*</span></label>
+          <input type="text" id="bam-name" maxlength="80" value="${a?esc(a.name):''}"
+            placeholder="Operação">
+          <span class="dim">Como a equipe chama esta conta.</span></div>
+        <div class="field"><label for="bam-bank">Banco <span class="req">*</span></label>
+          <input type="text" id="bam-bank" maxlength="80" value="${a?esc(a.bankName):''}"></div>
+        <div class="field"><label for="bam-code">Código do banco</label>
+          <input type="text" id="bam-code" maxlength="10" value="${a?esc(a.bankCode||''):''}"
+            placeholder="001"></div>
+        <div class="field"><label for="bam-agency">Agência</label>
+          <input type="text" id="bam-agency" maxlength="20" value="${a?esc(a.agency||''):''}"></div>
+        <div class="field"><label for="bam-number">Conta</label>
+          <input type="text" id="bam-number" maxlength="30" value="${a?esc(a.accountNumber||''):''}"></div>
+        <div class="field"><label for="bam-type">Tipo <span class="req">*</span></label>
+          <select id="bam-type">${Object.entries(ACCOUNT_TYPE).map(([v,l]) =>
+            `<option value="${v}"${a&&a.accountType===v?' selected':''}>${esc(l)}</option>`).join('')}</select></div>
+        <div class="field"><label for="bam-status">Situação <span class="req">*</span></label>
+          <select id="bam-status">${Object.entries(ACCOUNT_STATUS).map(([v,o]) =>
+            `<option value="${v}"${a&&a.status===v?' selected':''}>${esc(o.label)}</option>`).join('')}</select></div>
+        <div class="field"><label for="bam-opening">Saldo inicial (R$)</label>
+          <input type="number" id="bam-opening" step="0.01" value="${a?a.openingBalance:0}">
+          <span class="dim">Ponto de partida. O saldo corrente é calculado.</span></div>
+        <div class="field"><label for="bam-limit">Limite de crédito (R$)</label>
+          <input type="number" id="bam-limit" step="0.01" min="0" value="${a?a.creditLimit:0}"></div>
+        <div class="field form-full"><label for="bam-holder">Titular</label>
+          <input type="text" id="bam-holder" maxlength="150" value="${a?esc(a.holderName||''):''}"></div>
+        <div class="form-full" id="bam-msg"></div>
+      </div>`, { save: a ? 'Salvar' : 'Cadastrar' });
+  }
+
+  function movementModal() {
+    const hoje = new Date().toISOString().slice(0,10);
+    modal('Lançar movimentação', `
+      <div class="form-grid">
+        <div class="field form-full"><label for="mvm-account">Conta <span class="req">*</span></label>
+          <select id="mvm-account">${db.bankAccounts.filter(a => a.status === 'active').map(a =>
+            `<option value="${a.id}">${esc(a.name)} — ${esc(a.bankName)}</option>`).join('')}</select></div>
+        <div class="field"><label for="mvm-direction">Sentido <span class="req">*</span></label>
+          <select id="mvm-direction"><option value="out">Saída</option>
+            <option value="in">Entrada</option></select></div>
+        <div class="field"><label for="mvm-amount">Valor (R$) <span class="req">*</span></label>
+          <input type="number" id="mvm-amount" step="0.01" min="0.01"></div>
+        <div class="field"><label for="mvm-date">Data <span class="req">*</span></label>
+          <input type="date" id="mvm-date" value="${hoje}"></div>
+        <div class="field"><label for="mvm-cc">Centro de custo</label>
+          <select id="mvm-cc"><option value="">Não informado</option>
+            ${db.costCenters.filter(c => c.active).map(c =>
+              `<option value="${c.id}">${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="field form-full"><label for="mvm-desc">Descrição <span class="req">*</span></label>
+          <input type="text" id="mvm-desc" maxlength="200"></div>
+        <div class="form-full" id="mvm-msg"></div>
+      </div>`, { save:'Lançar' });
+  }
+
+  function transferModal() {
+    const hoje = new Date().toISOString().slice(0,10);
+    const ativas = db.bankAccounts.filter(a => a.status === 'active');
+    modal('Transferir entre contas', `
+      <div class="form-grid">
+        <div class="field"><label for="trm-from">Origem <span class="req">*</span></label>
+          <select id="trm-from">${ativas.map(a =>
+            `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="trm-to">Destino <span class="req">*</span></label>
+          <select id="trm-to">${ativas.map((a,i) =>
+            `<option value="${a.id}"${i===1?' selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="trm-amount">Valor (R$) <span class="req">*</span></label>
+          <input type="number" id="trm-amount" step="0.01" min="0.01"></div>
+        <div class="field"><label for="trm-date">Data <span class="req">*</span></label>
+          <input type="date" id="trm-date" value="${hoje}"></div>
+        <div class="field form-full"><label for="trm-desc">Descrição <span class="req">*</span></label>
+          <input type="text" id="trm-desc" maxlength="200"></div>
+        <div class="form-full"><p class="dim">Gera <strong>duas</strong> movimentações ligadas: uma
+        saída na origem e uma entrada no destino, de mesmo valor. O banco recusa transferência com
+        uma só metade.</p></div>
+        <div class="form-full" id="trm-msg"></div>
+      </div>`, { save:'Registrar transferência' });
   }
 
   let intTab = 'config';
@@ -4065,25 +4819,67 @@
   }
 
   /* ===================== Navegação ===================== */
+  /* [view, rótulo, é novo, permissão de CONSULTA].
+     `null` = sem permissão de módulo, visível para qualquer sessão. A ordem é a
+     do menu E a de preferência de destino — mesma decisão de
+     src/lib/navigation.ts, tomada lá depois de um laço de redirect. */
   const NAV = [
-    ['novidades','Novidades',false], ['painel','Painel',false], ['tickets','Tickets',false],
-    ['novo','Abrir ticket',false], ['sla','SLA e filas',false], ['inventario','Inventário',false],
-    ['telefonia','Telefonia',false], ['links','Links de Internet',false],
-    ['clientes','Clientes e filiais',true], ['fornecedores','Fornecedores',true],
-    ['usuarios','Usuários',true], ['integracoes','Integrações',false], ['mapas','Mapas',false],
-    ['conta','Minha conta',true]
+    ['novidades','Novidades',false,null],
+    ['painel','Painel',false,'helpdesk.painel.ver'],
+    ['tickets','Tickets',false,'helpdesk.tickets.ver'],
+    ['novo','Abrir ticket',false,'helpdesk.tickets.criar'],
+    ['sla','SLA e filas',false,'sla.compliance.ver'],
+    ['inventario','Inventário',false,'inventario.ativos.ver'],
+    ['telefonia','Telefonia',false,'telefonia.linhas.ver'],
+    /* Links de Internet existe no protótipo e NÃO existe no PERMISSION_CATALOG:
+       a tela da aplicação ainda não foi construída. Fica sem permissão em vez de
+       ganhar uma chave inventada — chave que não governa tela é configuração
+       morta, que foi exatamente o defeito corrigido nesta rodada. */
+    ['links','Links de Internet',false,null],
+    ['clientes','Clientes e filiais',false,'clientes.grupos.ver'],
+    ['fornecedores','Fornecedores',false,'fornecedores.cadastro.ver'],
+    ['centros','Centros de custo',true,'financeiro.centros_custo.ver'],
+    ['contas','Contas bancárias',true,'financeiro.contas_bancarias.ver'],
+    ['usuarios','Usuários',false,'usuarios.usuarios.ver'],
+    ['perfis','Perfis de acesso',true,'usuarios.perfis.ver'],
+    ['integracoes','Integrações',false,'integracoes.hub.ver'],
+    ['mapas','Mapas',false,'mapas.geolocalizacao.ver'],
+    /* Trocar a própria senha não é permissão de módulo, é direito de quem tem
+       conta — e por isso é o último destino seguro. */
+    ['conta','Minha conta',false,null]
   ];
+  const visibleNav = () => NAV.filter(([k,l,n,perm]) => perm === null || may(perm));
+  /* Primeira tela que ESTA sessão alcança. Nunca devolve tela negada, que é o
+     que quebra o laço de redirect. */
+  function landingView() {
+    const first = visibleNav().find(([k,l,n,perm]) => perm !== null);
+    return first ? first[0] : 'conta';
+  }
   let current = 'novidades';
   const wallVisible = () => !document.getElementById('wall-stage').classList.contains('hidden');
 
   function renderNav() {
-    document.getElementById('nav').innerHTML = NAV.map(([k,l,isNew]) =>
+    document.getElementById('nav').innerHTML = visibleNav().map(([k,l,isNew]) =>
       `<button type="button" data-view="${k}"${current===k?' aria-current="page"':''}>
         ${esc(l)}${isNew?'<span class="tag-new">novo</span>':''}</button>`).join('');
   }
+  function renderWhoami() {
+    const sel = document.getElementById('acting-user');
+    if (!sel) return;
+    sel.innerHTML = db.users.filter(u => u.active).map(u => {
+      const p = profileById(u.accessProfileId);
+      return `<option value="${u.id}"${u.id===db.session.userId?' selected':''}>${
+        esc(u.name)} — ${esc(p ? p.name : 'sem perfil')}</option>`;
+    }).join('');
+  }
   function render() {
+    /* A tela atual pode ter deixado de ser permitida — troca de perfil é o caso
+       óbvio. Cair aqui em vez de renderizar é o `requireScreen()` do protótipo. */
+    const item = NAV.find(([k]) => k === current);
+    if (item && item[3] !== null && !may(item[3])) current = landingView();
     document.getElementById('view').innerHTML = (views[current] || views.novidades)();
     renderNav();
+    renderWhoami();
   }
   function refresh() {
     if (wallVisible()) renderWall(); else render();
@@ -4154,6 +4950,18 @@
   /* ===================== Eventos ===================== */
   document.getElementById('mode-console').addEventListener('click', () => setMode(false));
   document.getElementById('mode-wall').addEventListener('click', () => setMode(true));
+  /* Trocar a pessoa da sessão recarrega as concessões e re-renderiza. É o
+     controle que torna a camada de permissão observável sem um Supabase: o menu
+     encolhe, os botões desaparecem e a tela negada cai no destino permitido. */
+  document.getElementById('acting-user').addEventListener('change', e => {
+    db.session.userId = e.target.value;
+    refreshGrants();
+    save();
+    const p = actingProfile();
+    render();
+    toast(`Vendo como ${db.users.find(u => u.id === db.session.userId).name} — perfil ${p.name}`);
+  });
+
   document.getElementById('theme-toggle').addEventListener('click', () => {
     const r = document.documentElement;
     const dark = r.getAttribute('data-theme') === 'dark' ||
@@ -4162,7 +4970,7 @@
   });
   document.getElementById('reset-btn').addEventListener('click', () => {
     if (!confirm('Restaurar os dados de exemplo? Tudo que você criou será apagado.')) return;
-    uid = 1; db = seed(); save(); closeDrawer(); closeModal(); selected.clear(); refresh();
+    uid = 1; db = seed(); refreshGrants(); save(); closeDrawer(); closeModal(); selected.clear(); refresh();
     toast('Dados de exemplo restaurados');
   });
   document.getElementById('wall-full').addEventListener('click', () => {
@@ -4392,6 +5200,52 @@
     const kc = T.closest('[data-slac-edit]');
     if (kc) { slaContractModal(kc.dataset.slacEdit); return; }
 
+    /* --- Perfis de acesso, centros de custo e contas bancárias ------------
+       Cada ramo chama `guard()` ANTES de abrir o formulário. Esconder o botão
+       com `ifMay()` é conveniência: quem inspecionar o HTML e forçar o clique
+       cai aqui. Na aplicação real este ponto é o `requirePermission()` do Server
+       Action, e a barreira final é o RLS. */
+    const pv = T.closest('[data-profile-view]');
+    if (pv) { if (guard('usuarios.perfis.ver')) profileMatrixModal(pv.dataset.profileView); return; }
+    const ped = T.closest('[data-profile-edit]');
+    if (ped) { if (guard('usuarios.perfis.editar')) profileMatrixModal(ped.dataset.profileEdit); return; }
+    const pcl = T.closest('[data-profile-clone]');
+    if (pcl) {
+      if (!guard('usuarios.perfis.criar')) return;
+      const base = profileById(pcl.dataset.profileClone);
+      if (!base) return;
+      /* Cópia recebe as MESMAS concessões e deixa de ser do sistema: é assim que
+         se varia um perfil protegido sem quebrar quem o usa. */
+      db.accessProfiles.push({ id:nid('ap'), systemKey:null,
+        name:`${base.name} (cópia)`, description:base.description,
+        baseRole:base.baseRole, isSystem:false, active:true, grants:[...base.grants] });
+      save(); render(); toast('Perfil duplicado — edite a cópia'); return;
+    }
+    if (T.id === 'profile-new') {
+      if (!guard('usuarios.perfis.criar')) return;
+      db.accessProfiles.push({ id:nid('ap'), systemKey:null, name:'Novo perfil',
+        description:'', baseRole:'visualizador', isSystem:false, active:true, grants:[] });
+      save(); render(); toast('Perfil criado sem nenhuma concessão — marque o que ele alcança');
+      return;
+    }
+
+    if (T.id === 'cc-new') { if (guard('financeiro.centros_custo.criar')) costCenterModal(null); return; }
+    const cce = T.closest('[data-cc-edit]');
+    if (cce) { if (guard('financeiro.centros_custo.editar')) costCenterModal(cce.dataset.ccEdit); return; }
+
+    if (T.id === 'ba-new') { if (guard('financeiro.contas_bancarias.criar')) accountModal(null); return; }
+    const bae = T.closest('[data-ba-edit]');
+    if (bae) { if (guard('financeiro.contas_bancarias.editar')) accountModal(bae.dataset.baEdit); return; }
+    if (T.id === 'mv-new') { if (guard('financeiro.contas_bancarias.movimentar')) movementModal(); return; }
+    if (T.id === 'tr-new') { if (guard('financeiro.contas_bancarias.transferir')) transferModal(); return; }
+    const mvt = T.closest('[data-mv-toggle]');
+    if (mvt) {
+      if (!guard('financeiro.contas_bancarias.movimentar')) return;
+      const m = db.movements.find(x => x.id === mvt.dataset.mvToggle);
+      if (m) { m.reconciledAt = m.reconciledAt ? null : Date.now(); save(); render(); }
+      return;
+    }
+
     if (T.id === 'user-new') { userModal(null); return; }
     const ue = T.closest('[data-user-edit]');
     if (ue) { userModal(ue.dataset.userEdit); return; }
@@ -4536,6 +5390,139 @@
       const failIn = elId => m => {
         document.getElementById(elId).innerHTML = `<div class="alert" data-kind="error">${esc(m)}</div>`;
       };
+      /* Recusa por permissão usa a MESMA mensagem que as ações de escrita dão
+         para registro inexistente: quem não pode não deve conseguir distinguir
+         "não tenho permissão" de "não existe" — a diferença já é informação. */
+      const guardOrFail = (key, fail) => {
+        if (may(key)) return true;
+        fail('Sem permissão para esta ação.');
+        return false;
+      };
+
+      // --- Matriz de permissões ---
+      if (document.getElementById('pm-id')) {
+        const p = profileById(document.getElementById('pm-id').value);
+        if (!p) return;
+        if (!guard('usuarios.perfis.editar')) return;
+        if (p.isSystem) { closeModal(); toast('Perfil do sistema não é editável'); return; }
+        const marcadas = [...document.querySelectorAll('[data-perm]:checked')]
+          .map(el => el.dataset.perm);
+        /* Substituição completa, não diferença: calcular o delta exigiria
+           confiar no estado anterior enviado pelo cliente. E fecha a hierarquia
+           para cima — marcar a ação sem a tela negaria a própria ação. */
+        const fechadas = withAncestors(marcadas);
+        const inalcancaveis = unreachableForRole(fechadas, p.baseRole);
+        p.grants = fechadas.filter(k => !inalcancaveis.includes(k));
+        refreshGrants(); save(); closeModal(); render();
+        toast(inalcancaveis.length
+          ? `Concessões salvas — ${inalcancaveis.length} acima do teto do perfil foram descartadas`
+          : 'Concessões salvas');
+        return;
+      }
+
+      // --- Centro de custo ---
+      if (document.getElementById('ccm-code')) {
+        const fail = failIn('ccm-msg');
+        if (!may('financeiro.centros_custo.criar') && !may('financeiro.centros_custo.editar'))
+          return fail('Sem permissão para esta ação.');
+        const id = document.getElementById('ccm-id').value;
+        const code = document.getElementById('ccm-code').value.trim();
+        const name = document.getElementById('ccm-name').value.trim();
+        if (code.length < 2) return fail('Informe o código.');
+        if (name.length < 2) return fail('Informe o nome.');
+        const dup = db.costCenters.find(c => c.id !== id && c.code.toLowerCase() === code.toLowerCase());
+        if (dup) return fail(`O código "${code}" já está em uso por "${dup.name}".`);
+        const parentId = document.getElementById('ccm-parent').value || null;
+        /* Profundidade e ciclo. O banco recusa os dois por trigger; recusar aqui
+           também evita que a pessoa descubra o limite só depois de digitar. */
+        if (parentId) {
+          const pai = costCenterById(parentId);
+          if (!pai) return fail('Centro pai não encontrado.');
+          if (costCenterDepth(pai) >= 3) return fail('A hierarquia vai até 3 níveis.');
+          let cur = pai, n = 0;
+          while (cur && n++ < 9) {
+            if (cur.id === id) return fail('Isso criaria um ciclo na hierarquia.');
+            cur = cur.parentId ? costCenterById(cur.parentId) : null;
+          }
+        }
+        const payload = { code, name, parentId,
+          description:document.getElementById('ccm-desc').value.trim(),
+          branchId:document.getElementById('ccm-branch').value || null,
+          active:document.getElementById('ccm-active').checked };
+        if (id) Object.assign(costCenterById(id), payload);
+        else db.costCenters.push(Object.assign({ id:nid('cc') }, payload));
+        save(); closeModal(); render();
+        toast(id ? 'Centro de custo atualizado' : 'Centro de custo cadastrado'); return;
+      }
+
+      // --- Conta bancária ---
+      if (document.getElementById('bam-name')) {
+        const fail = failIn('bam-msg');
+        const id = document.getElementById('bam-id').value;
+        if (!guardOrFail(id ? 'financeiro.contas_bancarias.editar'
+                            : 'financeiro.contas_bancarias.criar', fail)) return;
+        const name = document.getElementById('bam-name').value.trim();
+        const bankName = document.getElementById('bam-bank').value.trim();
+        if (name.length < 2) return fail('Informe o nome da conta.');
+        if (bankName.length < 2) return fail('Informe o banco.');
+        const limit = Number(document.getElementById('bam-limit').value || 0);
+        if (limit < 0) return fail('O limite de crédito não pode ser negativo.');
+        const payload = { name, bankName,
+          bankCode:document.getElementById('bam-code').value.trim(),
+          agency:document.getElementById('bam-agency').value.trim(),
+          accountNumber:document.getElementById('bam-number').value.trim(),
+          accountType:document.getElementById('bam-type').value,
+          status:document.getElementById('bam-status').value,
+          openingBalance:Number(document.getElementById('bam-opening').value || 0),
+          creditLimit:limit,
+          holderName:document.getElementById('bam-holder').value.trim() };
+        if (id) Object.assign(accountById(id), payload);
+        else db.bankAccounts.push(Object.assign({ id:nid('ba'), holderDocument:'', notes:'' }, payload));
+        save(); closeModal(); render();
+        toast(id ? 'Conta atualizada' : 'Conta cadastrada'); return;
+      }
+
+      // --- Movimentação ---
+      if (document.getElementById('mvm-amount')) {
+        const fail = failIn('mvm-msg');
+        if (!guardOrFail('financeiro.contas_bancarias.movimentar', fail)) return;
+        const amount = Number(document.getElementById('mvm-amount').value || 0);
+        if (!(amount > 0)) return fail('O valor tem de ser maior que zero.');
+        const description = document.getElementById('mvm-desc').value.trim();
+        if (description.length < 2) return fail('Descreva a movimentação.');
+        db.movements.push({ id:nid('mv'),
+          accountId:document.getElementById('mvm-account').value,
+          direction:document.getElementById('mvm-direction').value,
+          amount, movedOn:document.getElementById('mvm-date').value,
+          description, costCenterId:document.getElementById('mvm-cc').value || null,
+          transferGroup:null, reconciledAt:null, by:db.session.userId });
+        save(); closeModal(); render(); toast('Movimentação lançada'); return;
+      }
+
+      // --- Transferência ---
+      if (document.getElementById('trm-amount')) {
+        const fail = failIn('trm-msg');
+        if (!guardOrFail('financeiro.contas_bancarias.transferir', fail)) return;
+        const from = document.getElementById('trm-from').value;
+        const to = document.getElementById('trm-to').value;
+        if (from === to) return fail('Origem e destino precisam ser contas diferentes.');
+        const amount = Number(document.getElementById('trm-amount').value || 0);
+        if (!(amount > 0)) return fail('O valor tem de ser maior que zero.');
+        const description = document.getElementById('trm-desc').value.trim();
+        if (description.length < 2) return fail('Descreva a transferência.');
+        const movedOn = document.getElementById('trm-date').value;
+        /* As DUAS metades num só passo, com o mesmo grupo. Gravar uma e depois a
+           outra abriria uma janela em que o extrato mostra saída sem entrada. */
+        const grupo = nid('tg');
+        db.movements.push(
+          { id:nid('mv'), accountId:from, direction:'out', amount, movedOn,
+            description, costCenterId:null, transferGroup:grupo,
+            reconciledAt:null, by:db.session.userId },
+          { id:nid('mv'), accountId:to, direction:'in', amount, movedOn,
+            description, costCenterId:null, transferGroup:grupo,
+            reconciledAt:null, by:db.session.userId });
+        save(); closeModal(); render(); toast('Transferência registrada nas duas contas'); return;
+      }
 
       // --- Cliente ---
       if (document.getElementById('cm-legal')) {

@@ -1,0 +1,66 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import { PERMISSION_CATALOG } from './permissions'
+
+/*
+ * O protótipo navegável (`demo/sti-tool.html`) carrega uma cópia do catálogo de
+ * permissões, porque é um arquivo único sem build e não pode importar deste
+ * módulo.
+ *
+ * Cópia sem cobrança viraria mentira: o protótipo é o que a pessoa vê antes de
+ * decidir, e prometer nele um controle que a aplicação não tem é pior que não ter
+ * controle no protótipo. Este teste falha no instante em que as duas listas
+ * divergem — chave nova só na aplicação, chave inventada só no protótipo, teto de
+ * papel diferente.
+ */
+
+const HTML = readFileSync('demo/sti-tool.html', 'utf8')
+
+interface DemoEntry {
+  key: string
+  module: string
+  screen: string | null
+  action: string | null
+  minBaseRole: string
+}
+
+function demoCatalog(): DemoEntry[] {
+  const bloco = HTML.match(/const PERM_CATALOG = \[([\s\S]*?)\n {2}\];/)
+  expect(bloco, 'o protótipo precisa declarar PERM_CATALOG').not.toBeNull()
+
+  const linha =
+    /\['([a-z_.]+)','([a-z_]+)',(null|'[a-z_]+'),(null|'[a-z_]+'),'[^']*','([a-z_]+)'\]/g
+  const out: DemoEntry[] = []
+  for (const m of bloco![1]!.matchAll(linha)) {
+    const desaspa = (v: string) => (v === 'null' ? null : v.slice(1, -1))
+    out.push({
+      key: m[1]!,
+      module: m[2]!,
+      screen: desaspa(m[3]!),
+      action: desaspa(m[4]!),
+      minBaseRole: m[5]!,
+    })
+  }
+  return out
+}
+
+describe('catálogo do protótipo × catálogo da aplicação', () => {
+  it('as duas listas são idênticas, na mesma ordem', () => {
+    const app = PERMISSION_CATALOG.map((p) => ({
+      key: p.key,
+      module: p.module,
+      screen: p.screen,
+      action: p.action,
+      minBaseRole: p.minBaseRole as string,
+    }))
+    expect(demoCatalog()).toEqual(app)
+  })
+
+  it('o protótipo aplica a mesma regra de herança de negação', () => {
+    // Não executa o JS do protótipo; confere que a regra está escrita lá. Uma
+    // cópia que devolvesse `granted.has(key)` puro liberaria a ação com o módulo
+    // negado, e a demonstração ensinaria a regra errada.
+    expect(HTML).toContain('for (let i = 1; i <= parts.length; i++)')
+    expect(HTML).toContain("if (!granted.has(parts.slice(0, i).join('.'))) return false;")
+  })
+})
