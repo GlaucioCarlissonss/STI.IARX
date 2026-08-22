@@ -62,8 +62,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-16 || sudo apt-get install -y postgresql-client
 
-      # Aplica as 12 migrações em um banco limpo, roda o seed e executa as
-      # asserções de RLS com um papel SEM bypassrls.
+      # Aplica todas as migrações de supabase/migrations em um banco limpo, roda o
+      # seed e executa as asserções de RLS com um papel SEM bypassrls.
+      # (Sem número aqui de propósito: contagem em comentário envelhece calada.)
       - name: Validar schema e RLS
         env:
           PGHOST: 127.0.0.1

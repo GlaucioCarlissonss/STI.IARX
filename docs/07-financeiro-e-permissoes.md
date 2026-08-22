@@ -24,8 +24,8 @@ tem isso, e traduzir literalmente produziria código que não protege nada:
 | Especificação de origem | Aqui | Motivo |
 |---|---|---|
 | "Middleware intercepta toda requisição, extrai o perfil do JWT, consulta permissões, retorna 403" | `requirePermission()` no topo de cada Server Action | `src/app/api/health/route.ts` é a **única** rota de API. `src/proxy.ts` é middleware de borda e só distingue autenticado de anônimo — ele não sabe qual ação será chamada, porque a Server Action é resolvida depois. |
-| "Validar permissão em todos os endpoints" | as **49 Server Actions** em 12 arquivos | É a superfície de escrita real. Inventário completo na seção do Módulo 1. |
-| "Aplicar filtro de filial em todas as queries" | **já existe**, não se mexe | `app.can_see_branch()` (`0002_core.sql:211`) + 118 policies de RLS. Estendido, nunca reescrito. |
+| "Validar permissão em todos os endpoints" | as **63 Server Actions** em 14 arquivos | É a superfície de escrita real. Inventário completo na seção do Módulo 1. |
+| "Aplicar filtro de filial em todas as queries" | **já existe**, não se mexe | `app.can_see_branch()` (`0002_core.sql:211`) + 138 policies de RLS. Estendido, nunca reescrito. |
 | "Tabela `permissions` com coluna `permitido` booleana" | catálogo global + `permission_grants` sem booleano | Com "liberação explícita", `permitido = false` e a ausência da linha significam o mesmo fato. Duas representações do mesmo fato divergem: sobra linha falsa que ninguém limpa. |
 | "Cache de permissões no estado global do frontend" | `getSessionContext()`, memoizado por requisição | Já existe `cache()` do React. Mandar a matriz para o cliente exporia a estrutura de permissões de todos no bundle, em troca de nada — a decisão é do servidor. |
 | "Perfis Aprovador N1 / N2 / N3" | um perfil **Aprovador Financeiro** + nível na cadeia de aprovação | O nível de alçada não é atributo da pessoa: a mesma pessoa pode ser N1 de um centro de custo e N2 de outro. Amarrar o nível ao perfil forçaria um nível único por pessoa em toda a operação. |
@@ -47,7 +47,7 @@ continua governando o RLS; `access_profiles` acrescenta granularidade
 módulo → tela → ação por cima, sem reescrever nenhuma policy.
 
 A decisão de coexistir, e não substituir, foi tomada com o operador: substituir
-exigiria reescrever 118 policies, 7 funções `app.*` e 62 pontos de código de uma
+exigiria reescrever 138 policies, 7 funções `app.*` e 62 pontos de código de uma
 vez, com risco real de abrir brecha de isolamento entre tenants no meio do
 caminho.
 
@@ -148,7 +148,11 @@ Server Actions em `src/app/(app)/perfis/actions.ts`:
 - [x] Grant fora do teto recusado no banco.
 - [x] Auto-alteração de perfil recusada.
 - [x] Isolamento de perfis e grants entre tenants.
-- [x] 46 das 49 Server Actions com gate de permissão.
+- [x] 60 das 63 Server Actions com gate de permissão. As 3 restantes são
+      `signIn` e `signOut` (antecedem a sessão) e `changePassword` (auto-serviço:
+      trocar a própria senha não é permissão de módulo). Um teste em
+      `src/lib/permissions.usage.test.ts` cobra que toda chave de ação do catálogo
+      seja consultada em algum guard.
 - [x] 16 páginas com gate de tela; menu derivado da permissão.
 - [ ] Fluxo "logar como Operador Financeiro e não ver o botão Aprovar" — exige
       Supabase real (ver Verificação).
@@ -614,7 +618,7 @@ Pontos de acoplamento já preparados nesta entrega:
 
 ## REVISÃO DE CÓDIGO — CHECKLIST
 
-- [x] Mapear a superfície de escrita (49 Server Actions em 12 arquivos).
+- [x] Mapear a superfície de escrita (63 Server Actions em 14 arquivos).
 - [x] Criar o gate de autorização (`requirePermission`, não middleware — ver
       adaptação arquitetural).
 - [x] Validar permissão em cada ação (46/49; 3 públicas por design).
@@ -656,14 +660,32 @@ Pontos de acoplamento já preparados nesta entrega:
 |---|---|
 | `npm run typecheck` | limpo |
 | `npm run lint` | limpo |
-| `npx vitest run` | 149 testes (27 novos da regra de herança) |
-| `npm run db:validate` | 173 asserções contra PostgreSQL 16 real (46 novas) |
+| `npx vitest run` | 157 testes |
+| `npm run db:validate` | 203 asserções contra PostgreSQL 16 real |
 | `npm run build` | 21 rotas compiladas |
 
 **Limite honesto.** As telas autenticadas não podem ser exercitadas em navegador
 neste ambiente — não há projeto Supabase acessível, só um PostgreSQL local para
 o `db:validate`. O que está provado é a camada SQL (herança de permissão, teto
-de perfil, profundidade, dupla entrada, isolamento entre tenants) e a lógica
-pura de herança em vitest. O fluxo de ponta a ponta — "logar como Operador
-Financeiro, não ver o botão Aprovar, e receber 'sem permissão' se forçar a
-ação" — depende de rodar contra um Supabase real.
+de perfil, profundidade, dupla entrada, isolamento entre tenants), a matriz
+aplicada aos usuários do seed, e a lógica pura em vitest. O fluxo de ponta a
+ponta — "logar como Operador Financeiro, não ver o botão Aprovar, e receber 'sem
+permissão' se forçar a ação" — depende de rodar contra um Supabase real.
+
+### O que a asserção contra o seed já achou
+
+Vale registrar porque mede o valor de semear a matriz em vez de só testar a
+função. A asserção "todo usuário com perfil alcança alguma tela" nasceu falhando
+em `Aprovador Financeiro`, e o defeito era de aplicação, não de dado:
+`requireScreen()` mandava todo negado para `/painel`, e os perfis financeiros do
+sistema não recebem o módulo de helpdesk. `/painel` negava e redirecionava para
+`/painel`. **Um Aprovador Financeiro nunca conseguiria entrar no sistema** — e
+nenhum teste anterior podia pegar isso, porque nenhum usuário-semente tinha
+perfil financeiro.
+
+A correção foi tirar a navegação de dentro do layout para
+`src/lib/navigation.ts`, hoje a única fonte do menu e do destino pós-negação.
+`landingHref()` devolve a primeira tela que a sessão alcança de fato, e `/conta`
+quando não alcança nenhuma. Menu e redirect em lugares separados foi a causa
+raiz: o menu já escondia `/painel` de quem não podia abri-lo, e o redirect
+mandava para lá do mesmo jeito.

@@ -1,7 +1,11 @@
 # 04 — Modelo de Dados
 
-46 tabelas e 15 views em `public`, com 118 policies de RLS. Nomenclatura conforme
+52 tabelas e 17 views em `public`, com 138 policies de RLS. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
+
+> Os números acima são medidos no banco de validação (`npm run db:validate`), não
+> contados à mão nos arquivos de migração — parte das policies é gerada em laço
+> em `0012_rls_policies.sql` e não aparece como `create policy` literal.
 
 ## 1. Visão geral
 
@@ -37,7 +41,21 @@ erDiagram
     integrations ||--o{ integration_mappings : mapeia
     integrations ||--o{ integration_events   : recebe
     integrations ||--o{ integration_logs     : registra
+
+    tenants     ||--o{ access_profiles   : "perfis de acesso"
+    access_profiles ||--o{ permission_grants : concede
+    permission_catalog ||--o{ permission_grants : "chave concedida"
+    access_profiles ||--o{ profiles      : "refina o papel"
+
+    cost_centers ||--o{ cost_centers            : "pai (máx. 3 níveis)"
+    branches     ||--o{ cost_centers            : "centro da filial"
+    bank_accounts ||--o{ bank_account_movements  : movimenta
+    cost_centers  ||--o{ bank_account_movements  : rateia
 ```
+
+`permission_catalog` é a única tabela **sem `tenant_id`**: ela descreve a
+superfície da aplicação, que é a mesma para todo mundo. O que é por tenant é a
+concessão.
 
 ## 2. Tabelas por domínio
 
@@ -102,6 +120,44 @@ e vigência de contrato, `asset_assignments.previous_*` + `reason`,
 `queues.tiebreaker`, `sla_definitions.name`/`deleted_at`,
 `branches.latitude`/`longitude`.
 
+### Geolocalização (0014–0016)
+Endereço estruturado, pipeline de geocodificação e rastro de auditoria do
+processo — ver [05 — Geolocalização](05-geolocalizacao.md).
+
+| Tabela | Papel |
+|---|---|
+| `geocode_logs` | Cada tentativa de geocodificação: provedor, precisão obtida, motivo da recusa. É o que permite responder "por que esta filial não tem coordenada". |
+| `geocode_candidates` | Candidatos devolvidos pelo provedor quando o endereço é ambíguo, para confirmação humana em vez de escolha silenciosa. |
+
+Colunas acrescentadas em `branches`: logradouro, número, complemento, bairro,
+CEP, `geocode_precision`, `geocoded_at`, `address_updated_at`.
+
+### Perfis de acesso e permissões (0017)
+Camada de autorização granular especificada em
+[07 — Financeiro e Permissões](07-financeiro-e-permissoes.md).
+
+| Tabela | Papel |
+|---|---|
+| `permission_catalog` | Catálogo **global** (sem `tenant_id`) das chaves `modulo` / `modulo.tela` / `modulo.tela.acao`. `min_base_role` é o teto de papel que a chave exige. Um CHECK garante que `key` seja exatamente a concatenação das três colunas — chave e componentes não podem divergir. |
+| `access_profiles` | Perfil de acesso por tenant. `base_role` declara o papel que o perfil implica, e `is_system` marca os 9 perfis semeados por trigger, que são atribuíveis mas não editáveis. |
+| `permission_grants` | Concessão. **Não tem coluna `allowed`**: a presença da linha é a permissão. Booleano por linha conviveria mal com "negação herda, liberação é explícita" — haveria dois jeitos de negar e nenhum canônico. |
+
+Coluna acrescentada: `profiles.access_profile_id` (nulo = comportamento anterior,
+só o papel). O papel **coexiste** com o perfil e continua governando as policies
+de RLS; o perfil só restringe, nunca eleva — ver `app.effective_base_role()`.
+
+### Base do financeiro (0018)
+| Tabela | Papel |
+|---|---|
+| `cost_centers` | Centros hierárquicos até 3 níveis, com trigger que recusa o 4º e também o ciclo. `branch_id` nulo = centro global do tenant; preenchido = custo cobrável por unidade. |
+| `bank_accounts` | Conta do tenant. Guarda `opening_balance` e `credit_limit`; **não guarda saldo corrente** — ver a view. |
+| `bank_account_movements` | Entrada ou saída. `amount` é sempre positivo e o sinal vive em `direction`, para não existir a combinação absurda "saída de valor negativo". Transferência interna são duas linhas com o mesmo `transfer_group`, e uma constraint trigger `deferrable` recusa meia transferência. |
+
+Correção estrutural na mesma migração: `supplier_contracts` ganhou
+`unique (id, tenant_id)`. Sem ela nenhum título a pagar poderia referenciar o
+contrato por FK composta, e o padrão do
+[ADR-001](03-arquitetura.md#adr-001) ficaria impossível de seguir no financeiro.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -153,6 +209,15 @@ abertos. O índice parcial mantém a estrutura pequena mesmo com a tabela grande
 | `app.queue_score()` | Score de priorização normalizado |
 | `app.resolve_dashboard_token()` | Valida token de TV e devolve o escopo |
 | `app.purge_integration_logs()` | Retenção de 90 dias |
+| `app.role_rank(text)` | Ordena os 6 papéis, para comparar teto de privilégio |
+| `app.current_access_profile_id()` | Perfil de acesso da sessão |
+| `app.has_permission(text)` | Chave concedida **e** todos os seus ancestrais. É aqui que a herança de negação vive |
+| `app.effective_base_role()` | O **menor** entre `profiles.role` e o `base_role` do perfil — o perfil restringe o RLS e nunca o eleva |
+| `app.seed_system_access_profiles(uuid)` | Cria os 9 perfis do sistema e suas concessões, expressas como regra sobre o catálogo |
+
+As concessões dos perfis de sistema são **regra sobre o catálogo**, não lista de
+chaves. Listar ~108 chaves nove vezes garantiria que a próxima permissão entrasse
+em alguns perfis e fosse esquecida em outros.
 
 ## 5. Triggers
 
@@ -169,6 +234,20 @@ abertos. O índice parcial mantém a estrutura pequena mesmo com a tabela grande
 | `trg_assets_history` | `it_assets` | gera eventos de lifecycle |
 | `trg_profiles_no_escalation` | `profiles` | bloqueia auto-promoção de papel |
 | `trg_*_audit` | 18 tabelas | auditoria global |
+| `trg_branches_geocode_staleness` | `branches` | invalida a coordenada quando o endereço muda |
+| `trg_tenants_seed_access_profiles` | `tenants` | cria os 9 perfis do sistema no nascimento do tenant |
+| `trg_profiles_default_access_profile` | `profiles` | atribui o perfil correspondente ao papel |
+| `trg_profiles_no_self_profile_change` | `profiles` | ninguém troca o próprio perfil de acesso |
+| `trg_access_profiles_guard_system` | `access_profiles` | perfil do sistema não é editável nem removível |
+| `trg_permission_grants_within_base_role` | `permission_grants` | recusa concessão acima do `base_role` do perfil |
+| `trg_cost_center_depth` | `cost_centers` | recusa o 4º nível e o ciclo |
+| `trg_movements_transfer_pairs` | `bank_account_movements` | constraint trigger `deferrable`: recusa transferência com uma só metade |
+
+Os dois primeiros gatilhos de perfil existem por um motivo específico: migração
+roda **antes** do seed, então um laço sobre `tenants` dentro da 0017 não
+encontraria tenant nenhum. Sem eles o ambiente subiria com zero perfis, e um
+usuário sem perfil tem `has_permission` falso em tudo — todas as telas negadas,
+sem causa visível.
 
 Auditoria e histórico são **triggers**, não código de aplicação: escrita por
 integração, job ou SQL direto fica registrada do mesmo jeito (antipattern A-06).
@@ -192,16 +271,20 @@ entre tenants.
 | `vw_map_tickets` · `vw_map_assets` · `vw_map_telecom` · `vw_map_internet` | Agregação por filial com coordenadas e semáforo calculado **na view** |
 | `vw_map_area_breakdown` | Detalhamento por área, para o popup do marcador |
 | `asset_custody_history` | Timeline de custódia sobre `asset_assignments`, com o nome pedido pelo escopo |
+| `vw_branch_addresses` | Endereço estruturado consolidado da filial |
+| `vw_branch_last_geocode_log` | Última tentativa de geocodificação por filial |
+| `vw_bank_account_balances` | Saldo **derivado**: inicial + entradas − saídas, com contagem de não conciliadas. Saldo materializado divergiria do extrato no primeiro arredondamento |
 
 ## 7. Verificação
 
 `supabase/tests/schema_test.sql` roda contra um banco semeado, com um papel
 **sem `BYPASSRLS`** — como superusuário, todo teste de isolamento passaria
-trivialmente e não provaria nada. São 127 asserções cobrindo cobertura de RLS,
+trivialmente e não provaria nada. São 203 asserções cobrindo cobertura de RLS,
 isolamento entre tenants, visibilidade por filial, comentário interno oculto do
 solicitante, escalonamento de privilégio, máquina de estados, fila padrão,
-precedência de SLA, pausa/retomada, idempotência, numeração, views, tokens de TV
-e lifecycle de ativos.
+precedência de SLA, pausa/retomada, idempotência, numeração, views, tokens de TV,
+lifecycle de ativos, a tabela-verdade de `app.has_permission()` e a matriz de
+permissões aplicada aos usuários do seed.
 
 ```bash
 npm run db:validate

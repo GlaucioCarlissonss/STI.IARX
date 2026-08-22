@@ -32,7 +32,7 @@ outro nome, a divergência está registrada explicitamente em vez de duplicada.
 ## O que já está implementado desta especificação
 
 A migração `0013_areas_anexos_links.sql` entrega **a camada de dados** do que é
-inequívoco, validada contra PostgreSQL real (127 asserções). O que falta em cada módulo é
+inequívoco, validada contra PostgreSQL real (203 asserções). O que falta em cada módulo é
 a **interface** — e, nos casos marcados, a decisão do operador.
 
 | Módulo | Banco | Interface |
