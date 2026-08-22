@@ -1553,5 +1553,154 @@ end
 $$;
 reset role;
 
+
+-- =============================================================================
+\echo '=== 24. A matriz de permissões contra os usuários do seed ==='
+-- =============================================================================
+-- As asserções da seção 22 provam a FUNÇÃO `app.has_permission()` com perfis
+-- criados e destruídos ali mesmo. Esta seção prova a MATRIZ COMO ELA FICA no
+-- ambiente que o seed entrega: dois usuários com o mesmo papel `gestor` e perfis
+-- de acesso diferentes.
+--
+-- Este contraste é o motivo de o módulo de permissões existir. Se ele não for
+-- verificado com os usuários reais, a regressão que reatribui o perfil-padrão a
+-- todo mundo passa pelo CI sem barulho — o papel continua `gestor` nos dois e as
+-- 118 policies de RLS não notam diferença nenhuma.
+reset role;
+
+-- Diego: Operador Financeiro. Lança movimentação, não cadastra conta.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000006","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.effective_base_role() = 'gestor',
+    'Operador Financeiro mantém o teto de RLS do papel gestor');
+  perform app.assert(app.has_permission('financeiro.contas_bancarias.ver'),
+    'Operador Financeiro consulta conta bancária');
+  perform app.assert(app.has_permission('financeiro.contas_bancarias.movimentar'),
+    'Operador Financeiro lança movimentação');
+  perform app.assert(not app.has_permission('financeiro.contas_bancarias.criar'),
+    'Operador Financeiro NÃO cadastra conta bancária');
+  perform app.assert(not app.has_permission('financeiro.contas_bancarias.transferir'),
+    'Operador Financeiro NÃO transfere entre contas');
+  -- O perfil não abre porta em outro módulo só porque o papel é gestor.
+  perform app.assert(not app.has_permission('sla.definicoes.criar'),
+    'Operador Financeiro NÃO configura SLA, apesar do papel gestor');
+  perform app.assert(not app.has_permission('usuarios.perfis.editar'),
+    'Operador Financeiro NÃO edita perfil de acesso');
+end
+$$;
+
+-- Elis: Aprovador Financeiro. Consulta, e é aqui que se vê que consultar não é
+-- movimentar — a distinção que o botão "Aprovar" vai depender.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000007","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('financeiro.contas_bancarias.ver'),
+    'Aprovador Financeiro consulta conta bancária');
+  perform app.assert(not app.has_permission('financeiro.contas_bancarias.movimentar'),
+    'Aprovador Financeiro NÃO lança movimentação');
+  perform app.assert(not app.has_permission('financeiro.contas_bancarias.criar'),
+    'Aprovador Financeiro NÃO cadastra conta bancária');
+end
+$$;
+
+-- Gestor de TI: o outro lado do contraste. Mesmo papel `gestor`, e o financeiro
+-- inteiro fechado.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('sla.definicoes.criar'),
+    'Gestor de TI configura SLA');
+  perform app.assert(not app.has_permission('financeiro.contas_bancarias.ver'),
+    'Gestor de TI NÃO enxerga conta bancária, apesar do papel gestor');
+  perform app.assert(not app.has_permission('financeiro.centros_custo.criar'),
+    'Gestor de TI NÃO cadastra centro de custo');
+end
+$$;
+
+-- Solicitante: o piso. Precisa abrir ticket e nada além.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000005","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('helpdesk.tickets.criar'),
+    'Solicitante abre ticket — a razão de ele existir no sistema');
+  perform app.assert(not app.has_permission('helpdesk.tickets.comentar_interno'),
+    'Solicitante NÃO escreve comentário interno');
+  perform app.assert(not app.has_permission('financeiro.contas_bancarias.ver'),
+    'Solicitante NÃO enxerga o financeiro');
+end
+$$;
+
+-- Todo usuário-semente com perfil alcança ALGUMA tela de módulo.
+--
+-- Esta asserção nasceu falhando e achou um defeito real: `Aprovador Financeiro`
+-- não recebe o módulo de helpdesk — o que é correto —, e `requireScreen()`
+-- mandava todo mundo negado para `/painel`, que negava de novo. Laço de
+-- redirect. A correção foi `landingHref()` em `src/lib/navigation.ts`, que só
+-- devolve tela permitida.
+--
+-- Aqui a cobrança é a precondição daquele helper: perfil que não alcança tela
+-- nenhuma derruba a pessoa em `/conta` e deixa o produto inútil para ela.
+do $$
+declare
+  v_user record;
+  v_telas int;
+begin
+  for v_user in
+    select id, full_name from public.profiles
+    where tenant_id = 'a0000000-0000-4000-8000-000000000001'
+      and access_profile_id is not null
+  loop
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_user.id, 'role', 'authenticated')::text, true);
+    select count(*) into v_telas
+    from public.permission_catalog c
+    where c.action = 'ver' and app.has_permission(c.key);
+    perform app.assert(v_telas > 0,
+      format('%s alcança ao menos uma tela — sem isso o login cai em /conta e nada mais',
+             v_user.full_name));
+  end loop;
+  perform set_config('request.jwt.claims', '', true);
+end
+$$;
+
+-- E o destino de quem é do financeiro é o financeiro, não o helpdesk.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000007","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(not app.has_permission('helpdesk.painel.ver'),
+    'Aprovador Financeiro não alcança o painel — é por isso que o redirect fixo laçava');
+  perform app.assert(app.has_permission('financeiro.centros_custo.ver'),
+    'Aprovador Financeiro alcança o financeiro, que é o destino que landingHref() escolhe');
+end
+$$;
+
+-- O seed entrega o financeiro navegável. Tela financeira que abre vazia não
+-- prova que a consulta funciona nem que a view calcula.
+reset role;
+do $$
+begin
+  perform app.assert((select count(*) from public.cost_centers) >= 4,
+    'seed entrega centros de custo (a hierarquia de 3 níveis inclusive)');
+  perform app.assert(
+    (select count(*) from public.cost_centers c1
+     join public.cost_centers c2 on c2.parent_id = c1.id
+     join public.cost_centers c3 on c3.parent_id = c2.id) >= 1,
+    'seed exercita os 3 níveis de centro de custo');
+  perform app.assert(
+    (select current_balance from public.vw_bank_account_balances where name = 'Operação')
+      = 63300.00,
+    'saldo derivado da conta Operação fecha em 63.300,00 (42.000 + 38.000 - 16.700)');
+  perform app.assert(
+    (select count(distinct bank_account_id) from public.bank_account_movements
+     where transfer_group is not null) = 2,
+    'a transferência do seed tem as duas metades, em contas diferentes');
+  perform app.assert(
+    (select sum(case when direction = 'in' then amount else -amount end)
+     from public.bank_account_movements where transfer_group is not null) = 0,
+    'as duas metades da transferência se anulam — dupla entrada de verdade');
+end
+$$;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

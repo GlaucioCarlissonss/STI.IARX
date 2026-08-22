@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireSession, touchPresence } from '@/lib/session'
-import { can } from '@/lib/permissions'
+import { visibleNav } from '@/lib/navigation'
 import { roleLabel } from '@/lib/i18n'
 import { initials } from '@/lib/format'
 import { signOut } from '@/app/login/actions'
@@ -13,42 +13,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   await touchPresence(profile.id)
 
   /*
-   * O menu passa a espelhar a permissão de CONSULTA de cada tela, em vez dos
-   * helpers de papel. Duas razões: um item que aparece e cai em redirect é pior
-   * que um item ausente; e manter a lista do menu em sincronia com os gates das
-   * páginas à mão já tinha produzido uma divergência — `/usuarios` aparecia para
-   * gestor e a edição lá dentro exigia admin.
-   *
-   * `/conta` fica sempre visível: trocar a própria senha não é permissão de
-   * módulo, é direito de quem tem conta.
+   * O menu e o destino pós-negação saem da MESMA lista (`src/lib/navigation.ts`).
+   * Manter as duas coisas separadas já tinha custado um laço de redirect: o menu
+   * escondia `/painel` de quem não podia vê-lo e o `requireScreen` mandava para
+   * lá de todo jeito.
    */
-  const show = (perm: string) => can(permissions, perm)
-  const nav = [
-    { href: '/painel', label: 'Painel', show: show('helpdesk.painel.ver') },
-    { href: '/tickets', label: 'Tickets', show: show('helpdesk.tickets.ver') },
-    { href: '/filas', label: 'Filas', show: show('helpdesk.filas.ver') },
-    { href: '/sla', label: 'SLA', show: show('sla.compliance.ver') },
-    { href: '/inventario', label: 'Inventário', show: show('inventario.ativos.ver') },
-    { href: '/telefonia', label: 'Telefonia', show: show('telefonia.linhas.ver') },
-    { href: '/fornecedores', label: 'Fornecedores', show: show('fornecedores.cadastro.ver') },
-    {
-      href: '/financeiro/centros-de-custo',
-      label: 'Centros de custo',
-      show: show('financeiro.centros_custo.ver'),
-    },
-    {
-      href: '/financeiro/contas-bancarias',
-      label: 'Contas bancárias',
-      show: show('financeiro.contas_bancarias.ver'),
-    },
-    { href: '/clientes', label: 'Clientes e filiais', show: show('clientes.grupos.ver') },
-    { href: '/usuarios', label: 'Usuários', show: show('usuarios.usuarios.ver') },
-    { href: '/perfis', label: 'Perfis de acesso', show: show('usuarios.perfis.ver') },
-    { href: '/integracoes', label: 'Integrações', show: show('integracoes.hub.ver') },
-    { href: '/mapas', label: 'Mapas', show: show('mapas.geolocalizacao.ver') },
-    { href: '/tv', label: 'Painéis de TV', show: show('tv.tokens.ver') },
-    { href: '/conta', label: 'Minha conta', show: true },
-  ].filter((item) => item.show)
+  const nav = visibleNav(permissions)
 
   return (
     <div className="min-h-screen">

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { Profile, Tenant, UserRole } from '@/lib/types'
 import { PERMISSION_CATALOG, ROLE_RANK, can } from '@/lib/permissions'
+import { landingHref } from '@/lib/navigation'
 
 export interface SessionContext {
   userId: string
@@ -113,7 +114,14 @@ export async function requireRole(roles: UserRole[]): Promise<SessionContext> {
  */
 export async function requireScreen(viewPermission: string): Promise<SessionContext> {
   const ctx = await requireSession()
-  if (!can(ctx.permissions, viewPermission)) redirect('/painel')
+  /*
+   * O destino é a primeira tela que ESTA sessão alcança, nunca `/painel` fixo.
+   * Com destino fixo havia laço: os perfis financeiros do sistema não recebem o
+   * módulo de helpdesk, então `/painel` negava e redirecionava para `/painel`.
+   * `landingHref()` só devolve href permitido, e cai em `/conta` — que não exige
+   * permissão de módulo — quando a sessão não alcança tela nenhuma.
+   */
+  if (!can(ctx.permissions, viewPermission)) redirect(landingHref(ctx.permissions))
   return ctx
 }
 

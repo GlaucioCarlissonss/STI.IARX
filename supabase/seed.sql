@@ -117,6 +117,14 @@ insert into auth.users (id, email, raw_app_meta_data) values
   ('22220000-0000-4000-8000-000000000004', 'bruno.atendente@iaroffice.com.br',
    '{"tenant_id":"a0000000-0000-4000-8000-000000000001"}'::jsonb),
   ('22220000-0000-4000-8000-000000000005', 'carla.solicitante@meridiano.com.br',
+   '{"tenant_id":"a0000000-0000-4000-8000-000000000001"}'::jsonb),
+  -- Duas pessoas do financeiro. Existem para que a matriz de permissões seja
+  -- exercitada com dado real, e não só pela tabela-verdade da função: os dois
+  -- têm o MESMO papel `gestor` e perfis de acesso diferentes, que é exatamente
+  -- o contraste que o módulo de permissões introduziu.
+  ('22220000-0000-4000-8000-000000000006', 'diego.financeiro@iaroffice.com.br',
+   '{"tenant_id":"a0000000-0000-4000-8000-000000000001"}'::jsonb),
+  ('22220000-0000-4000-8000-000000000007', 'elis.aprovadora@iaroffice.com.br',
    '{"tenant_id":"a0000000-0000-4000-8000-000000000001"}'::jsonb);
 
 insert into public.profiles (id, tenant_id, role, full_name, email, last_seen_at) values
@@ -124,7 +132,22 @@ insert into public.profiles (id, tenant_id, role, full_name, email, last_seen_at
   ('22220000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'gestor',      'Gestor de Serviços', 'gestor@iaroffice.com.br', now()),
   ('22220000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'atendente',   'Ana Souza',          'ana.atendente@iaroffice.com.br', now()),
   ('22220000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000001', 'atendente',   'Bruno Lima',         'bruno.atendente@iaroffice.com.br', now() - interval '2 hours'),
-  ('22220000-0000-4000-8000-000000000005', 'a0000000-0000-4000-8000-000000000001', 'solicitante', 'Carla Dias',         'carla.solicitante@meridiano.com.br', null);
+  ('22220000-0000-4000-8000-000000000005', 'a0000000-0000-4000-8000-000000000001', 'solicitante', 'Carla Dias',         'carla.solicitante@meridiano.com.br', null),
+  ('22220000-0000-4000-8000-000000000006', 'a0000000-0000-4000-8000-000000000001', 'gestor',      'Diego Moreira',      'diego.financeiro@iaroffice.com.br', now() - interval '10 minutes'),
+  ('22220000-0000-4000-8000-000000000007', 'a0000000-0000-4000-8000-000000000001', 'gestor',      'Elis Prado',         'elis.aprovadora@iaroffice.com.br', now() - interval '1 day');
+
+-- O trigger `trg_profiles_default_access_profile` acabou de dar "Gestor de TI"
+-- aos dois, porque é o perfil-padrão do papel `gestor`. Aqui trocamos para os
+-- perfis financeiros: sem isto nenhum usuário-semente exercitaria a diferença
+-- entre operar e aprovar, e a matriz ficaria provada só em tabela-verdade.
+update public.profiles p
+set access_profile_id = ap.id
+from public.access_profiles ap
+where ap.tenant_id = p.tenant_id
+  and ap.system_key = case p.id
+    when '22220000-0000-4000-8000-000000000006'::uuid then 'operador_financeiro'
+    when '22220000-0000-4000-8000-000000000007'::uuid then 'aprovador_financeiro'
+  end;
 
 -- Ana vê 2 filiais; Bruno vê apenas Manaus. É esse contraste que exercita o ADR-003.
 insert into public.user_branches (user_id, branch_id, tenant_id, is_primary) values
@@ -469,5 +492,69 @@ select k.tenant_id, k.id, 'contract',
        'contrato-nl-link-001.pdf', 'application/pdf', 184320,
        '22220000-0000-4000-8000-000000000001'
 from public.internet_links k where k.contract_number = 'NL-LINK-001';
+
+-- -----------------------------------------------------------------------------
+-- Financeiro: centros de custo e contas bancárias (0018)
+-- -----------------------------------------------------------------------------
+-- Três níveis de propósito: a trigger de profundidade recusa o quarto, e um seed
+-- que só usa um nível nunca provaria que a hierarquia funciona.
+insert into public.cost_centers (id, tenant_id, parent_id, code, name, description, branch_id) values
+  ('c1110000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', null,
+   'TI', 'Tecnologia da Informação', 'Centro raiz de todo custo de TI.', null),
+  ('c1110000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+   'c1110000-0000-4000-8000-000000000001',
+   'TI-INFRA', 'Infraestrutura', 'Conectividade, servidores e nuvem.', null),
+  ('c1110000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001',
+   'c1110000-0000-4000-8000-000000000002',
+   'TI-INFRA-LINK', 'Links de internet', 'Terceiro nível — o limite que a trigger permite.', null),
+  -- Centro de filial: é o que torna possível cobrar custo por unidade.
+  ('c1110000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000001',
+   'c1110000-0000-4000-8000-000000000001',
+   'TI-MAO', 'TI — Filial Manaus', 'Custo de TI alocado na filial de Manaus.',
+   '11110000-0000-4000-8000-000000000003');
+
+insert into public.bank_accounts
+  (id, tenant_id, name, bank_code, bank_name, agency, account_number, account_type,
+   holder_name, holder_document, opening_balance, credit_limit, status) values
+  ('c2220000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
+   'Operação', '001', 'Banco do Brasil', '1234-5', '98765-4', 'checking',
+   'IAR Office Serviços de TI Ltda.', '12.345.678/0001-99', 42000.00, 20000.00, 'active'),
+  ('c2220000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+   'Reserva', '077', 'Banco Inter', '0001', '55443-2', 'savings',
+   'IAR Office Serviços de TI Ltda.', '12.345.678/0001-99', 15000.00, 0, 'active'),
+  -- Conta bloqueada: o painel precisa de contraste para o indicador de situação.
+  ('c2220000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001',
+   'Antiga folha', '341', 'Itaú', '4444', '11111-1', 'checking',
+   'IAR Office Serviços de TI Ltda.', '12.345.678/0001-99', 0, 0, 'blocked');
+
+-- Movimentações avulsas. Uma fica sem conciliar de propósito, para o indicador
+-- "não conciliadas" da tela não nascer zerado.
+insert into public.bank_account_movements
+  (tenant_id, bank_account_id, direction, amount, moved_on, description, cost_center_id,
+   reconciled_at, created_by) values
+  ('a0000000-0000-4000-8000-000000000001', 'c2220000-0000-4000-8000-000000000001',
+   'in',  38000.00, current_date - 20, 'Recebimento contrato Meridiano — competência anterior',
+   null, now() - interval '19 days', '22220000-0000-4000-8000-000000000006'),
+  ('a0000000-0000-4000-8000-000000000001', 'c2220000-0000-4000-8000-000000000001',
+   'out',  4800.00, current_date - 12, 'Link de internet NL-LINK-001',
+   'c1110000-0000-4000-8000-000000000003', now() - interval '11 days',
+   '22220000-0000-4000-8000-000000000006'),
+  ('a0000000-0000-4000-8000-000000000001', 'c2220000-0000-4000-8000-000000000001',
+   'out',  1900.00, current_date - 5, 'Link satelital da filial de Manaus',
+   'c1110000-0000-4000-8000-000000000004', null, '22220000-0000-4000-8000-000000000006');
+
+-- Transferência interna: DUAS linhas com o mesmo `transfer_group`, inseridas na
+-- mesma instrução. A constraint trigger é `deferrable initially deferred` e
+-- valida o par por statement — inserir uma metade sozinha é recusado, e é
+-- justamente esse caminho que o teste de schema exercita.
+insert into public.bank_account_movements
+  (tenant_id, bank_account_id, direction, amount, moved_on, description,
+   transfer_group, created_by) values
+  ('a0000000-0000-4000-8000-000000000001', 'c2220000-0000-4000-8000-000000000001',
+   'out', 10000.00, current_date - 3, 'Aporte na reserva',
+   'c3330000-0000-4000-8000-000000000001', '22220000-0000-4000-8000-000000000006'),
+  ('a0000000-0000-4000-8000-000000000001', 'c2220000-0000-4000-8000-000000000002',
+   'in',  10000.00, current_date - 3, 'Aporte recebido da conta Operação',
+   'c3330000-0000-4000-8000-000000000001', '22220000-0000-4000-8000-000000000006');
 
 commit;
