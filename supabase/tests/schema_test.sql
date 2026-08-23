@@ -1158,8 +1158,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 108,
-    'catálogo de permissões tem as 108 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 114,
+    'catálogo de permissões tem as 114 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1385,7 +1385,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 108,
+  perform app.assert((select count(*) from public.permission_catalog) = 114,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -1701,6 +1701,213 @@ begin
     'as duas metades da transferência se anulam — dupla entrada de verdade');
 end
 $$;
+
+
+-- =============================================================================
+\echo '=== 25. Storage de anexos: bucket e autorização por caminho (0019) ==='
+-- =============================================================================
+-- O upload HTTP em si fala com a API de Storage e não pode ser exercitado aqui.
+-- O que PODE ser provado é a decisão de autorização, que é onde mora o risco:
+-- se a policy estiver errada, um tenant lê o anexo do outro.
+reset role;
+
+do $$
+declare
+  v_bucket record;
+begin
+  select * into v_bucket from storage.buckets where id = 'anexos';
+  perform app.assert(v_bucket.id is not null, 'bucket `anexos` existe');
+  perform app.assert(v_bucket.public = false,
+    'bucket `anexos` é PRIVADO — público tornaria storage_path uma URL adivinhável');
+  perform app.assert(v_bucket.file_size_limit = 26214400,
+    'bucket tem limite de 25 MB por arquivo');
+  -- A mesma lista está em src/lib/storage.ts. Divergir faria a aplicação aceitar
+  -- um arquivo que o bucket recusa depois de subir a rede toda.
+  perform app.assert(array_length(v_bucket.allowed_mime_types, 1) = 13,
+    'bucket declara os 13 tipos aceitos, iguais aos de src/lib/storage.ts');
+  perform app.assert('application/pdf' = any (v_bucket.allowed_mime_types),
+    'PDF está entre os tipos aceitos');
+  perform app.assert(not ('application/x-msdownload' = any (v_bucket.allowed_mime_types)),
+    'executável NÃO está entre os tipos aceitos');
+end
+$$;
+
+-- As funções de leitura de caminho, isoladas.
+do $$
+begin
+  perform app.assert(
+    app.storage_tenant('a0000000-0000-4000-8000-000000000001/tickets/abc/nota.pdf')
+      = 'a0000000-0000-4000-8000-000000000001',
+    'storage_tenant lê o primeiro segmento do caminho');
+  -- Caminho malformado tem de devolver NULL, não levantar exceção: exceção
+  -- dentro de policy vira erro 500 opaco em vez de negação limpa.
+  perform app.assert(app.storage_tenant('nao-e-uuid/tickets/abc/nota.pdf') is null,
+    'storage_tenant devolve NULL em caminho malformado, sem levantar exceção');
+  perform app.assert(app.storage_tenant('arquivo-solto.pdf') is null,
+    'storage_tenant devolve NULL em caminho sem pasta');
+  perform app.assert(
+    app.storage_entity('a0000000-0000-4000-8000-000000000001/tickets/abc/nota.pdf') = 'tickets',
+    'storage_entity lê o segundo segmento');
+end
+$$;
+
+-- O mapa de permissão. O `else null` é a decisão de segurança da migração.
+do $$
+begin
+  perform app.assert(app.storage_permission_key('tickets', 'anexar') = 'helpdesk.tickets.anexar',
+    'mapa de permissão cobre ticket');
+  perform app.assert(app.storage_permission_key('ativos', 'remover') = 'inventario.ativos.remover_anexo',
+    'mapa de permissão cobre ativo');
+  perform app.assert(app.storage_permission_key('linhas', 'ver') = 'telefonia.linhas.ver',
+    'mapa de permissão cobre linha');
+  perform app.assert(app.storage_permission_key('faturas', 'anexar') is null,
+    'entidade desconhecida NÃO tem chave — prefixo novo não nasce liberado');
+  perform app.assert(app.storage_permission_key('tickets', 'inventar') is null,
+    'verbo desconhecido NÃO tem chave');
+  -- `links` fora de propósito: a tabela existe, a tela não. Chave sem tela é
+  -- configuração morta, o defeito corrigido nesta mesma rodada em 6 chaves.
+  perform app.assert(app.storage_permission_key('links', 'anexar') is null,
+    'links fica fora até a tela existir');
+  perform app.assert(
+    (select count(*) from public.permission_catalog where action in ('anexar','remover_anexo')) = 6,
+    'as 6 chaves de anexo entraram no catálogo');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- can_touch_attachment: a tabela-verdade
+-- -----------------------------------------------------------------------------
+-- Administrador IAR (tenant 1), que tem Admin do Cliente e portanto todas as
+-- chaves que o teto `admin` alcança.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_ok   text := 'a0000000-0000-4000-8000-000000000001/tickets/11110000-0000-4000-8000-000000000001/x.pdf';
+  v_outro text := 'a0000000-0000-4000-8000-000000000002/tickets/11110000-0000-4000-8000-000000000001/x.pdf';
+begin
+  perform app.assert(app.can_touch_attachment(v_ok, 'anexar'),
+    'admin anexa no caminho do próprio tenant');
+  perform app.assert(app.can_touch_attachment(v_ok, 'ver'),
+    'admin consulta no caminho do próprio tenant');
+  perform app.assert(app.can_touch_attachment(v_ok, 'remover'),
+    'admin remove no caminho do próprio tenant');
+
+  -- O caso que importa: caminho de OUTRO tenant.
+  perform app.assert(not app.can_touch_attachment(v_outro, 'ver'),
+    'NEGA caminho de outro tenant, mesmo com permissão de sobra');
+  perform app.assert(not app.can_touch_attachment(v_outro, 'anexar'),
+    'NEGA anexar em caminho de outro tenant');
+
+  -- Profundidade. Sem esta checagem sobraria objeto solto sem entidade dona:
+  -- anexo que nenhuma tela mostra e nenhuma cota conta.
+  perform app.assert(
+    not app.can_touch_attachment('a0000000-0000-4000-8000-000000000001/tickets/x.pdf', 'anexar'),
+    'NEGA caminho com pasta faltando');
+  perform app.assert(
+    not app.can_touch_attachment(
+      'a0000000-0000-4000-8000-000000000001/tickets/abc/sub/x.pdf', 'anexar'),
+    'NEGA caminho com pasta sobrando');
+  perform app.assert(not app.can_touch_attachment('x.pdf', 'anexar'),
+    'NEGA arquivo na raiz do bucket');
+
+  -- Entidade desconhecida. É aqui que a checagem explícita de `key is not null`
+  -- se paga: sem ela, has_permission(NULL) percorreria zero ancestrais e diria
+  -- TRUE, liberando justamente o prefixo que ninguém previu.
+  perform app.assert(
+    not app.can_touch_attachment(
+      'a0000000-0000-4000-8000-000000000001/faturas/abc/x.pdf', 'anexar'),
+    'NEGA entidade que não está no mapa');
+end
+$$;
+
+-- Solicitante: pode anexar em ticket (é o print do erro), não pode remover.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000005","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_ticket text := 'a0000000-0000-4000-8000-000000000001/tickets/11110000-0000-4000-8000-000000000001/x.pdf';
+  v_ativo  text := 'a0000000-0000-4000-8000-000000000001/ativos/11110000-0000-4000-8000-000000000001/x.pdf';
+begin
+  perform app.assert(app.can_touch_attachment(v_ticket, 'anexar'),
+    'solicitante anexa no ticket — o print do erro é o anexo mais comum');
+  perform app.assert(not app.can_touch_attachment(v_ticket, 'remover'),
+    'solicitante NÃO remove anexo: apagaria evidência de ticket já escalado');
+  perform app.assert(not app.can_touch_attachment(v_ativo, 'anexar'),
+    'solicitante NÃO anexa em ativo');
+end
+$$;
+
+-- Operador Financeiro: mesmo papel `gestor` do Gestor de TI, e nenhum anexo de TI.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000006","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_ativo text := 'a0000000-0000-4000-8000-000000000001/ativos/11110000-0000-4000-8000-000000000001/x.pdf';
+begin
+  perform app.assert(not app.can_touch_attachment(v_ativo, 'anexar'),
+    'Operador Financeiro NÃO anexa em ativo, apesar do papel gestor');
+  perform app.assert(not app.can_touch_attachment(v_ativo, 'ver'),
+    'Operador Financeiro NÃO consulta anexo de ativo');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- As policies, exercitadas de verdade sobre storage.objects
+-- -----------------------------------------------------------------------------
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  insert into storage.objects (bucket_id, name)
+  values ('anexos',
+    'a0000000-0000-4000-8000-000000000001/tickets/11110000-0000-4000-8000-000000000001/prova.pdf');
+  perform app.assert(true, 'admin do tenant 1 grava objeto no próprio caminho');
+
+  begin
+    insert into storage.objects (bucket_id, name)
+    values ('anexos',
+      'a0000000-0000-4000-8000-000000000002/tickets/11110000-0000-4000-8000-000000000001/pirata.pdf');
+    perform app.assert(false, 'não deveria gravar objeto no caminho de outro tenant');
+  exception when insufficient_privilege then
+    perform app.assert(true, 'policy de INSERT barra caminho de outro tenant');
+  end;
+
+  begin
+    insert into storage.objects (bucket_id, name)
+    values ('anexos',
+      'a0000000-0000-4000-8000-000000000001/faturas/11110000-0000-4000-8000-000000000001/x.pdf');
+    perform app.assert(false, 'não deveria gravar em prefixo fora do mapa');
+  exception when insufficient_privilege then
+    perform app.assert(true, 'policy de INSERT barra prefixo fora do mapa');
+  end;
+end
+$$;
+
+-- O tenant 2 não vê o objeto do tenant 1.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000099","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert(
+    not exists (select 1 from storage.objects where name like 'a0000000-0000-4000-8000-000000000001/%'),
+    'tenant 2 NÃO enxerga objeto do tenant 1 — a fronteira do Storage é a do banco');
+end
+$$;
+
+reset role;
+do $$
+begin
+  perform app.assert(
+    (select count(*) from pg_policies
+     where schemaname = 'storage' and tablename = 'objects'
+       and policyname in ('anexos_select','anexos_insert','anexos_delete')) = 3,
+    'as 3 policies do bucket existem');
+  -- Ausência deliberada: trocar o conteúdo mantendo caminho e metadados seria
+  -- substituição silenciosa de prova documental.
+  perform app.assert(
+    not exists (select 1 from pg_policies
+                where schemaname = 'storage' and tablename = 'objects' and cmd = 'UPDATE'),
+    'NÃO existe policy de UPDATE: corrigir anexo é remover e anexar de novo');
+end
+$$;
+delete from storage.objects where bucket_id = 'anexos';
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

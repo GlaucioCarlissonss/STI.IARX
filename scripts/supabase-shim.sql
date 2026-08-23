@@ -51,3 +51,64 @@ begin
   end if;
 end
 $$;
+
+-- -----------------------------------------------------------------------------
+-- Schema `storage` mínimo (para validar as policies de anexo da 0019)
+-- -----------------------------------------------------------------------------
+-- As colunas seguem as do Supabase real, porque a policy é escrita contra elas:
+-- fingir um formato diferente aqui provaria uma policy que não é a que roda em
+-- produção. Só o subconjunto que as nossas policies tocam.
+create schema if not exists storage;
+
+create table if not exists storage.buckets (
+  id                 text primary key,
+  name               text not null,
+  public             boolean not null default false,
+  file_size_limit    bigint,
+  allowed_mime_types text[],
+  created_at         timestamptz not null default now()
+);
+
+create table if not exists storage.objects (
+  id         uuid primary key default gen_random_uuid(),
+  bucket_id  text not null references storage.buckets(id) on delete cascade,
+  -- No Supabase `name` é o caminho completo dentro do bucket, com "/" separando
+  -- as pastas. É dele que sai o tenant_id.
+  name       text not null,
+  owner      uuid,
+  metadata   jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint uq_objects_bucket_name unique (bucket_id, name)
+);
+
+-- Só `enable`, sem `force`: é assim no Supabase real, onde a tabela pertence a
+-- `supabase_storage_admin` e o serviço de Storage conecta como esse dono. Forçar
+-- aqui provaria uma policy sob condição que produção não tem.
+alter table storage.objects enable row level security;
+
+-- `storage.foldername('a/b/c.pdf')` => {a,b}. O Supabase descarta o último
+-- segmento (o arquivo); replicar esse detalhe importa porque a policy indexa
+-- [1] e [2] e um off-by-one deixaria a checagem de tenant olhando o lugar errado.
+create or replace function storage.foldername(name text)
+returns text[]
+language sql
+immutable
+as $$
+  select case
+    when array_length(string_to_array(name, '/'), 1) <= 1 then array[]::text[]
+    else (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1]
+  end;
+$$;
+
+create or replace function storage.filename(name text)
+returns text
+language sql
+immutable
+as $$
+  select (string_to_array(name, '/'))[array_length(string_to_array(name, '/'), 1)];
+$$;
+
+grant usage on schema storage to anon, authenticated, service_role;
+grant select, insert, update, delete on storage.objects to authenticated;
+grant select on storage.buckets to anon, authenticated;

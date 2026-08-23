@@ -150,7 +150,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 149 testes: mapeamento, coordenadas, geolocalização, cadastros e herança de permissão
-npm run db:validate   # migrações + seed + 203 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 240 asserções em PostgreSQL real
 ```
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
@@ -213,7 +213,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado nesta entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 157 testes unitários e 203 asserções de banco passando — incluindo
+apontamentos, 181 testes unitários e 240 asserções de banco passando — incluindo
 a aritmética de horário útil conferida contra 8 cenários (almoço, fim de semana,
 feriado, fora de expediente).
 

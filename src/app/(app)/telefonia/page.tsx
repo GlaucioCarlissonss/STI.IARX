@@ -8,6 +8,7 @@ import { formatCurrency, formatDate } from '@/lib/format'
 import type { TelecomLine } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
+import { Attachments, type AttachmentRecord } from '@/components/attachments'
 import { EditLineForm, NewLineForm } from './line-forms'
 
 export const metadata: Metadata = { title: 'Telefonia' }
@@ -30,7 +31,8 @@ export default async function TelefoniaPage() {
   await requireScreen('telefonia.linhas.ver')
   const supabase = await createClient()
 
-  const [{ data: lines }, { data: costs }, branches, agents, { data: devices }] = await Promise.all([
+  const [{ data: lines }, { data: costs }, branches, agents, { data: devices }, { data: anexos }] =
+    await Promise.all([
     supabase
       .from('telecom_lines')
       .select(
@@ -51,12 +53,23 @@ export default async function TelefoniaPage() {
       .select('id, asset_tag, brand, model')
       .in('asset_type', ['smartphone', 'tablet'])
       .is('deleted_at', null),
+    // Uma consulta para todas as linhas; agrupada em memória para não virar N+1.
+    supabase
+      .from('telecom_line_attachments')
+      .select('id, line_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
+      .order('created_at', { ascending: false })
+      .returns<(AttachmentRecord & { line_id: string })[]>(),
   ])
 
-  const [podeEditar, podeCriar] = await Promise.all([
+  const [podeEditar, podeCriar, podeAnexar] = await Promise.all([
     allowed('telefonia.linhas.editar'),
     allowed('telefonia.linhas.criar'),
+    allowed('telefonia.linhas.anexar'),
   ])
+  const anexosPorLinha = new Map<string, AttachmentRecord[]>()
+  for (const a of anexos ?? []) {
+    anexosPorLinha.set(a.line_id, [...(anexosPorLinha.get(a.line_id) ?? []), a])
+  }
   const list = lines ?? []
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const userName = new Map(agents.map((a) => [a.id, a.full_name]))
@@ -112,16 +125,26 @@ export default async function TelefoniaPage() {
                   <Td className="tabular-nums">{formatCurrency(l.monthly_cost)}</Td>
                   <Td className="text-[var(--color-ink-2)]">{formatDate(l.loyalty_until)}</Td>
                 </tr>
-                {podeEditar && (
+                {(podeEditar || podeAnexar) && (
                   <tr>
                     <Td className="bg-[var(--color-surface-2)]" colSpan={8}>
-                      <EditPanel title={`Editar ${l.phone_number}`}>
-                        <EditLineForm
-                          line={l}
-                          branches={branches}
-                          agents={agents}
-                          devices={devices ?? []}
-                        />
+                      <EditPanel title={`Ficha e anexos — ${l.phone_number}`}>
+                        <div className="flex flex-col gap-4">
+                          {podeEditar && (
+                            <EditLineForm
+                              line={l}
+                              branches={branches}
+                              agents={agents}
+                              devices={devices ?? []}
+                            />
+                          )}
+                          <Attachments
+                            entity="linhas"
+                            entityId={l.id}
+                            records={anexosPorLinha.get(l.id) ?? []}
+                            title="Contratos e termos"
+                          />
+                        </div>
                       </EditPanel>
                     </Td>
                   </tr>

@@ -111,6 +111,11 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('helpdesk', 'tickets', 'mudar_status', 'Mover status', 'atendente'),
   act('helpdesk', 'tickets', 'atribuir', 'Atribuir atendente', 'atendente'),
   act('helpdesk', 'tickets', 'transferir', 'Transferir de fila', 'atendente'),
+  // Anexar é `solicitante`: quem abre o chamado precisa poder mandar o print do
+  // erro, e é o anexo mais comum do helpdesk. Remover é `atendente` — deixar o
+  // solicitante apagar anexo do próprio ticket já escalado apagaria evidência.
+  act('helpdesk', 'tickets', 'anexar', 'Anexar arquivo', 'solicitante'),
+  act('helpdesk', 'tickets', 'remover_anexo', 'Remover anexo', 'atendente'),
   scr('helpdesk', 'filas', 'Filas', 'visualizador'),
   act('helpdesk', 'filas', 'ver', 'Consultar filas', 'visualizador'),
 
@@ -146,6 +151,8 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('inventario', 'ativos', 'criar', 'Cadastrar ativo', 'gestor'),
   act('inventario', 'ativos', 'editar', 'Editar ativo', 'gestor'),
   act('inventario', 'ativos', 'mudar_status', 'Mover ciclo de vida', 'gestor'),
+  act('inventario', 'ativos', 'anexar', 'Anexar nota ou foto', 'gestor'),
+  act('inventario', 'ativos', 'remover_anexo', 'Remover anexo do ativo', 'gestor'),
 
   /* --- Telefonia --------------------------------------------------------- */
   mod('telefonia', 'visualizador'),
@@ -154,6 +161,8 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('telefonia', 'linhas', 'criar', 'Cadastrar linha', 'gestor'),
   act('telefonia', 'linhas', 'editar', 'Editar linha', 'gestor'),
   act('telefonia', 'linhas', 'mudar_status', 'Suspender/reativar linha', 'gestor'),
+  act('telefonia', 'linhas', 'anexar', 'Anexar contrato ou termo', 'gestor'),
+  act('telefonia', 'linhas', 'remover_anexo', 'Remover anexo da linha', 'gestor'),
 
   /* --- Clientes e filiais ------------------------------------------------ */
   mod('clientes', 'gestor'),

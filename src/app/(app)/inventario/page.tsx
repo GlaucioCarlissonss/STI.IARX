@@ -8,6 +8,7 @@ import { formatCurrency, formatDate } from '@/lib/format'
 import type { ItAsset } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
+import { Attachments, type AttachmentRecord } from '@/components/attachments'
 import { EditAssetForm, NewAssetForm } from './asset-forms'
 
 export const metadata: Metadata = { title: 'Inventário de TI' }
@@ -24,7 +25,8 @@ export default async function InventarioPage() {
   await requireScreen('inventario.ativos.ver')
   const supabase = await createClient()
 
-  const [{ data: assets }, branches, agents, { data: suppliers }] = await Promise.all([
+  const [{ data: assets }, branches, agents, { data: suppliers }, { data: anexos }] =
+    await Promise.all([
     supabase
       .from('it_assets')
       .select(
@@ -36,12 +38,26 @@ export default async function InventarioPage() {
     getBranches(),
     getAgents(),
     supabase.from('suppliers').select('id, name').is('deleted_at', null).order('name'),
+    // Uma consulta para todos os ativos, agrupada em memória. Uma por linha da
+    // tabela seria N+1 numa tela que lista o inventário inteiro.
+    supabase
+      .from('asset_attachments')
+      .select('id, asset_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
+      .order('created_at', { ascending: false })
+      .returns<(AttachmentRecord & { asset_id: string })[]>(),
   ])
 
-  const [podeEditar, podeCriar] = await Promise.all([
+  const [podeEditar, podeCriar, podeAnexar] = await Promise.all([
     allowed('inventario.ativos.editar'),
     allowed('inventario.ativos.criar'),
+    allowed('inventario.ativos.anexar'),
   ])
+  // Anexo por ativo. Quem pode anexar mas não editar também precisa do painel,
+  // então a linha aparece para qualquer uma das duas permissões.
+  const anexosPorAtivo = new Map<string, AttachmentRecord[]>()
+  for (const a of anexos ?? []) {
+    anexosPorAtivo.set(a.asset_id, [...(anexosPorAtivo.get(a.asset_id) ?? []), a])
+  }
   const list = assets ?? []
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const userName = new Map(agents.map((a) => [a.id, a.full_name]))
@@ -123,16 +139,28 @@ export default async function InventarioPage() {
                     </Td>
                     <Td className="text-[var(--color-ink-2)]">{formatDate(a.warranty_until)}</Td>
                   </tr>
-                  {podeEditar && (
+                  {(podeEditar || podeAnexar) && (
                     <tr>
                       <Td className="bg-[var(--color-surface-2)]" colSpan={7}>
-                        <EditPanel title={`Editar ${[a.brand, a.model].filter(Boolean).join(' ') || a.asset_tag || 'ativo'}`}>
-                          <EditAssetForm
-                            asset={a}
-                            branches={branches}
-                            agents={agents}
-                            suppliers={suppliers ?? []}
-                          />
+                        <EditPanel
+                          title={`Ficha e anexos — ${[a.brand, a.model].filter(Boolean).join(' ') || a.asset_tag || 'ativo'}`}
+                        >
+                          <div className="flex flex-col gap-4">
+                            {podeEditar && (
+                              <EditAssetForm
+                                asset={a}
+                                branches={branches}
+                                agents={agents}
+                                suppliers={suppliers ?? []}
+                              />
+                            )}
+                            <Attachments
+                              entity="ativos"
+                              entityId={a.id}
+                              records={anexosPorAtivo.get(a.id) ?? []}
+                              title="Notas fiscais e fotos"
+                            />
+                          </div>
                         </EditPanel>
                       </Td>
                     </tr>

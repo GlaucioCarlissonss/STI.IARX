@@ -660,8 +660,8 @@ Pontos de acoplamento já preparados nesta entrega:
 |---|---|
 | `npm run typecheck` | limpo |
 | `npm run lint` | limpo |
-| `npx vitest run` | 157 testes |
-| `npm run db:validate` | 203 asserções contra PostgreSQL 16 real |
+| `npx vitest run` | 181 testes |
+| `npm run db:validate` | 240 asserções contra PostgreSQL 16 real |
 | `npm run build` | 21 rotas compiladas |
 
 **Limite honesto.** As telas autenticadas não podem ser exercitadas em navegador
@@ -671,6 +671,49 @@ de perfil, profundidade, dupla entrada, isolamento entre tenants), a matriz
 aplicada aos usuários do seed, e a lógica pura em vitest. O fluxo de ponta a
 ponta — "logar como Operador Financeiro, não ver o botão Aprovar, e receber 'sem
 permissão' se forçar a ação" — depende de rodar contra um Supabase real.
+
+### Storage de anexos (migração 0019) — pré-requisito de dois módulos daqui
+
+Antes desta migração existiam **quatro** tabelas de anexo — `ticket_attachments`
+(0005), `asset_attachments`, `telecom_line_attachments` e
+`internet_link_attachments` (0013) — todas com `storage_path text not null`, com
+FK composta e com a cota já validada no banco. E **nenhuma linha de código que
+subisse arquivo**: anexar um documento a um ticket era impossível.
+
+Isto travava dois módulos especificados acima: título a pagar sem NF/boleto não
+serve operacionalmente, e controle de despesa depende de comprovante.
+
+A autorização não repete mecanismo: a policy do bucket lê o `tenant_id` do
+primeiro segmento do caminho (convenção que o `seed.sql` já usava) e chama
+`app.has_permission()` da chave que corresponde ao segundo segmento. São 6 chaves
+novas — `anexar` e `remover_anexo` em ticket, ativo e linha. `anexar` em ticket é
+`solicitante`: quem abre o chamado precisa mandar o print do erro.
+
+`conectividade.links.*` **não** foi criada. A tabela de anexo do link existe, mas
+a tela de Links de Internet não existe na aplicação — só no protótipo. Cadastrar a
+chave antes da tela produziria permissão que não governa nada, o defeito que esta
+rodada corrigiu em seis outras chaves. Entra junto com a tela.
+
+**Limite honesto:** o upload HTTP em si fala com a API de Storage e não pode ser
+exercitado neste ambiente. O que está provado por `db:validate` são as 37
+asserções da seção 25 — a decisão de autorização, que é onde mora o risco: tenant
+não lê caminho de outro tenant, prefixo fora do mapa é negado, caminho com pasta
+faltando ou sobrando é negado, e não existe policy de UPDATE.
+
+### E o que o protótipo achou depois
+
+Portar a camada para `demo/sti-tool.html` achou um defeito que nenhum teste da
+aplicação pegaria, porque estava só no protótipo: a tabela `ROLE_RANK` tinha
+`solicitante:1, visualizador:2`, invertida e deslocada em relação a
+`app.role_rank` e a `src/lib/permissions.ts`, onde `visualizador` é **0**.
+
+O efeito não era cosmético, e ia nas duas direções. O solicitante perdia
+`helpdesk.tickets.ver` e abria a ferramenta com três itens de menu; o
+visualizador, que é somente leitura, ganhava `helpdesk.tickets.criar`. O
+protótipo demonstrava um modelo de permissão que a aplicação não tem — e a
+comparação de catálogo não pegava, porque o catálogo estava certo: errada era a
+régua que decide o que cada perfil alcança. `permissions.demo.test.ts` passou a
+cobrar a tabela também.
 
 ### O que a asserção contra o seed já achou
 

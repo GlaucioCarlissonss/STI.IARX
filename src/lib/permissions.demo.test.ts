@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { PERMISSION_CATALOG } from './permissions'
+import { PERMISSION_CATALOG, ROLE_RANK } from './permissions'
 
 /*
  * O protótipo navegável (`demo/sti-tool.html`) carrega uma cópia do catálogo de
@@ -54,6 +54,25 @@ describe('catálogo do protótipo × catálogo da aplicação', () => {
       minBaseRole: p.minBaseRole as string,
     }))
     expect(demoCatalog()).toEqual(app)
+  })
+
+  it('a tabela de patente dos papéis é a mesma', () => {
+    /*
+     * Isto já divergiu de verdade: o protótipo tinha `solicitante:1,
+     * visualizador:2` — invertido e deslocado. O efeito não era cosmético. O
+     * solicitante perdia `helpdesk.tickets.ver` e abria a ferramenta sem menu, e
+     * o visualizador, que é só leitura, ganhava `helpdesk.tickets.criar`. Nada
+     * disso aparecia na comparação do catálogo, porque o catálogo estava certo:
+     * o que estava errado era a régua que decide o que cada perfil alcança.
+     */
+    const bloco = HTML.match(/const ROLE_RANK = \{([^}]*)\}/)
+    expect(bloco, 'o protótipo precisa declarar ROLE_RANK').not.toBeNull()
+
+    const doDemo: Record<string, number> = {}
+    for (const m of bloco![1]!.matchAll(/([a-z_]+)\s*:\s*(\d+)/g)) {
+      doDemo[m[1]!] = Number(m[2])
+    }
+    expect(doDemo).toEqual(ROLE_RANK)
   })
 
   it('o protótipo aplica a mesma regra de herança de negação', () => {

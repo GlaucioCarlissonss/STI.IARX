@@ -9,6 +9,7 @@ import type { EnrichedTicket, TicketComment, TicketHistoryEntry } from '@/lib/ty
 import { Badge, Card, PriorityBadge, SlaBadge, StatusBadge } from '@/components/ui'
 import { TicketActions } from './ticket-actions'
 import { CommentForm } from './comment-form'
+import { Attachments, type AttachmentRecord } from '@/components/attachments'
 
 export async function generateMetadata({
   params,
@@ -43,7 +44,14 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
 
   const isAgent = canWorkTickets(profile.role)
 
-  const [{ data: comments }, { data: history }, { data: transitions }, queues, agents] =
+  const [
+    { data: comments },
+    { data: attachments },
+    { data: history },
+    { data: transitions },
+    queues,
+    agents,
+  ] =
     await Promise.all([
       supabase
         .from('ticket_comments')
@@ -52,6 +60,12 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
         .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .returns<TicketComment[]>(),
+      supabase
+        .from('ticket_attachments')
+        .select('id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
+        .eq('ticket_id', id)
+        .order('created_at', { ascending: false })
+        .returns<AttachmentRecord[]>(),
       supabase
         .from('ticket_history')
         .select('id, field, old_value, new_value, change_source, created_at, actor_id')
@@ -139,6 +153,15 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
               <CommentForm ticketId={ticket.id} canPostInternal={isAgent} />
             </div>
           </Card>
+
+          {/* Até esta rodada `ticket_attachments` existia sem nenhum caminho de
+              upload: anexar arquivo a um ticket era impossível. */}
+          <Attachments
+            entity="tickets"
+            entityId={ticket.id}
+            records={attachments ?? []}
+            title="Anexos do ticket"
+          />
 
           <Card title="Histórico">
             <ol className="flex flex-col gap-2.5">

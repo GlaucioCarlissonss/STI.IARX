@@ -1,6 +1,7 @@
 # 04 — Modelo de Dados
 
-52 tabelas e 17 views em `public`, com 138 policies de RLS. Nomenclatura conforme
+52 tabelas e 17 views em `public`, com 138 policies de RLS, mais 3 policies em
+`storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
 > Os números acima são medidos no banco de validação (`npm run db:validate`), não
@@ -158,6 +159,25 @@ Correção estrutural na mesma migração: `supplier_contracts` ganhou
 contrato por FK composta, e o padrão do
 [ADR-001](03-arquitetura.md#adr-001) ficaria impossível de seguir no financeiro.
 
+### Anexos no Storage (0019)
+Nenhuma tabela nova: as quatro de anexo já existiam desde a 0005 e a 0013, todas
+com `storage_path text not null` e **nenhum caminho de upload** — anexar arquivo a
+um ticket era impossível. A 0019 acrescenta o bucket e a autorização.
+
+| Objeto | Papel |
+|---|---|
+| `storage.buckets` → `anexos` | Bucket **privado**, 25 MB por arquivo, 13 tipos aceitos. Público tornaria `storage_path` uma URL adivinhável, e anexo de ticket de Home Care pode conter dado de saúde. |
+| 3 policies em `storage.objects` | `select`, `insert` e `delete` separados, porque são decisões distintas. **Não existe policy de UPDATE**: trocar o conteúdo mantendo caminho e metadados é substituição silenciosa de prova documental — corrigir é remover e anexar de novo. |
+
+A convenção de caminho é `{tenant_id}/{entidade}/{entity_id}/{arquivo}`, e não é
+nova: `supabase/seed.sql` já gravava assim. O primeiro segmento ser o tenant é o
+que dá ao Storage a mesma fronteira de isolamento das 138 policies de `public`
+(ADR-002), em vez de uma paralela.
+
+O bucket **não** usa `service_role`: o upload sai pelo cliente da sessão, então as
+policies decidem. O ADR-011 sanciona exatamente dois usos daquela chave, e um
+terceiro por conveniência de upload contornaria a autorização recém-construída.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -214,6 +234,10 @@ abertos. O índice parcial mantém a estrutura pequena mesmo com a tabela grande
 | `app.has_permission(text)` | Chave concedida **e** todos os seus ancestrais. É aqui que a herança de negação vive |
 | `app.effective_base_role()` | O **menor** entre `profiles.role` e o `base_role` do perfil — o perfil restringe o RLS e nunca o eleva |
 | `app.seed_system_access_profiles(uuid)` | Cria os 9 perfis do sistema e suas concessões, expressas como regra sobre o catálogo |
+| `app.storage_tenant(text)` | Tenant do caminho do anexo; **NULL** em caminho malformado, porque exceção dentro de policy vira erro 500 opaco em vez de negação limpa |
+| `app.storage_entity(text)` | Entidade do caminho (segundo segmento) |
+| `app.storage_permission_key(text, text)` | Mapa explícito entidade × verbo → chave. O `else null` é a decisão de segurança: prefixo novo no bucket não nasce liberado |
+| `app.can_touch_attachment(text, text)` | Predicado das 3 policies do bucket. Nega por omissão em toda saída |
 
 As concessões dos perfis de sistema são **regra sobre o catálogo**, não lista de
 chaves. Listar ~108 chaves nove vezes garantiria que a próxima permissão entrasse

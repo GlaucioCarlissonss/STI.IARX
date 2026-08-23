@@ -545,6 +545,8 @@
     ['helpdesk.tickets.mudar_status','helpdesk','tickets','mudar_status','Mover status','atendente'],
     ['helpdesk.tickets.atribuir','helpdesk','tickets','atribuir','Atribuir atendente','atendente'],
     ['helpdesk.tickets.transferir','helpdesk','tickets','transferir','Transferir de fila','atendente'],
+    ['helpdesk.tickets.anexar','helpdesk','tickets','anexar','Anexar arquivo','solicitante'],
+    ['helpdesk.tickets.remover_anexo','helpdesk','tickets','remover_anexo','Remover anexo','atendente'],
     ['helpdesk.filas','helpdesk','filas',null,'Filas','visualizador'],
     ['helpdesk.filas.ver','helpdesk','filas','ver','Consultar filas','visualizador'],
     ['sla','sla',null,null,'SLA e filas','gestor'],
@@ -576,12 +578,16 @@
     ['inventario.ativos.criar','inventario','ativos','criar','Cadastrar ativo','gestor'],
     ['inventario.ativos.editar','inventario','ativos','editar','Editar ativo','gestor'],
     ['inventario.ativos.mudar_status','inventario','ativos','mudar_status','Mover ciclo de vida','gestor'],
+    ['inventario.ativos.anexar','inventario','ativos','anexar','Anexar nota ou foto','gestor'],
+    ['inventario.ativos.remover_anexo','inventario','ativos','remover_anexo','Remover anexo do ativo','gestor'],
     ['telefonia','telefonia',null,null,'Telefonia','visualizador'],
     ['telefonia.linhas','telefonia','linhas',null,'Linhas telefônicas','visualizador'],
     ['telefonia.linhas.ver','telefonia','linhas','ver','Consultar linhas','visualizador'],
     ['telefonia.linhas.criar','telefonia','linhas','criar','Cadastrar linha','gestor'],
     ['telefonia.linhas.editar','telefonia','linhas','editar','Editar linha','gestor'],
     ['telefonia.linhas.mudar_status','telefonia','linhas','mudar_status','Suspender/reativar linha','gestor'],
+    ['telefonia.linhas.anexar','telefonia','linhas','anexar','Anexar contrato ou termo','gestor'],
+    ['telefonia.linhas.remover_anexo','telefonia','linhas','remover_anexo','Remover anexo da linha','gestor'],
     ['clientes','clientes',null,null,'Clientes e filiais','gestor'],
     ['clientes.grupos','clientes','grupos',null,'Grupos econômicos','gestor'],
     ['clientes.grupos.ver','clientes','grupos','ver','Consultar clientes','gestor'],
@@ -644,7 +650,14 @@
     ['tv.tokens.revogar','tv','tokens','revogar','Revogar token','gestor'],
   ];
 
-  const ROLE_RANK = { solicitante:1, visualizador:2, atendente:3, gestor:4, admin:5, super_admin:6 };
+  /* Cópia FIEL de ROLE_RANK em src/lib/permissions.ts e de app.role_rank na
+     migração 0017. `visualizador` é o MENOR: é o papel só-leitura, abaixo de
+     solicitante — que ao menos abre e comenta o próprio ticket.
+     Este bloco já esteve invertido, e o efeito não era cosmético: o solicitante
+     perdia `helpdesk.tickets.ver` e ficava sem menu, e o visualizador ganhava
+     `helpdesk.tickets.criar`. O protótipo demonstrava um modelo que a aplicação
+     não tem. `src/lib/permissions.demo.test.ts` passou a cobrar esta tabela. */
+  const ROLE_RANK = { visualizador:0, solicitante:1, atendente:2, gestor:3, admin:4, super_admin:5 };
   const MODULE_LABEL_P = {};
   PERM_CATALOG.forEach(([k,m,s,a,label]) => { if (!s && !a) MODULE_LABEL_P[m] = label; });
   const permEntry = k => PERM_CATALOG.find(p => p[0] === k);
@@ -1663,7 +1676,9 @@
   }
   const primaryPhoto = owner => (owner.attachments || []).find(a => a.primary && a.thumb);
 
-  function attCard(a, ownerKey) {
+  /* `removeKey` é a chave de permissão de remoção da entidade dona. Quem não a
+     tem não recebe o ✕ no HTML — e `guard()` recusa se forçarem o clique. */
+  function attCard(a, ownerKey, removeKey) {
     const url = BLOBS.get(a.id);
     const media = a.kind === 'image' && a.thumb
       ? `<img class="att-thumb" src="${a.thumb}" alt="${esc(a.name)}">`
@@ -1680,8 +1695,9 @@
           data-owner="${ownerKey}" data-on="${!!a.primary}" title="Definir como foto principal">
           ${a.primary ? '★ principal' : '☆ principal'}</button>` : ''}
         ${url ? `<a class="dim" href="${url}" target="_blank" rel="noopener">abrir</a>` : `<span class="dim">não retido</span>`}
-        <button type="button" class="att-star" data-del-att="${a.id}" data-owner="${ownerKey}"
-          style="margin-left:auto" title="Remover">✕</button>
+        ${!removeKey || may(removeKey) ? `<button type="button" class="att-star"
+          data-del-att="${a.id}" data-owner="${ownerKey}" data-perm="${removeKey || ''}"
+          style="margin-left:auto" title="Remover">✕</button>` : ''}
       </div>
     </div>`;
   }
@@ -1698,8 +1714,15 @@
       <a class="dim" style="margin-left:auto" href="${url}" target="_blank" rel="noopener">abrir</a></div>`;
   }
 
-  function dropZone(id, hint) {
-    return `<div class="drop" data-drop="${id}">
+  /* Zona de upload atrás da permissão de anexar. Sem a chave a zona não é
+     renderizada — antes desta rodada ela aparecia para qualquer perfil, e a
+     migração 0019 é que passou a existir para governar isso de verdade. */
+  function dropZone(id, hint, permKey) {
+    if (permKey && !may(permKey)) {
+      return `<p class="dim" style="margin:.4rem 0"><em>Você não tem permissão para
+        anexar arquivos aqui.</em></p>`;
+    }
+    return `<div class="drop" data-drop="${id}" data-perm="${permKey || ''}">
       <input type="file" id="file-${id}" multiple style="display:none">
       <label for="file-${id}" style="cursor:pointer;font-weight:600;color:var(--brand-ink)">Escolher arquivos</label>
       ou arraste aqui<div class="dim" style="margin-top:.2rem">${esc(hint)}</div></div>`;
@@ -2758,7 +2781,7 @@
           <input type="text" id="t-tags" name="tags" placeholder="rede, urgente"></div>
         <div class="form-full">
           <label class="dim" style="display:block;margin-bottom:.35rem">Anexos</label>
-          ${dropZone('newticket','Imagem até 10 MB · áudio até 25 MB · vídeo até 50 MB · documento até 10 MB')}
+          ${dropZone('newticket','Imagem até 10 MB · áudio até 25 MB · vídeo até 50 MB · documento até 10 MB','helpdesk.tickets.anexar')}
           <div id="newticket-list" class="att-grid" style="margin-top:.6rem"></div>
         </div>
         <div class="form-full" id="ticket-msg"></div>
@@ -4095,9 +4118,9 @@
 
           <section><p class="eyebrow" style="margin:0 0 .5rem">Anexos (${(t.attachments||[]).length})
             <span class="dim" style="font-weight:400">· ${kb(used)} de ${QUOTA_MB} MB</span></p>
-            ${dropZone('tk-'+t.id,'Imagem, áudio, vídeo ou documento')}
+            ${dropZone('tk-'+t.id,'Imagem, áudio, vídeo ou documento','helpdesk.tickets.anexar')}
             <div class="att-grid" style="margin-top:.6rem">
-              ${(t.attachments||[]).filter(a=>a.kind==='image').map(a=>attCard(a,'ticket:'+t.id)).join('')}</div>
+              ${(t.attachments||[]).filter(a=>a.kind==='image').map(a=>attCard(a,'ticket:'+t.id,'helpdesk.tickets.remover_anexo')).join('')}</div>
             <div class="att-list" style="margin-top:.6rem">
               ${(t.attachments||[]).filter(a=>a.kind!=='image').map(a=>attPlayer(a)).join('')}</div>
           </section>
@@ -4205,8 +4228,8 @@
           <label for="as-dockind">Tipo do próximo anexo</label><select id="as-dockind">
           ${['nfe','cte','receipt','contract','warranty','other'].map(k=>
             `<option value="${k}">${DOC_KIND[k]}</option>`).join('')}</select></div>
-        ${dropZone('asdoc-'+a.id,'PDF, XML ou imagem, até 10 MB')}
-        <div class="att-grid" style="margin-top:.6rem">${docs.map(x=>attCard(x,'asset:'+a.id)).join('')
+        ${dropZone('asdoc-'+a.id,'PDF, XML ou imagem, até 10 MB','inventario.ativos.anexar')}
+        <div class="att-grid" style="margin-top:.6rem">${docs.map(x=>attCard(x,'asset:'+a.id,'inventario.ativos.remover_anexo')).join('')
           || '<p class="dim">Nenhum documento anexado.</p>'}</div>
         <div class="field" style="max-width:18rem;margin-top:.8rem">
           <label for="as-invoice">Chave / número da NF-e</label>
@@ -4220,8 +4243,8 @@
           <label for="as-photokind">Tipo da próxima foto</label><select id="as-photokind">
           ${['photo_front','photo_back','photo_tag','photo_serial','photo_other'].map(k=>
             `<option value="${k}">${DOC_KIND[k]||k.replace('photo_','')}</option>`).join('')}</select></div>
-        ${dropZone('asphoto-'+a.id,'JPG, PNG ou WebP — comprimimos no navegador antes de guardar')}
-        <div class="att-grid" style="margin-top:.6rem">${photos.map(x=>attCard(x,'asset:'+a.id)).join('')
+        ${dropZone('asphoto-'+a.id,'JPG, PNG ou WebP — comprimimos no navegador antes de guardar','inventario.ativos.anexar')}
+        <div class="att-grid" style="margin-top:.6rem">${photos.map(x=>attCard(x,'asset:'+a.id,'inventario.ativos.remover_anexo')).join('')
           || '<p class="dim">Nenhuma foto. A primeira que você anexar vira a principal.</p>'}</div></section>`;
 
     const custodia = `<section><p class="eyebrow" style="margin:0 0 .5rem">Timeline de custódia</p>
@@ -4297,8 +4320,8 @@
               <label for="ln-dockind">Tipo do próximo anexo</label><select id="ln-dockind">
               ${['contract','amendment','loyalty_term','cancellation','invoice','other'].map(k=>
                 `<option value="${k}">${DOC_KIND[k]}</option>`).join('')}</select></div>
-            ${dropZone('lndoc-'+l.id,'Contrato, adendo ou termo — PDF, DOCX ou imagem')}
-            <div class="att-grid" style="margin-top:.6rem">${docs.map(x=>attCard(x,'line:'+l.id)).join('')
+            ${dropZone('lndoc-'+l.id,'Contrato, adendo ou termo — PDF, DOCX ou imagem','telefonia.linhas.anexar')}
+            <div class="att-grid" style="margin-top:.6rem">${docs.map(x=>attCard(x,'line:'+l.id,'telefonia.linhas.remover_anexo')).join('')
               || '<p class="dim">Nenhum documento anexado — a linha aparece no alerta de governança contratual.</p>'}</div>
           </section>
         </div></aside>`;
@@ -4916,7 +4939,7 @@
   let pendingAtt = [];
   function renderPending() {
     const el = document.getElementById('newticket-list'); if (!el) return;
-    el.innerHTML = pendingAtt.map(a => attCard(a, 'pending')).join('');
+    el.innerHTML = pendingAtt.map(a => attCard(a, 'pending', 'helpdesk.tickets.remover_anexo')).join('');
   }
 
   async function handleFiles(zoneId, files) {
@@ -5130,6 +5153,10 @@
       toast('Foto principal definida'); refresh(); } return; }
     const da = T.closest('[data-del-att]');
     if (da) {
+      // Esconder o ✕ é conveniência; a recusa de verdade é aqui. Quem inspecionar
+      // o HTML e recriar o botão cai neste guard — o equivalente do
+      // requirePermission() no Server Action.
+      if (da.dataset.perm && !guard(da.dataset.perm)) return;
       if (da.dataset.owner === 'pending') {
         pendingAtt = pendingAtt.filter(a => a.id !== da.dataset.delAtt); renderPending(); return;
       }
@@ -5952,7 +5979,12 @@
       e.preventDefault();
       if (evt === 'dragover') zone.classList.add('is-over');
       else zone.classList.remove('is-over');
-      if (evt === 'drop') await handleFiles(zone.dataset.drop, e.dataTransfer.files);
+      if (evt === 'drop') {
+        // Mesma razão do ✕: a zona só é renderizada com permissão, e o guard aqui
+        // recusa quem recriar o elemento pelo inspetor.
+        if (zone.dataset.perm && !guard(zone.dataset.perm)) return;
+        await handleFiles(zone.dataset.drop, e.dataTransfer.files);
+      }
     }));
 
   /* ===================== Gestos do mapa ===================== */
