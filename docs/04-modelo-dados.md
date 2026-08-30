@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-52 tabelas e 17 views em `public`, com 138 policies de RLS, mais 3 policies em
+58 tabelas e 18 views em `public`, com 162 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
@@ -171,12 +171,41 @@ um ticket era impossível. A 0019 acrescenta o bucket e a autorização.
 
 A convenção de caminho é `{tenant_id}/{entidade}/{entity_id}/{arquivo}`, e não é
 nova: `supabase/seed.sql` já gravava assim. O primeiro segmento ser o tenant é o
-que dá ao Storage a mesma fronteira de isolamento das 138 policies de `public`
+que dá ao Storage a mesma fronteira de isolamento das 162 policies de `public`
 (ADR-002), em vez de uma paralela.
 
 O bucket **não** usa `service_role`: o upload sai pelo cliente da sessão, então as
 policies decidem. O ADR-011 sanciona exatamente dois usos daquela chave, e um
 terceiro por conveniência de upload contornaria a autorização recém-construída.
+
+### Títulos e alçada (0020)
+Fecha os módulos de Contas a Pagar e a Receber, e é onde "lançar uma despesa"
+passa a existir.
+
+| Tabela | Papel |
+|---|---|
+| `payables` | Título a pagar. **Cada parcela é um título próprio**, ligado ao primeiro por `parent_payable_id` — assim cada uma é aprovada, paga e cancelada por conta própria, que é como acontece na prática. |
+| `payable_approvals` | Uma linha por decisão de nível. Guardar só `approved_by` no título perderia o histórico de um fluxo de três níveis, e perderia a rejeição que veio antes da aprovação. |
+| `payable_attachments` | NF, boleto e comprovante. Quinta tabela de anexo, mesma forma das outras. |
+| `receivables` | Título a receber. **Sem fluxo de aprovação**, de propósito: aprovar o que se vai receber não protege ninguém — o controle é a baixa. |
+| `expense_categories` | Natureza do gasto. Dimensão independente do centro de custo, que diz quem consome. |
+| `approval_rules` | **A alçada, como dado.** Nasce VAZIA. |
+
+**A alçada é dado, não código.** A regra de quem é N1/N2/N3 nunca foi definida, e
+o escopo proíbe inventar regra de negócio. `approval_rules` expressa "no nível N,
+para valor entre X e Y, opcionalmente restrito a este centro ou filial, quem aprova
+precisa ter este perfil". Cobre aprovação por cargo, por centro de custo, por
+filial e por faixa pura sem que nenhum valor em reais seja escolhido pelo código.
+
+Tabela vazia poderia significar "não precisa aprovar" ou "ninguém pode aprovar",
+então quem decide é `tenants.payable_approval_required`, que começa **false**.
+Ligada sem faixa cadastrada, `app.required_approval_levels()` levanta erro dizendo
+o que configurar — em vez de deixar todo título parado sem explicação.
+
+Alguns CHECKs que carregam regra de negócio, e não só tipo:
+`payables_paid_has_evidence` (pago exige data e conta — pago sem rastro parece
+resolvido e não prova nada), `payables_rejected_has_reason` (rejeição exige motivo)
+e `receivables_received_has_evidence`.
 
 ## 3. Padrões estruturais
 
@@ -238,6 +267,9 @@ abertos. O índice parcial mantém a estrutura pequena mesmo com a tabela grande
 | `app.storage_entity(text)` | Entidade do caminho (segundo segmento) |
 | `app.storage_permission_key(text, text)` | Mapa explícito entidade × verbo → chave. O `else null` é a decisão de segurança: prefixo novo no bucket não nasce liberado |
 | `app.can_touch_attachment(text, text)` | Predicado das 3 policies do bucket. Nega por omissão em toda saída |
+| `app.required_approval_levels(uuid, numeric, uuid, uuid)` | Níveis de alçada exigidos. Array vazio = não precisa aprovar; exceção = ligado sem faixa que cubra o valor |
+| `public.required_approval_levels_for(numeric, uuid, uuid)` | Fachada RPC. O tenant vem do JWT, **nunca** do cliente — aceitá-lo como argumento deixaria a aplicação escolher de qual tenant ler a alçada |
+| `app.payables_guard()` / `app.receivables_guard()` | Máquina de estados do título. Função e não tabela: o fluxo do ticket é personalizado por cliente e vive como dado, o do título é imposto por contabilidade |
 
 As concessões dos perfis de sistema são **regra sobre o catálogo**, não lista de
 chaves. Listar ~108 chaves nove vezes garantiria que a próxima permissão entrasse

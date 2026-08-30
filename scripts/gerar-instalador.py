@@ -45,6 +45,8 @@ def main() -> None:
     seed = os.path.join(RAIZ, 'supabase', 'seed.sql')
     total = len(migracoes) + 1
     assert migracoes, 'nenhuma migração encontrada'
+    # Contado do próprio SQL: número escrito à mão no cabeçalho envelhece calado.
+    n = conta_objetos(migracoes)
 
     partes = [f"""-- =============================================================================
 -- STI.IARX — instalação completa do banco, em um arquivo
@@ -62,6 +64,11 @@ def main() -> None:
 -- aplicado e o banco fica como estava. É de propósito — schema aplicado pela
 -- metade é pior que schema nenhum, porque a segunda tentativa esbarra no que a
 -- primeira deixou pronto.
+--
+-- O QUE ELE CRIA
+--   {n['tabelas']} tabelas e {n['views']} views em `public`, além das policies de RLS, das
+--   funções em `app`, dos 9 perfis de acesso do sistema, do bucket privado
+--   `anexos` e dos dados de exemplo.
 --
 -- O QUE ASSUME QUE JÁ EXISTE (o Supabase provê de fábrica)
 --   auth.users, auth.jwt(), storage.buckets, storage.objects,
@@ -109,7 +116,9 @@ commit;
 --     (select count(*) from public.permission_catalog) as permissoes,
 --     (select count(*) from public.profiles)          as usuarios;
 --
--- Esperado:  52 | 17 | 138 | 3 | 9 | 114 | 7
+-- Confira contra o que `npm run db:validate` reporta no seu ambiente. Números
+-- fixos aqui envelheceriam calados a cada migração nova — foi o que aconteceu
+-- com a primeira versão deste arquivo, que prometia 18 perfis quando são 9.
 --
 -- São 9 perfis porque o seed cria UM tenant, e cada tenant nasce com os 9
 -- perfis do sistema por trigger. Dois tenants dariam 18.
@@ -119,7 +128,6 @@ commit;
     os.makedirs(os.path.dirname(DESTINO), exist_ok=True)
     io.open(DESTINO, 'w', encoding='utf-8').write('\n'.join(partes))
 
-    n = conta_objetos(migracoes)
     linhas = sum(1 for _ in io.open(DESTINO, encoding='utf-8'))
     print(f'gerado: {os.path.relpath(DESTINO, RAIZ)}')
     print(f'  {total} arquivos, {linhas} linhas')

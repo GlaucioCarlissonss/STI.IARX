@@ -25,7 +25,7 @@ tem isso, e traduzir literalmente produziria código que não protege nada:
 |---|---|---|
 | "Middleware intercepta toda requisição, extrai o perfil do JWT, consulta permissões, retorna 403" | `requirePermission()` no topo de cada Server Action | `src/app/api/health/route.ts` é a **única** rota de API. `src/proxy.ts` é middleware de borda e só distingue autenticado de anônimo — ele não sabe qual ação será chamada, porque a Server Action é resolvida depois. |
 | "Validar permissão em todos os endpoints" | as **63 Server Actions** em 14 arquivos | É a superfície de escrita real. Inventário completo na seção do Módulo 1. |
-| "Aplicar filtro de filial em todas as queries" | **já existe**, não se mexe | `app.can_see_branch()` (`0002_core.sql:211`) + 138 policies de RLS. Estendido, nunca reescrito. |
+| "Aplicar filtro de filial em todas as queries" | **já existe**, não se mexe | `app.can_see_branch()` (`0002_core.sql:211`) + 162 policies de RLS. Estendido, nunca reescrito. |
 | "Tabela `permissions` com coluna `permitido` booleana" | catálogo global + `permission_grants` sem booleano | Com "liberação explícita", `permitido = false` e a ausência da linha significam o mesmo fato. Duas representações do mesmo fato divergem: sobra linha falsa que ninguém limpa. |
 | "Cache de permissões no estado global do frontend" | `getSessionContext()`, memoizado por requisição | Já existe `cache()` do React. Mandar a matriz para o cliente exporia a estrutura de permissões de todos no bundle, em troca de nada — a decisão é do servidor. |
 | "Perfis Aprovador N1 / N2 / N3" | um perfil **Aprovador Financeiro** + nível na cadeia de aprovação | O nível de alçada não é atributo da pessoa: a mesma pessoa pode ser N1 de um centro de custo e N2 de outro. Amarrar o nível ao perfil forçaria um nível único por pessoa em toda a operação. |
@@ -47,7 +47,7 @@ continua governando o RLS; `access_profiles` acrescenta granularidade
 módulo → tela → ação por cima, sem reescrever nenhuma policy.
 
 A decisão de coexistir, e não substituir, foi tomada com o operador: substituir
-exigiria reescrever 138 policies, 7 funções `app.*` e 62 pontos de código de uma
+exigiria reescrever 162 policies, 7 funções `app.*` e 62 pontos de código de uma
 vez, com risco real de abrir brecha de isolamento entre tenants no meio do
 caminho.
 
@@ -660,8 +660,8 @@ Pontos de acoplamento já preparados nesta entrega:
 |---|---|
 | `npm run typecheck` | limpo |
 | `npm run lint` | limpo |
-| `npx vitest run` | 181 testes |
-| `npm run db:validate` | 240 asserções contra PostgreSQL 16 real |
+| `npx vitest run` | 192 testes |
+| `npm run db:validate` | 279 asserções contra PostgreSQL 16 real |
 | `npm run build` | 21 rotas compiladas |
 
 **Limite honesto.** As telas autenticadas não podem ser exercitadas em navegador

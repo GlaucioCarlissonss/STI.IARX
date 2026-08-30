@@ -75,6 +75,25 @@ describe('catálogo do protótipo × catálogo da aplicação', () => {
     expect(doDemo).toEqual(ROLE_RANK)
   })
 
+  it('as regras dos perfis financeiros acompanham a migração 0020', () => {
+    /*
+     * A comparação de catálogo NÃO pega este tipo de divergência, e isso já
+     * aconteceu: o catálogo estava certo e as REGRAS dos perfis eram as antigas,
+     * então no protótipo o Operador Financeiro não lançava despesa e o Aprovador
+     * não aprovava. O sintoma era um botão ausente, não um erro.
+     *
+     * Aqui a checagem é textual porque a regra é função nos dois lados e não há
+     * como comparar código; o que se cobra é que a decisão esteja escrita. A
+     * prova de comportamento é o teste de navegador em demo/tests.
+     */
+    expect(HTML, 'operador precisa alcançar criar/editar/anexar nos títulos').toContain(
+      "['titulos_pagar','titulos_receber'].includes(s)",
+    )
+    expect(HTML, 'aprovador precisa alcançar aprovar em títulos a pagar').toContain(
+      "(s === 'titulos_pagar' && a === 'aprovar')",
+    )
+  })
+
   it('o protótipo aplica a mesma regra de herança de negação', () => {
     // Não executa o JS do protótipo; confere que a regra está escrita lá. Uma
     // cópia que devolvesse `granted.has(key)` puro liberaria a ação com o módulo

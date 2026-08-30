@@ -88,6 +88,19 @@
 
   /* Seletor de sessão: é o controle que prova a camada de permissão. Trocar de
      pessoa aqui muda o menu e os botões, sem recarregar a página. */
+  /* Cabeçalho de grupo do menu: pequeno, em caixa alta, sem peso visual que
+     compita com o item. É o ponto onde a vista pula ao procurar. */
+  .nav-group { font-size:.66rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:.06em; color:var(--ink-3); margin:.9rem 0 .25rem; padding:0 .75rem; }
+  .side .nav-group:first-child { margin-top:0; }
+  /* Item previsto. `<span>`, não `<button disabled>`: botão desabilitado sai da
+     ordem de tabulação sem explicar por quê, e o leitor de tela anuncia "botão
+     indisponível", que não informa nada. Aqui o selo está no texto lido. */
+  .nav-soon { display:flex; align-items:center; justify-content:space-between; gap:.4rem;
+    padding:.5rem .75rem; font-size:.86rem; color:var(--ink-3); cursor:default; }
+  .nav-soon em { font-style:normal; font-size:.6rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:.04em; background:var(--surface-3); padding:.1rem .3rem; border-radius:4px; }
+
   .whoami { display:flex; align-items:center; gap:.4rem; font-size:.76rem;
     color:var(--ink-3); white-space:nowrap; }
   .whoami select { border:1px solid var(--border); background:var(--surface);
@@ -455,10 +468,10 @@
 <script>
 (() => {
   'use strict';
-  // v6: perfis de acesso, permissões granulares e a base do financeiro (centros
-  // de custo e contas bancárias). Um estado v5 não tem `accessProfiles`, e sem
-  // perfil a checagem de permissão nega tudo — a ferramenta abriria sem menu.
-  const KEY = 'sti.helpdesk.v6';
+  // v7: títulos a pagar e a receber, categorias de despesa e faixas de alçada.
+  // Um estado v6 não tem `payables`, e a tela de títulos abriria vazia sem dizer
+  // por quê.
+  const KEY = 'sti.helpdesk.v7';
   const MIN = 60000;
 
   /* ===================== Catálogos ===================== */
@@ -714,12 +727,22 @@
       rule:(m,s,a,k) => ['financeiro','fornecedores'].includes(m)
         || (m === 'clientes' && (!a || a === 'ver'))
         || ['sla','sla.compliance','sla.compliance.ver'].includes(k) },
+    /* Lançar despesa e anexar comprovante É o trabalho do operador. Aprovar,
+       pagar e configurar alçada não são — e ficam de fora. A regra é por TELA e
+       não por nome de ação: dar `criar` a todo o módulo faria o operador cadastrar
+       conta bancária, que é o que o perfil dele não deve poder.
+       Cópia fiel de app.seed_system_access_profiles na migração 0020. */
     { key:'operador_financeiro', name:'Operador Financeiro', baseRole:'gestor',
-      desc:'Lança movimentação bancária e consulta; não cadastra conta nem transfere.',
-      rule:(m,s,a) => m === 'financeiro' && (!a || a === 'ver' || a === 'movimentar') },
+      desc:'Lança despesa e movimentação; não cadastra conta, não transfere e não aprova.',
+      rule:(m,s,a) => m === 'financeiro' && (!a
+        || a === 'ver' || a === 'movimentar'
+        || (['titulos_pagar','titulos_receber'].includes(s)
+            && ['criar','editar','anexar','remover_anexo'].includes(a))) },
     { key:'aprovador_financeiro', name:'Aprovador Financeiro', baseRole:'gestor',
       desc:'Consulta o financeiro e aprova o que a alçada permitir.',
-      rule:(m,s,a) => m === 'financeiro' && (!a || a === 'ver') },
+      rule:(m,s,a) => m === 'financeiro' && (!a
+        || a === 'ver'
+        || (s === 'titulos_pagar' && a === 'aprovar')) },
     { key:'visualizador', name:'Visualizador', baseRole:'visualizador',
       desc:'Somente leitura do que o papel visualizador alcança.',
       rule:(m,s,a) => !a || a === 'ver' },
@@ -1181,10 +1204,76 @@
         transferGroup:'tg1', reconciledAt:null, by:'u6' }
     ];
 
+    /* Categorias de despesa: dizem O QUE foi gasto. O centro de custo diz QUEM
+       consumiu. Dimensões diferentes de propósito — misturá-las numa coluna
+       impediria os dois relatórios. */
+    const expenseCategories = [
+      { id:'ec1', code:'SOFTWARE',  name:'Licenças de software',       requiresSupplier:true,  active:true },
+      { id:'ec2', code:'CONECT',    name:'Conectividade e telecom',     requiresSupplier:true,  active:true },
+      { id:'ec3', code:'HARDWARE',  name:'Equipamentos e peças',        requiresSupplier:true,  active:true },
+      { id:'ec4', code:'SERVICOS',  name:'Serviços de terceiros',       requiresSupplier:true,  active:true },
+      { id:'ec5', code:'ADMIN',     name:'Administrativo e escritório', requiresSupplier:false, active:true }
+    ];
+
+    /* VAZIA de propósito. A regra de quem aprova o quê é decisão do cliente, e
+       semear uma faixa aqui seria inventar a política de autorização dele. */
+    const approvalRules = [];
+    const approvalRequired = false;
+
+    const dISO = d => new Date(now + d*864e5).toISOString().slice(0,10);
+    /* Títulos cobrindo os estados que a tela precisa mostrar: vencido, a vencer,
+       aguardando aprovação, pago e parcelado. */
+    const payables = [
+      { id:'tp1', description:'Link dedicado NetLink — outubro', documentRef:'NF 10455',
+        supplierId:'s1', categoryId:'ec2', costCenterId:'cc3', branchId:'b1',
+        amount:4800, issuedOn:dISO(-20), dueOn:dISO(-4), installment:1, installmentTotal:1,
+        status:'approved', approvedAt:now-18*864e5, approvedBy:'u4', rejectionReason:null,
+        paidOn:null, accountId:null, notes:'', attachments:[] },
+      { id:'tp2', description:'Licenças Microsoft 365 — 42 usuários', documentRef:'NF 88120',
+        supplierId:'s3', categoryId:'ec1', costCenterId:'cc1', branchId:null,
+        amount:6720, issuedOn:dISO(-8), dueOn:dISO(6), installment:1, installmentTotal:1,
+        status:'pending_approval', approvedAt:null, approvedBy:null, rejectionReason:null,
+        paidOn:null, accountId:null, notes:'Renovação anual.', attachments:[] },
+      { id:'tp3', description:'Starlink filial Manaus — outubro', documentRef:'NF 3391',
+        supplierId:'s1', categoryId:'ec2', costCenterId:'cc4', branchId:'b3',
+        amount:1900, issuedOn:dISO(-30), dueOn:dISO(-12), installment:1, installmentTotal:1,
+        status:'paid', approvedAt:now-28*864e5, approvedBy:'u4', rejectionReason:null,
+        paidOn:dISO(-12), accountId:'ba1', notes:'', attachments:[] },
+      { id:'tp4', description:'Notebooks Dell — 3 de 3', documentRef:'NF 77012',
+        supplierId:'s3', categoryId:'ec3', costCenterId:'cc1', branchId:'b1',
+        amount:5400, issuedOn:dISO(-60), dueOn:dISO(30), installment:3, installmentTotal:3,
+        status:'approved', approvedAt:now-58*864e5, approvedBy:'u4', rejectionReason:null,
+        paidOn:null, accountId:null, notes:'', attachments:[] },
+      { id:'tp5', description:'Consultoria de rede sem escopo fechado', documentRef:'',
+        supplierId:'s1', categoryId:'ec4', costCenterId:'cc2', branchId:null,
+        amount:12000, issuedOn:dISO(-5), dueOn:dISO(20), installment:1, installmentTotal:1,
+        status:'rejected', approvedAt:null, approvedBy:'u4',
+        rejectionReason:'Sem escopo e sem proposta anexada.',
+        paidOn:null, accountId:null, notes:'', attachments:[] }
+    ];
+
+    const receivables = [
+      { id:'tr1', description:'Mensalidade contrato Meridiano — outubro', documentRef:'NFS 2201',
+        clientId:'c1', contractId:'k1', costCenterId:null, amount:18500,
+        issuedOn:dISO(-10), dueOn:dISO(5), installment:1, installmentTotal:1,
+        status:'open', receivedOn:null, receivedAmount:null, accountId:null, notes:'' },
+      { id:'tr2', description:'Mensalidade contrato Vertex — outubro', documentRef:'NFS 2202',
+        clientId:'c2', contractId:null, costCenterId:null, amount:7400,
+        issuedOn:dISO(-25), dueOn:dISO(-6), installment:1, installmentTotal:1,
+        status:'open', receivedOn:null, receivedAmount:null, accountId:null, notes:'' },
+      { id:'tr3', description:'Projeto de cabeamento — parcela única', documentRef:'NFS 2180',
+        clientId:'c1', contractId:null, costCenterId:null, amount:22000,
+        issuedOn:dISO(-45), dueOn:dISO(-20), installment:1, installmentTotal:1,
+        /* Recebido com desconto: o valor original fica preservado, e a diferença
+           aparece na conciliação em vez de desaparecer. */
+        status:'received', receivedOn:dISO(-18), receivedAmount:21000, accountId:'ba1', notes:'' }
+    ];
+
     return { clients, branches, areas, queues, categories, priorities,
              slaContracts, slaDefs, suppliers, supplierContracts, users,
              tickets, assets, lines, links, integration,
              accessProfiles, costCenters, bankAccounts, movements,
+             expenseCategories, approvalRules, approvalRequired, payables, receivables,
              /* Quem está usando o sistema agora. Trocar aqui é o que faz a
                 interface inteira mudar — é a prova que a camada funciona. */
              session:{ userId:'u2' },
@@ -1208,7 +1297,9 @@
             // ferramenta abriria sem menu nenhum, sem causa visível.
             && Array.isArray(p.accessProfiles) && p.accessProfiles.length
             && Array.isArray(p.costCenters) && Array.isArray(p.bankAccounts)
-            && Array.isArray(p.movements) && p.session) {
+            && Array.isArray(p.movements) && p.session
+            && Array.isArray(p.payables) && Array.isArray(p.receivables)
+            && Array.isArray(p.expenseCategories) && Array.isArray(p.approvalRules)) {
           uid = p.uid || 5000;
           return p;
         }
@@ -3550,6 +3641,190 @@
     return missing;
   }
 
+  /* ===================== Títulos a pagar e a receber (0020) ===================== */
+  const PAYABLE_STATUS = {
+    draft:{label:'Rascunho',tone:'neutral'},
+    pending_approval:{label:'Aguardando aprovação',tone:'warn'},
+    approved:{label:'Aprovado',tone:'info'},
+    rejected:{label:'Reprovado',tone:'breach'},
+    scheduled:{label:'Agendado',tone:'info'},
+    paid:{label:'Pago',tone:'ok'},
+    cancelled:{label:'Cancelado',tone:'neutral'}
+  };
+  const RECEIVABLE_STATUS = {
+    draft:{label:'Rascunho',tone:'neutral'}, open:{label:'Aberto',tone:'info'},
+    received:{label:'Recebido',tone:'ok'}, cancelled:{label:'Cancelado',tone:'neutral'}
+  };
+  const hojeISO = () => new Date().toISOString().slice(0,10);
+  const catById = id => db.expenseCategories.find(c => c.id === id);
+  const payableById = id => db.payables.find(t => t.id === id);
+  const receivableById = id => db.receivables.find(t => t.id === id);
+
+  /** Dias até vencer. Negativo = em atraso. */
+  function vencimentoInfo(dueOn, encerrado) {
+    if (encerrado) return { texto:'—', tone:'neutral' };
+    const dias = Math.round((new Date(dueOn+'T12:00:00') - new Date(hojeISO()+'T12:00:00')) / 864e5);
+    if (dias < 0) return { texto:`${Math.abs(dias)} dia(s) em atraso`, tone:'breach' };
+    if (dias === 0) return { texto:'vence hoje', tone:'crit' };
+    if (dias <= 7) return { texto:`vence em ${dias} dia(s)`, tone:'warn' };
+    return { texto:`vence em ${dias} dia(s)`, tone:'ok' };
+  }
+
+  /**
+   * Níveis de alçada exigidos. Espelha app.required_approval_levels na 0020.
+   * Array vazio = não precisa aprovar. `null` = ligado sem faixa que cubra o
+   * valor, que é o caso ambíguo — e é erro, não silêncio.
+   */
+  function niveisExigidos(valor, costCenterId, branchId) {
+    if (!db.approvalRequired) return [];
+    const faixas = db.approvalRules.filter(r => r.active
+      && valor >= r.minAmount
+      && (r.maxAmount === null || valor <= r.maxAmount)
+      && (!r.costCenterId || r.costCenterId === costCenterId)
+      && (!r.branchId || r.branchId === branchId));
+    if (!faixas.length) return null;
+    return [...new Set(faixas.map(r => r.level))].sort();
+  }
+
+  views['titulos-pagar'] = () => {
+    const podeCriar = may('financeiro.titulos_pagar.criar');
+    const podeAprovar = may('financeiro.titulos_pagar.aprovar');
+    const podePagar = may('financeiro.titulos_pagar.pagar');
+    const podeConfigurar = may('financeiro.titulos_pagar.configurar');
+    const lista = [...db.payables].sort((a,b) => a.dueOn.localeCompare(b.dueOn));
+    const aberto = lista.filter(t => !['paid','cancelled'].includes(t.status));
+    const aguardando = lista.filter(t => t.status === 'pending_approval');
+    const vencidos = aberto.filter(t => t.dueOn < hojeISO());
+    const totalAberto = aberto.reduce((s,t) => s + t.amount, 0);
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Financeiro</p><h1>Títulos a pagar</h1>
+        <p class="lede">Lançamento de despesa, aprovação e baixa. Cada parcela é um título
+        próprio, com aprovação e pagamento independentes — porque a segunda parcela pode vencer
+        depois de o fornecedor ser trocado.</p></div>
+        ${ifMay('financeiro.titulos_pagar.criar',
+          `<button type="button" class="btn" id="tp-new">Lançar despesa</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Em aberto', aberto.length, brl(totalAberto))}
+        ${tile('Aguardando aprovação', aguardando.length, null, aguardando.length?'warn':'neutral')}
+        ${tile('Vencidos', vencidos.length, brl(vencidos.reduce((s,t)=>s+t.amount,0)),
+               vencidos.length?'crit':'ok')}
+        ${tile('Aprovação', db.approvalRequired ? 'exigida' : 'desligada',
+               db.approvalRequired ? `${db.approvalRules.length} faixa(s)` : 'título nasce aprovado',
+               db.approvalRequired?'ok':'neutral')}
+      </div>
+
+      ${lista.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Vencimento</th><th>Descrição</th><th>Valor</th><th>Situação</th>
+          <th>Classificação</th><th></th></tr></thead>
+        <tbody>${lista.map(t => {
+          const st = PAYABLE_STATUS[t.status];
+          const encerrado = t.status === 'paid' || t.status === 'cancelled';
+          const v = vencimentoInfo(t.dueOn, encerrado);
+          const cat = catById(t.categoryId);
+          const cc = costCenterById(t.costCenterId);
+          return `<tr>
+            <td class="mono">${esc(t.dueOn.split('-').reverse().join('/'))}
+              <div class="dim" style="color:var(--${v.tone}-ink)">${esc(v.texto)}</div></td>
+            <td><span class="strong">${esc(t.description)}</span>
+              <p class="dim" style="margin:.15rem 0 0">
+                ${t.documentRef ? 'doc '+esc(t.documentRef) : 'sem documento'}
+                ${t.installmentTotal>1 ? ` · parcela ${t.installment}/${t.installmentTotal}` : ''}</p>
+              ${t.status==='rejected' && t.rejectionReason
+                ? `<p class="dim" style="margin:.15rem 0 0;color:var(--breach-ink)">Reprovado: ${esc(t.rejectionReason)}</p>`
+                : ''}</td>
+            <td class="mono strong">${brl(t.amount)}</td>
+            <td>${pill(st.label, st.tone)}</td>
+            <td class="dim">${cat?esc(cat.code):'—'}${cc?' / '+esc(cc.code):''}</td>
+            <td class="row-actions">
+              ${podeAprovar && t.status==='pending_approval'
+                ? `<button type="button" class="btn btn-sm" data-tp-decide="${t.id}">Aprovar</button>` : ''}
+              ${podePagar && ['approved','scheduled'].includes(t.status)
+                ? `<button type="button" class="btn btn-sm" data-variant="ghost" data-tp-pay="${t.id}">Pagar</button>` : ''}
+              <button type="button" class="btn btn-sm" data-variant="ghost" data-tp-edit="${t.id}">Detalhes</button>
+            </td></tr>`;
+        }).join('')}</tbody></table></div>`
+        : `<div class="alert" data-kind="info">Nenhum título lançado. Use "Lançar despesa".</div>`}
+
+      ${podeConfigurar ? `<div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>Alçada de aprovação</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">A regra de quem aprova o quê é
+        <strong>sua</strong>, não do sistema. Nenhuma faixa vem pré-cadastrada de propósito —
+        inventar um valor aqui seria inventar a sua política de autorização.</p>
+        <div class="row-actions" style="margin-bottom:.6rem">
+          <button type="button" class="btn btn-sm" data-variant="ghost" id="tp-toggle-approval">
+            ${db.approvalRequired ? 'Desligar aprovação' : 'Exigir aprovação'}</button>
+          <button type="button" class="btn btn-sm" data-variant="ghost" id="tp-new-rule">
+            + Nova faixa</button>
+        </div>
+        ${db.approvalRules.length ? `<div class="table-wrap"><table>
+          <thead><tr><th>Nível</th><th>Faixa</th><th>Escopo</th><th></th></tr></thead>
+          <tbody>${db.approvalRules.map(r => `<tr>
+            <td class="strong">${r.level}. ${esc(r.levelName)}</td>
+            <td class="mono">${brl(r.minAmount)} até ${r.maxAmount===null?'sem teto':brl(r.maxAmount)}</td>
+            <td class="dim">${r.costCenterId?esc(costCenterById(r.costCenterId)?.code||'—'):'qualquer centro'}</td>
+            <td><button type="button" class="btn btn-sm" data-variant="ghost"
+              data-tp-del-rule="${r.id}">Remover</button></td></tr>`).join('')}</tbody></table></div>`
+          : `<div class="alert" data-kind="warn">Nenhuma faixa cadastrada. Enquanto não houver
+             faixa, a aprovação não pode ser ligada — todo título novo seria recusado.</div>`}
+      </div></div>` : ''}`;
+  };
+
+  views['titulos-receber'] = () => {
+    const podeBaixar = may('financeiro.titulos_receber.baixar');
+    const lista = [...db.receivables].sort((a,b) => a.dueOn.localeCompare(b.dueOn));
+    const abertos = lista.filter(t => t.status === 'open');
+    const vencidos = abertos.filter(t => t.dueOn < hojeISO());
+    const recebidos = lista.filter(t => t.status === 'received');
+    const diferenca = recebidos.reduce((s,t) => s + (t.amount - (t.receivedAmount ?? t.amount)), 0);
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Financeiro</p><h1>Títulos a receber</h1>
+        <p class="lede">Receita combinada e sua baixa. Sem fluxo de aprovação: aprovar o que se
+        vai receber não protege ninguém — o controle aqui é a baixa.</p></div>
+        ${ifMay('financeiro.titulos_receber.criar',
+          `<button type="button" class="btn" id="tr-new-title">Lançar título</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Em aberto', abertos.length, brl(abertos.reduce((s,t)=>s+t.amount,0)))}
+        ${tile('Vencidos', vencidos.length, brl(vencidos.reduce((s,t)=>s+t.amount,0)),
+               vencidos.length?'crit':'ok')}
+        ${tile('Recebidos', recebidos.length,
+               brl(recebidos.reduce((s,t)=>s+(t.receivedAmount ?? t.amount),0)), 'ok')}
+        ${tile('Diferença de baixa', brl(diferenca), 'desconto e recebimento parcial',
+               diferenca>0?'warn':'neutral')}
+      </div>
+
+      ${lista.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Vencimento</th><th>Descrição</th><th>Cliente</th><th>Valor</th>
+          <th>Situação</th><th></th></tr></thead>
+        <tbody>${lista.map(t => {
+          const st = RECEIVABLE_STATUS[t.status];
+          const encerrado = t.status === 'received' || t.status === 'cancelled';
+          const v = vencimentoInfo(t.dueOn, encerrado);
+          const cli = clientById(t.clientId);
+          const parcial = t.receivedAmount !== null && t.receivedAmount < t.amount;
+          return `<tr>
+            <td class="mono">${esc(t.dueOn.split('-').reverse().join('/'))}
+              <div class="dim" style="color:var(--${v.tone}-ink)">${esc(v.texto)}</div></td>
+            <td><span class="strong">${esc(t.description)}</span>
+              <p class="dim" style="margin:.15rem 0 0">
+                ${t.documentRef ? 'doc '+esc(t.documentRef) : 'sem documento'}</p></td>
+            <td class="muted">${cli ? esc(cli.tradeName || cli.legalName) : '—'}</td>
+            <td class="mono strong">${brl(t.amount)}
+              ${parcial ? `<div class="dim" style="color:var(--warn-ink)">recebido ${brl(t.receivedAmount)}</div>` : ''}</td>
+            <td>${pill(st.label, st.tone)}</td>
+            <td class="row-actions">
+              ${podeBaixar && t.status==='open'
+                ? `<button type="button" class="btn btn-sm" data-tr-settle="${t.id}">Dar baixa</button>` : ''}
+            </td></tr>`;
+        }).join('')}</tbody></table></div>`
+        : `<div class="alert" data-kind="info">Nenhum título a receber.</div>`}`;
+  };
+
   /* ===================== Perfis de acesso (0017) ===================== */
   const ROLE_LABEL_P = { solicitante:'Solicitante', visualizador:'Visualizador',
     atendente:'Atendente', gestor:'Gestor', admin:'Admin', super_admin:'Super admin' };
@@ -3653,6 +3928,165 @@
       </div></div>`;
   };
 
+  function payableModal(id) {
+    const t = id ? payableById(id) : null;
+    const encerrado = t && (t.status === 'paid' || t.status === 'cancelled');
+    const editavel = !t || (may('financeiro.titulos_pagar.editar') && !encerrado);
+    modal(t ? t.description : 'Lançar despesa', `
+      <input type="hidden" id="tpm-id" value="${t?t.id:''}">
+      ${t ? `<p class="dim" style="margin:0 0 .7rem">
+        ${pill(PAYABLE_STATUS[t.status].label, PAYABLE_STATUS[t.status].tone)}
+        ${t.installmentTotal>1?` · parcela ${t.installment}/${t.installmentTotal}`:''}
+        ${t.paidOn?` · pago em ${esc(t.paidOn.split('-').reverse().join('/'))}`:''}</p>` : ''}
+      <div class="form-grid">
+        <div class="field form-full"><label for="tpm-desc">Descrição <span class="req">*</span></label>
+          <input type="text" id="tpm-desc" maxlength="200" value="${t?esc(t.description):''}"
+            ${editavel?'':'disabled'}></div>
+        <div class="field"><label for="tpm-amount">Valor (R$) <span class="req">*</span></label>
+          <input type="number" id="tpm-amount" step="0.01" min="0.01" value="${t?t.amount:''}"
+            ${editavel?'':'disabled'}></div>
+        <div class="field"><label for="tpm-doc">Nº do documento</label>
+          <input type="text" id="tpm-doc" maxlength="60" value="${t?esc(t.documentRef||''):''}"
+            ${editavel?'':'disabled'}></div>
+        <div class="field"><label for="tpm-issued">Emissão <span class="req">*</span></label>
+          <input type="date" id="tpm-issued" value="${t?t.issuedOn:hojeISO()}" ${editavel?'':'disabled'}></div>
+        <div class="field"><label for="tpm-due">Vencimento <span class="req">*</span></label>
+          <input type="date" id="tpm-due" value="${t?t.dueOn:new Date(Date.now()+30*864e5).toISOString().slice(0,10)}"
+            ${editavel?'':'disabled'}></div>
+        <div class="field"><label for="tpm-cat">Categoria (o QUE foi gasto)</label>
+          <select id="tpm-cat" ${editavel?'':'disabled'}><option value="">Não classificada</option>
+            ${db.expenseCategories.filter(c=>c.active).map(c =>
+              `<option value="${c.id}"${t&&t.categoryId===c.id?' selected':''}>${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="tpm-cc">Centro de custo (QUEM consumiu)</label>
+          <select id="tpm-cc" ${editavel?'':'disabled'}><option value="">Não informado</option>
+            ${db.costCenters.filter(c=>c.active).map(c =>
+              `<option value="${c.id}"${t&&t.costCenterId===c.id?' selected':''}>${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="tpm-sup">Fornecedor</label>
+          <select id="tpm-sup" ${editavel?'':'disabled'}><option value="">Não informado</option>
+            ${db.suppliers.map(x =>
+              `<option value="${x.id}"${t&&t.supplierId===x.id?' selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="tpm-branch">Filial</label>
+          <select id="tpm-branch" ${editavel?'':'disabled'}><option value="">Todas</option>
+            ${db.branches.map(b =>
+              `<option value="${b.id}"${t&&t.branchId===b.id?' selected':''}>${esc(b.name)}</option>`).join('')}</select></div>
+        ${t ? '' : `<div class="field"><label for="tpm-parcelas">Parcelas</label>
+          <input type="number" id="tpm-parcelas" min="1" max="60" value="1">
+          <span class="dim">A sobra do centavo vai para a PRIMEIRA parcela, não para a última:
+          jogar na última faria o boleto final divergir do que o fornecedor emitiu.</span></div>
+        <div class="field"><label for="tpm-intervalo">Intervalo (dias)</label>
+          <input type="number" id="tpm-intervalo" min="1" max="365" value="30"></div>`}
+        ${encerrado ? `<div class="form-full"><div class="alert" data-kind="warn">
+          Título ${PAYABLE_STATUS[t.status].label.toLowerCase()}: valor, vencimento e fornecedor
+          não podem mais ser alterados — mudá-los descolaria o título da movimentação que o pagou.
+        </div></div>` : ''}
+        <div class="form-full" id="tpm-msg"></div>
+      </div>`, editavel ? { save: t ? 'Salvar' : 'Lançar despesa' } : { noFooter:true });
+  }
+
+  function decisionModal(id) {
+    const t = payableById(id);
+    if (!t) return;
+    modal(`Aprovação de ${t.description}`, `
+      <input type="hidden" id="apm-id" value="${t.id}">
+      <p class="dim" style="margin:0 0 .7rem">Valor: <strong>${brl(t.amount)}</strong>
+        · vence em ${esc(t.dueOn.split('-').reverse().join('/'))}</p>
+      <div class="form-grid">
+        <div class="field form-full"><label for="apm-note">Observação</label>
+          <input type="text" id="apm-note" maxlength="300">
+          <span class="dim">Obrigatória ao reprovar: sem o motivo, quem recebe o título de volta
+          não sabe o que corrigir.</span></div>
+        <div class="form-full" id="apm-msg"></div>
+        <div class="form-full row-actions">
+          <button type="button" class="btn" id="apm-approve">Aprovar</button>
+          <button type="button" class="btn" data-variant="ghost" id="apm-reject">Reprovar</button>
+        </div>
+      </div>`, { noFooter:true });
+  }
+
+  function paymentModal(id) {
+    const t = payableById(id);
+    if (!t) return;
+    modal(`Baixa de ${t.description}`, `
+      <input type="hidden" id="pgm-id" value="${t.id}">
+      <p class="dim" style="margin:0 0 .7rem">Valor: <strong>${brl(t.amount)}</strong></p>
+      <div class="form-grid">
+        <div class="field"><label for="pgm-account">Conta de saída <span class="req">*</span></label>
+          <select id="pgm-account">${db.bankAccounts.filter(a=>a.status==='active').map(a =>
+            `<option value="${a.id}">${esc(a.name)} — ${esc(a.bankName)}</option>`).join('')}</select></div>
+        <div class="field"><label for="pgm-date">Data do pagamento <span class="req">*</span></label>
+          <input type="date" id="pgm-date" value="${hojeISO()}"></div>
+        <div class="form-full"><p class="dim">A baixa gera a saída na conta escolhida. Se o
+        título falhar depois, a movimentação é desfeita — conta debitada por pagamento que a tela
+        diz não ter acontecido é o pior desfecho possível.</p></div>
+        <div class="form-full" id="pgm-msg"></div>
+      </div>`, { save:'Registrar pagamento' });
+  }
+
+  function ruleModal() {
+    modal('Nova faixa de alçada', `
+      <div class="form-grid">
+        <div class="field"><label for="arm-level">Nível <span class="req">*</span></label>
+          <input type="number" id="arm-level" min="1" max="9" value="1">
+          <span class="dim">1 aprova primeiro, 2 depois.</span></div>
+        <div class="field"><label for="arm-name">Nome do nível <span class="req">*</span></label>
+          <input type="text" id="arm-name" maxlength="60" placeholder="Coordenação"></div>
+        <div class="field"><label for="arm-min">Valor mínimo (R$)</label>
+          <input type="number" id="arm-min" step="0.01" min="0" placeholder="0"></div>
+        <div class="field"><label for="arm-max">Valor máximo (R$)</label>
+          <input type="number" id="arm-max" step="0.01" min="0.01" placeholder="vazio = sem teto">
+          <span class="dim">Vazio significa "sem teto" — é assim que o último nível se expressa.</span></div>
+        <div class="field form-full"><label for="arm-cc">Só neste centro de custo</label>
+          <select id="arm-cc"><option value="">Qualquer centro</option>
+            ${db.costCenters.filter(c=>c.active).map(c =>
+              `<option value="${c.id}">${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="form-full" id="arm-msg"></div>
+      </div>`, { save:'Cadastrar faixa' });
+  }
+
+  function receivableModal() {
+    modal('Lançar título a receber', `
+      <div class="form-grid">
+        <div class="field form-full"><label for="trm-desc">Descrição <span class="req">*</span></label>
+          <input type="text" id="trm-desc" maxlength="200"></div>
+        <div class="field"><label for="trm-amount">Valor (R$) <span class="req">*</span></label>
+          <input type="number" id="trm-amount" step="0.01" min="0.01"></div>
+        <div class="field"><label for="trm-doc">Nº do documento</label>
+          <input type="text" id="trm-doc" maxlength="60"></div>
+        <div class="field"><label for="trm-issued">Emissão <span class="req">*</span></label>
+          <input type="date" id="trm-issued" value="${hojeISO()}"></div>
+        <div class="field"><label for="trm-due">Vencimento <span class="req">*</span></label>
+          <input type="date" id="trm-due" value="${new Date(Date.now()+30*864e5).toISOString().slice(0,10)}"></div>
+        <div class="field"><label for="trm-client">Cliente</label>
+          <select id="trm-client"><option value="">Não informado</option>
+            ${db.clients.map(c => `<option value="${c.id}">${esc(c.tradeName||c.legalName)}</option>`).join('')}</select></div>
+        <div class="field"><label for="trm-parcelas">Parcelas</label>
+          <input type="number" id="trm-parcelas" min="1" max="60" value="1">
+          <span class="dim">Mais de uma gera um título por mês.</span></div>
+        <div class="form-full" id="trm-msg"></div>
+      </div>`, { save:'Lançar título' });
+  }
+
+  function settlementModal(id) {
+    const t = receivableById(id);
+    if (!t) return;
+    modal(`Recebimento de ${t.description}`, `
+      <input type="hidden" id="bxm-id" value="${t.id}">
+      <p class="dim" style="margin:0 0 .7rem">Valor do título: <strong>${brl(t.amount)}</strong></p>
+      <div class="form-grid">
+        <div class="field"><label for="bxm-account">Conta que recebeu <span class="req">*</span></label>
+          <select id="bxm-account">${db.bankAccounts.filter(a=>a.status==='active').map(a =>
+            `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="bxm-date">Data <span class="req">*</span></label>
+          <input type="date" id="bxm-date" value="${hojeISO()}"></div>
+        <div class="field"><label for="bxm-amount">Valor recebido</label>
+          <input type="number" id="bxm-amount" step="0.01" min="0.01" placeholder="${t.amount}">
+          <span class="dim">Vazio = valor do título.</span></div>
+        <div class="form-full"><p class="dim">Recebeu menos? Informe o valor real. O valor do
+        título é preservado e a diferença fica visível na conciliação, em vez de desaparecer.</p></div>
+        <div class="form-full" id="bxm-msg"></div>
+      </div>`, { save:'Registrar recebimento' });
+  }
+
   function profileMatrixModal(id) {
     const p = profileById(id);
     if (!p) return;
@@ -3660,6 +4094,18 @@
     const editavel = may('usuarios.perfis.editar') && !p.isSystem;
     modal(`${p.isSystem ? 'Matriz de' : 'Editar'} ${p.name}`, `
       <input type="hidden" id="pm-id" value="${p.id}">
+
+      ${editavel ? `<div class="form-grid" style="margin-bottom:.9rem">
+        <div class="field"><label for="pm-name">Nome do perfil <span class="req">*</span></label>
+          <input type="text" id="pm-name" maxlength="60" value="${esc(p.name)}"></div>
+        <div class="field"><label for="pm-baseRole">Papel implicado <span class="req">*</span></label>
+          <select id="pm-baseRole">${Object.entries(ROLE_LABEL_P).map(([k,l]) =>
+            `<option value="${k}"${p.baseRole===k?' selected':''}>${esc(l)}</option>`).join('')}</select>
+          <span class="dim">Teto de privilégio. Baixar o teto DESMARCA o que passa dele.</span></div>
+        <div class="field form-full"><label for="pm-desc">Descrição</label>
+          <input type="text" id="pm-desc" maxlength="200" value="${esc(p.description||'')}"></div>
+        <div class="form-full" id="pm-msg"></div>
+      </div>` : ''}
       <p class="dim" style="margin:0 0 .6rem">Papel implicado:
         <strong>${esc(ROLE_LABEL_P[p.baseRole] || p.baseRole)}</strong>. Chave acima desse teto
         aparece esmaecida e não pode ser concedida — seria configuração sem efeito nenhum.
@@ -4862,45 +5308,102 @@
      `null` = sem permissão de módulo, visível para qualquer sessão. A ordem é a
      do menu E a de preferência de destino — mesma decisão de
      src/lib/navigation.ts, tomada lá depois de um laço de redirect. */
-  const NAV = [
-    ['novidades','Novidades',false,null],
-    ['painel','Painel',false,'helpdesk.painel.ver'],
-    ['tickets','Tickets',false,'helpdesk.tickets.ver'],
-    ['novo','Abrir ticket',false,'helpdesk.tickets.criar'],
-    ['sla','SLA e filas',false,'sla.compliance.ver'],
-    ['inventario','Inventário',false,'inventario.ativos.ver'],
-    ['telefonia','Telefonia',false,'telefonia.linhas.ver'],
-    /* Links de Internet existe no protótipo e NÃO existe no PERMISSION_CATALOG:
-       a tela da aplicação ainda não foi construída. Fica sem permissão em vez de
-       ganhar uma chave inventada — chave que não governa tela é configuração
-       morta, que foi exatamente o defeito corrigido nesta rodada. */
-    ['links','Links de Internet',false,null],
-    ['clientes','Clientes e filiais',false,'clientes.grupos.ver'],
-    ['fornecedores','Fornecedores',false,'fornecedores.cadastro.ver'],
-    ['centros','Centros de custo',true,'financeiro.centros_custo.ver'],
-    ['contas','Contas bancárias',true,'financeiro.contas_bancarias.ver'],
-    ['usuarios','Usuários',false,'usuarios.usuarios.ver'],
-    ['perfis','Perfis de acesso',true,'usuarios.perfis.ver'],
-    ['integracoes','Integrações',false,'integracoes.hub.ver'],
-    ['mapas','Mapas',false,'mapas.geolocalizacao.ver'],
-    /* Trocar a própria senha não é permissão de módulo, é direito de quem tem
-       conta — e por isso é o último destino seguro. */
-    ['conta','Minha conta',false,null]
+  /* ===================== Arquitetura de informação do menu =================
+     Cópia da estrutura de src/lib/navigation.ts. As decisões de agrupamento e de
+     nomenclatura estão documentadas lá e em docs/08.
+
+     Item: [view, rótulo, novo?, permissão, previsto?, explicação]
+     `permissão: null` = visível para qualquer sessão.
+     `previsto: true`  = tela ainda não existe; aparece desabilitado, sem chave no
+                         catálogo, e NÃO faz o grupo aparecer sozinho. */
+  const NAV_GROUPS = [
+    [null, [
+      ['novidades','Novidades',false,null],
+      /* Sem permissão: a Visão geral é a tela inicial de todo mundo e cada bloco
+         dela exige a permissão do seu módulo. Exigir helpdesk.painel.ver no
+         destino padrão era a causa do laço de redirect. */
+      ['painel','Visão geral',false,null],
+    ]],
+    ['Atendimento', [
+      ['tickets','Tickets',false,'helpdesk.tickets.ver'],
+      ['novo','Abrir ticket',false,'helpdesk.tickets.criar'],
+      ['sla','SLA e prazos',false,'sla.compliance.ver'],
+    ]],
+    ['Financeiro', [
+      ['titulos-pagar','Títulos a pagar',true,'financeiro.titulos_pagar.ver'],
+      ['titulos-receber','Títulos a receber',true,'financeiro.titulos_receber.ver'],
+      ['contas','Contas bancárias',false,'financeiro.contas_bancarias.ver'],
+      ['centros','Centros de custo',false,'financeiro.centros_custo.ver'],
+      [null,'Fluxo de caixa',false,null,true,
+       'Projeção de entradas e saídas. Depende dos títulos em uso.'],
+    ]],
+    ['Infraestrutura', [
+      ['inventario','Inventário de TI',false,'inventario.ativos.ver'],
+      ['telefonia','Telefonia',false,'telefonia.linhas.ver'],
+      /* Links de Internet existe no protótipo e NÃO no PERMISSION_CATALOG: a tela
+         da aplicação não foi construída. Fica sem permissão em vez de ganhar uma
+         chave inventada. */
+      ['links','Links de internet',false,null],
+      ['mapas','Mapa das filiais',false,'mapas.geolocalizacao.ver'],
+    ]],
+    ['Cadastros', [
+      ['clientes','Clientes e filiais',false,'clientes.grupos.ver'],
+      ['fornecedores','Fornecedores e contratos',false,'fornecedores.cadastro.ver'],
+    ]],
+    ['Integrações', [
+      ['integracoes','Sistemas de tickets',false,'integracoes.hub.ver'],
+      [null,'Automação (N8N)',false,null,true,
+       'Disparo de fluxos no N8N por webhook.'],
+      [null,'WhatsApp',false,null,true,'Abertura e acompanhamento de ticket por WhatsApp.'],
+      [null,'Telegram',false,null,true,'Notificação e abertura de ticket por Telegram.'],
+      [null,'Bancos de dados',false,null,true,'Leitura de base externa para importar cadastro.'],
+      [null,'Pagamento bancário',false,null,true,'Remessa de pagamento ao banco.'],
+      [null,'Recebimento bancário',false,null,true,'Retorno de cobrança e baixa automática.'],
+    ]],
+    ['Administração', [
+      ['usuarios','Usuários',false,'usuarios.usuarios.ver'],
+      ['perfis','Perfis de acesso',false,'usuarios.perfis.ver'],
+    ]],
+    [null, [
+      /* Trocar a própria senha não é permissão de módulo, é direito de quem tem
+         conta — e por isso é o último destino seguro. */
+      ['conta','Minha conta',false,null],
+    ]],
   ];
-  const visibleNav = () => NAV.filter(([k,l,n,perm]) => perm === null || may(perm));
-  /* Primeira tela que ESTA sessão alcança. Nunca devolve tela negada, que é o
-     que quebra o laço de redirect. */
+
+  const NAV = NAV_GROUPS.flatMap(([, itens]) => itens);
+  const itemVisivel = ([k,l,n,perm,soon]) => !soon && (perm === null || may(perm));
+  const visibleNav = () => NAV.filter(itemVisivel);
+
+  /* Grupo sem item alcançável desaparece inteiro, cabeçalho incluído: cabeçalho
+     sozinho anuncia um módulo sem dar acesso a ele. */
+  function visibleNavGroups() {
+    return NAV_GROUPS
+      .map(([rotulo, itens]) => {
+        const reais = itens.filter(itemVisivel);
+        if (!reais.length) return null;
+        return [rotulo, itens.filter(i => reais.includes(i) || i[4])];
+      })
+      .filter(Boolean);
+  }
+
+  /* Primeira tela que ESTA sessão alcança. `conta` é último recurso, não primeira
+     escolha — mandar quem tem módulos para a troca de senha seria pior. */
   function landingView() {
-    const first = visibleNav().find(([k,l,n,perm]) => perm !== null);
+    const first = visibleNav().find(([k]) => k !== 'conta' && k !== null);
     return first ? first[0] : 'conta';
   }
   let current = 'novidades';
   const wallVisible = () => !document.getElementById('wall-stage').classList.contains('hidden');
 
   function renderNav() {
-    document.getElementById('nav').innerHTML = visibleNav().map(([k,l,isNew]) =>
-      `<button type="button" data-view="${k}"${current===k?' aria-current="page"':''}>
-        ${esc(l)}${isNew?'<span class="tag-new">novo</span>':''}</button>`).join('');
+    document.getElementById('nav').innerHTML = visibleNavGroups().map(([rotulo, itens]) => `
+      ${rotulo ? `<h2 class="nav-group">${esc(rotulo)}</h2>` : ''}
+      ${itens.map(([k,l,isNew,perm,soon,hint]) => soon
+        ? `<span class="nav-soon" title="${esc(hint||'')}">${esc(l)}<em>em breve</em></span>`
+        : `<button type="button" data-view="${k}"${current===k?' aria-current="page"':''}>
+            ${esc(l)}${isNew?'<span class="tag-new">novo</span>':''}</button>`).join('')}
+    `).join('');
   }
   function renderWhoami() {
     const sel = document.getElementById('acting-user');
@@ -5243,6 +5746,75 @@
     const kc = T.closest('[data-slac-edit]');
     if (kc) { slaContractModal(kc.dataset.slacEdit); return; }
 
+    /* Aprovar e reprovar são dois botões no mesmo modal, e não `modal-save`,
+       porque a decisão é o dado — não há "salvar" neutro aqui. */
+    if (T.id === 'apm-approve' || T.id === 'apm-reject') {
+      if (!guard('financeiro.titulos_pagar.aprovar')) return;
+      const t = payableById(document.getElementById('apm-id').value);
+      if (!t) return;
+      const nota = document.getElementById('apm-note').value.trim();
+      const msg = document.getElementById('apm-msg');
+      if (t.status !== 'pending_approval') {
+        msg.innerHTML = `<div class="alert" data-kind="error">Este título não está aguardando aprovação.</div>`;
+        return;
+      }
+      if (T.id === 'apm-reject' && nota.length < 3) {
+        msg.innerHTML = `<div class="alert" data-kind="error">Reprovação exige o motivo — sem ele
+          quem recebe o título de volta não sabe o que corrigir.</div>`;
+        return;
+      }
+      if (T.id === 'apm-approve') {
+        Object.assign(t, { status:'approved', approvedAt:Date.now(),
+          approvedBy:db.session.userId, rejectionReason:null });
+      } else {
+        Object.assign(t, { status:'rejected', rejectionReason:nota,
+          approvedBy:db.session.userId });
+      }
+      save(); closeModal(); render();
+      toast(T.id === 'apm-approve' ? 'Título aprovado' : 'Título reprovado');
+      return;
+    }
+
+    /* --- Títulos a pagar e a receber ------------------------------------- */
+    if (T.id === 'tp-new') { if (guard('financeiro.titulos_pagar.criar')) payableModal(null); return; }
+    const tpe = T.closest('[data-tp-edit]');
+    if (tpe) { if (guard('financeiro.titulos_pagar.ver')) payableModal(tpe.dataset.tpEdit); return; }
+    const tpd = T.closest('[data-tp-decide]');
+    if (tpd) { if (guard('financeiro.titulos_pagar.aprovar')) decisionModal(tpd.dataset.tpDecide); return; }
+    const tpp = T.closest('[data-tp-pay]');
+    if (tpp) { if (guard('financeiro.titulos_pagar.pagar')) paymentModal(tpp.dataset.tpPay); return; }
+
+    if (T.id === 'tp-new-rule') { if (guard('financeiro.titulos_pagar.configurar')) ruleModal(); return; }
+    const tpdr = T.closest('[data-tp-del-rule]');
+    if (tpdr) {
+      if (!guard('financeiro.titulos_pagar.configurar')) return;
+      db.approvalRules = db.approvalRules.filter(r => r.id !== tpdr.dataset.tpDelRule);
+      /* Sem faixa não pode haver exigência: deixar ligado faria todo título novo
+         falhar, e o motivo não estaria na tela. */
+      if (!db.approvalRules.length && db.approvalRequired) {
+        db.approvalRequired = false;
+        toast('Faixa removida — a exigência de aprovação foi desligada, pois não sobrou alçada');
+      } else toast('Faixa removida');
+      save(); render(); return;
+    }
+    if (T.id === 'tp-toggle-approval') {
+      if (!guard('financeiro.titulos_pagar.configurar')) return;
+      if (!db.approvalRequired && !db.approvalRules.some(r => r.active)) {
+        toast('Cadastre uma faixa de alçada antes de exigir aprovação');
+        return;
+      }
+      db.approvalRequired = !db.approvalRequired;
+      save(); render();
+      toast(db.approvalRequired
+        ? 'Aprovação ligada — título novo passa a nascer aguardando aprovação'
+        : 'Aprovação desligada — título novo nasce já aprovado');
+      return;
+    }
+
+    if (T.id === 'tr-new-title') { if (guard('financeiro.titulos_receber.criar')) receivableModal(); return; }
+    const trs = T.closest('[data-tr-settle]');
+    if (trs) { if (guard('financeiro.titulos_receber.baixar')) settlementModal(trs.dataset.trSettle); return; }
+
     /* --- Perfis de acesso, centros de custo e contas bancárias ------------
        Cada ramo chama `guard()` ANTES de abrir o formulário. Esconder o botão
        com `ifMay()` é conveniência: quem inspecionar o HTML e forçar o clique
@@ -5266,9 +5838,16 @@
     }
     if (T.id === 'profile-new') {
       if (!guard('usuarios.perfis.criar')) return;
-      db.accessProfiles.push({ id:nid('ap'), systemKey:null, name:'Novo perfil',
-        description:'', baseRole:'visualizador', isSystem:false, active:true, grants:[] });
-      save(); render(); toast('Perfil criado sem nenhuma concessão — marque o que ele alcança');
+      /* Nasce com nome único e ABRE o formulário na hora. Antes nascia chamado
+         "Novo perfil" e a tela não tinha onde renomeá-lo. */
+      let n = 1;
+      while (db.accessProfiles.some(x => x.name === `Perfil personalizado ${n}`)) n++;
+      const novo = { id:nid('ap'), systemKey:null, name:`Perfil personalizado ${n}`,
+        description:'', baseRole:'visualizador', isSystem:false, active:true, grants:[] };
+      db.accessProfiles.push(novo);
+      save(); render();
+      profileMatrixModal(novo.id);
+      toast('Perfil criado — dê um nome, escolha o teto e marque o que ele alcança');
       return;
     }
 
@@ -5442,12 +6021,194 @@
         return false;
       };
 
+      // --- Título a pagar ---
+      if (document.getElementById('tpm-desc')) {
+        const fail = failIn('tpm-msg');
+        const id = document.getElementById('tpm-id').value;
+        if (!guardOrFail(id ? 'financeiro.titulos_pagar.editar'
+                            : 'financeiro.titulos_pagar.criar', fail)) return;
+        const description = document.getElementById('tpm-desc').value.trim();
+        if (description.length < 2) return fail('Descreva a despesa.');
+        const amount = Number(document.getElementById('tpm-amount').value || 0);
+        if (!(amount > 0)) return fail('O valor precisa ser maior que zero.');
+        const issuedOn = document.getElementById('tpm-issued').value;
+        const dueOn = document.getElementById('tpm-due').value;
+        if (!issuedOn || !dueOn) return fail('Informe emissão e vencimento.');
+        /* Emitido depois do próprio vencimento é erro de digitação em 100% dos
+           casos, e passar disso produz relatório de vencidos incompreensível. */
+        if (issuedOn > dueOn) return fail('O vencimento não pode ser anterior à emissão.');
+
+        const base = { description, amount, documentRef:document.getElementById('tpm-doc').value.trim(),
+          issuedOn, dueOn,
+          categoryId:document.getElementById('tpm-cat').value || null,
+          costCenterId:document.getElementById('tpm-cc').value || null,
+          supplierId:document.getElementById('tpm-sup').value || null,
+          branchId:document.getElementById('tpm-branch').value || null };
+
+        if (id) {
+          Object.assign(payableById(id), base);
+          save(); closeModal(); render(); toast('Título atualizado'); return;
+        }
+
+        const niveis = niveisExigidos(amount, base.costCenterId, base.branchId);
+        if (niveis === null) {
+          return fail('Aprovação está ligada, mas nenhuma faixa de alçada cobre este valor. '
+            + 'Cadastre a faixa ou desligue a exigência.');
+        }
+        const status = niveis.length ? 'pending_approval' : 'approved';
+
+        const total = Math.max(1, Number(document.getElementById('tpm-parcelas').value || 1));
+        const intervalo = Math.max(1, Number(document.getElementById('tpm-intervalo').value || 30));
+        /* Divisão em centavos, com a sobra na PRIMEIRA parcela. */
+        const centavos = Math.round(amount * 100);
+        const porParcela = Math.floor(centavos / total);
+        const sobra = centavos - porParcela * total;
+        const primeiro = nid('tp');
+        for (let i = 0; i < total; i++) {
+          const venc = new Date(dueOn + 'T12:00:00');
+          venc.setDate(venc.getDate() + i * intervalo);
+          db.payables.push(Object.assign({}, base, {
+            id: i === 0 ? primeiro : nid('tp'),
+            parentId: i === 0 ? null : primeiro,
+            amount: (porParcela + (i === 0 ? sobra : 0)) / 100,
+            dueOn: venc.toISOString().slice(0,10),
+            installment: i + 1, installmentTotal: total,
+            status, approvedAt: status === 'approved' ? Date.now() : null,
+            approvedBy: status === 'approved' ? db.session.userId : null,
+            rejectionReason:null, paidOn:null, accountId:null, notes:'', attachments:[]
+          }));
+        }
+        save(); closeModal(); render();
+        toast(total > 1
+          ? `${total} parcelas lançadas${niveis.length ? ', aguardando aprovação' : ''}`
+          : niveis.length ? 'Despesa lançada e enviada para aprovação'
+                          : 'Despesa lançada e já aprovada — este ambiente não exige aprovação');
+        return;
+      }
+
+      // --- Baixa de pagamento ---
+      if (document.getElementById('pgm-id')) {
+        const fail = failIn('pgm-msg');
+        if (!guardOrFail('financeiro.titulos_pagar.pagar', fail)) return;
+        const t = payableById(document.getElementById('pgm-id').value);
+        if (!t) return fail('Título não encontrado.');
+        if (!['approved','scheduled'].includes(t.status)) {
+          return fail(`Só título aprovado pode ser pago. Este está em "${PAYABLE_STATUS[t.status].label}".`);
+        }
+        const accountId = document.getElementById('pgm-account').value;
+        const paidOn = document.getElementById('pgm-date').value;
+        if (!accountId || !paidOn) return fail('Informe a conta e a data.');
+
+        db.movements.push({ id:nid('mv'), accountId, direction:'out', amount:t.amount,
+          movedOn:paidOn, description:`Pagamento: ${t.description}`,
+          costCenterId:t.costCenterId, transferGroup:null, reconciledAt:null,
+          by:db.session.userId });
+        Object.assign(t, { status:'paid', paidOn, accountId });
+        save(); closeModal(); render();
+        toast('Pagamento registrado e lançado na conta'); return;
+      }
+
+      // --- Faixa de alçada ---
+      if (document.getElementById('arm-level')) {
+        const fail = failIn('arm-msg');
+        if (!guardOrFail('financeiro.titulos_pagar.configurar', fail)) return;
+        const level = Number(document.getElementById('arm-level').value || 0);
+        if (!Number.isInteger(level) || level < 1 || level > 9) return fail('Nível de 1 a 9.');
+        const levelName = document.getElementById('arm-name').value.trim();
+        if (levelName.length < 2) return fail('Dê um nome ao nível.');
+        const minAmount = Number(document.getElementById('arm-min').value || 0);
+        const maxRaw = document.getElementById('arm-max').value.trim();
+        const maxAmount = maxRaw === '' ? null : Number(maxRaw);
+        if (maxAmount !== null && !(maxAmount > minAmount)) {
+          return fail('O valor máximo precisa ser maior que o mínimo.');
+        }
+        db.approvalRules.push({ id:nid('ar'), level, levelName, minAmount, maxAmount,
+          costCenterId:document.getElementById('arm-cc').value || null,
+          branchId:null, requiredProfileId:null, active:true });
+        db.approvalRules.sort((a,b) => a.level - b.level || a.minAmount - b.minAmount);
+        save(); closeModal(); render(); toast('Faixa de alçada cadastrada'); return;
+      }
+
+      // --- Título a receber ---
+      if (document.getElementById('trm-desc')) {
+        const fail = failIn('trm-msg');
+        if (!guardOrFail('financeiro.titulos_receber.criar', fail)) return;
+        const description = document.getElementById('trm-desc').value.trim();
+        if (description.length < 2) return fail('Descreva o título.');
+        const amount = Number(document.getElementById('trm-amount').value || 0);
+        if (!(amount > 0)) return fail('O valor precisa ser maior que zero.');
+        const issuedOn = document.getElementById('trm-issued').value;
+        const dueOn = document.getElementById('trm-due').value;
+        if (issuedOn > dueOn) return fail('O vencimento não pode ser anterior à emissão.');
+
+        const total = Math.max(1, Number(document.getElementById('trm-parcelas').value || 1));
+        const centavos = Math.round(amount * 100);
+        const porParcela = Math.floor(centavos / total);
+        const sobra = centavos - porParcela * total;
+        for (let i = 0; i < total; i++) {
+          const venc = new Date(dueOn + 'T12:00:00');
+          venc.setMonth(venc.getMonth() + i);
+          db.receivables.push({ id:nid('tr'), description,
+            documentRef:document.getElementById('trm-doc').value.trim(),
+            clientId:document.getElementById('trm-client').value || null,
+            contractId:null, costCenterId:null,
+            amount:(porParcela + (i === 0 ? sobra : 0)) / 100,
+            issuedOn, dueOn:venc.toISOString().slice(0,10),
+            installment:i+1, installmentTotal:total,
+            /* Nasce ABERTO, não em rascunho: o título existe porque a receita foi
+               combinada, e rascunho só adiaria o trabalho. */
+            status:'open', receivedOn:null, receivedAmount:null, accountId:null, notes:'' });
+        }
+        save(); closeModal(); render();
+        toast(total > 1 ? `${total} parcelas lançadas` : 'Título a receber lançado'); return;
+      }
+
+      // --- Baixa de recebimento ---
+      if (document.getElementById('bxm-id')) {
+        const fail = failIn('bxm-msg');
+        if (!guardOrFail('financeiro.titulos_receber.baixar', fail)) return;
+        const t = receivableById(document.getElementById('bxm-id').value);
+        if (!t) return fail('Título não encontrado.');
+        if (t.status !== 'open') return fail('Só título aberto pode receber baixa.');
+        const accountId = document.getElementById('bxm-account').value;
+        const receivedOn = document.getElementById('bxm-date').value;
+        if (!accountId || !receivedOn) return fail('Informe a conta e a data.');
+        const bruto = document.getElementById('bxm-amount').value.trim();
+        const valor = bruto === '' ? t.amount : Number(bruto);
+        if (!(valor > 0)) return fail('O valor recebido precisa ser maior que zero.');
+
+        db.movements.push({ id:nid('mv'), accountId, direction:'in', amount:valor,
+          movedOn:receivedOn, description:`Recebimento: ${t.description}`,
+          costCenterId:t.costCenterId, transferGroup:null, reconciledAt:null,
+          by:db.session.userId });
+        Object.assign(t, { status:'received', receivedOn, receivedAmount:valor, accountId });
+        save(); closeModal(); render();
+        toast(valor < t.amount
+          ? `Baixa registrada com diferença de ${brl(t.amount - valor)} — o valor original foi preservado`
+          : 'Recebimento registrado e lançado na conta');
+        return;
+      }
+
       // --- Matriz de permissões ---
       if (document.getElementById('pm-id')) {
+        const fail = failIn('pm-msg');
         const p = profileById(document.getElementById('pm-id').value);
         if (!p) return;
         if (!guard('usuarios.perfis.editar')) return;
         if (p.isSystem) { closeModal(); toast('Perfil do sistema não é editável'); return; }
+
+        /* Identidade do perfil. Antes só a matriz era editável, e um perfil criado
+           ficava para sempre chamado "Novo perfil" com teto de visualizador — o
+           que o tornava inútil e sem jeito de consertar pela interface. */
+        const nome = document.getElementById('pm-name').value.trim();
+        if (nome.length < 2) return fail('Informe o nome do perfil.');
+        const dup = db.accessProfiles.find(x =>
+          x.id !== p.id && x.name.toLowerCase() === nome.toLowerCase());
+        if (dup) return fail(`Já existe um perfil chamado "${dup.name}".`);
+        p.name = nome;
+        p.description = document.getElementById('pm-desc').value.trim();
+        p.baseRole = document.getElementById('pm-baseRole').value;
+
         const marcadas = [...document.querySelectorAll('[data-perm]:checked')]
           .map(el => el.dataset.perm);
         /* Substituição completa, não diferença: calcular o delta exigiria
