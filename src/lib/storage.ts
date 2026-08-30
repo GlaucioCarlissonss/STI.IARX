@@ -25,7 +25,7 @@ export const MAX_FILE_BYTES = 26_214_400 // 25 MiB, igual ao `file_size_limit` d
  * lugares porque a tela de Links de Internet não existe na aplicação — permissão
  * sem tela é configuração morta.
  */
-export const ATTACHMENT_ENTITIES = ['tickets', 'ativos', 'linhas'] as const
+export const ATTACHMENT_ENTITIES = ['tickets', 'ativos', 'linhas', 'titulos'] as const
 export type AttachmentEntity = (typeof ATTACHMENT_ENTITIES)[number]
 
 /**
@@ -242,6 +242,25 @@ export const ATTACHMENT_TARGETS: Record<AttachmentEntity, AttachmentTarget> = {
       { value: 'other', label: 'Outro' },
     ],
     // `telecom_line_attachments` não tem coluna `category`, mas exige `kind`.
+    hasCategory: false,
+  },
+  titulos: {
+    entity: 'titulos',
+    table: 'payable_attachments',
+    fkColumn: 'payable_id',
+    revalidate: '/financeiro/titulos-a-pagar',
+    permissions: {
+      ver: 'financeiro.titulos_pagar.ver',
+      anexar: 'financeiro.titulos_pagar.anexar',
+      remover: 'financeiro.titulos_pagar.remover_anexo',
+    },
+    kinds: [
+      { value: 'nfe', label: 'Nota fiscal' },
+      { value: 'boleto', label: 'Boleto' },
+      { value: 'receipt', label: 'Comprovante de pagamento' },
+      { value: 'contract', label: 'Contrato' },
+      { value: 'other', label: 'Outro' },
+    ],
     hasCategory: false,
   },
 }

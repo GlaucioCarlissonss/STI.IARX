@@ -110,6 +110,11 @@ describe('ATTACHMENT_TARGETS', () => {
     }
   })
 
+  it('título de pagar recebe anexo — é a NF e o comprovante da despesa', () => {
+    expect(ATTACHMENT_TARGETS.titulos.table).toBe('payable_attachments')
+    expect(ATTACHMENT_TARGETS.titulos.kinds.map((k) => k.value)).toContain('boleto')
+  })
+
   it('ticket não oferece tipo: a trigger da 0013 deriva do MIME', () => {
     expect(ATTACHMENT_TARGETS.tickets.kinds).toHaveLength(0)
   })

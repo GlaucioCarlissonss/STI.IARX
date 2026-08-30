@@ -366,3 +366,100 @@ export interface TicketHistoryEntry {
   created_at: string
   actor_id: string | null
 }
+
+/* --- Financeiro: títulos e alçada (migração 0020) ------------------------- */
+
+export type PayableStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'rejected'
+  | 'scheduled'
+  | 'paid'
+  | 'cancelled'
+
+export interface Payable {
+  id: string
+  description: string
+  document_ref: string | null
+  supplier_id: string | null
+  supplier_contract_id: string | null
+  expense_category_id: string | null
+  cost_center_id: string | null
+  branch_id: string | null
+  amount: number
+  issued_on: string
+  due_on: string
+  parent_payable_id: string | null
+  installment_number: number
+  installment_total: number
+  status: PayableStatus
+  approved_at: string | null
+  approved_by: string | null
+  rejection_reason: string | null
+  paid_on: string | null
+  bank_account_id: string | null
+  notes: string | null
+}
+
+export type ReceivableStatus = 'draft' | 'open' | 'received' | 'cancelled'
+
+export interface Receivable {
+  id: string
+  description: string
+  document_ref: string | null
+  client_id: string | null
+  sla_contract_id: string | null
+  cost_center_id: string | null
+  branch_id: string | null
+  amount: number
+  issued_on: string
+  due_on: string
+  installment_number: number
+  installment_total: number
+  status: ReceivableStatus
+  received_on: string | null
+  received_amount: number | null
+  bank_account_id: string | null
+  notes: string | null
+}
+
+export interface ExpenseCategory {
+  id: string
+  code: string
+  name: string
+  requires_supplier: boolean
+  is_active: boolean
+}
+
+export interface ApprovalRule {
+  id: string
+  level: number
+  level_name: string
+  min_amount: number
+  max_amount: number | null
+  cost_center_id: string | null
+  branch_id: string | null
+  required_profile_id: string | null
+  is_active: boolean
+}
+
+export interface PayableApproval {
+  id: string
+  payable_id: string
+  level: number
+  decision: 'approved' | 'rejected'
+  decided_by: string | null
+  decided_at: string
+  note: string | null
+}
+
+/** Uma linha por situação, de `vw_payables_summary`. */
+export interface PayableSummaryRow {
+  status: PayableStatus
+  titulos: number
+  total: number
+  vencidos: number
+  total_vencido: number | null
+  vence_em_7_dias: number
+}

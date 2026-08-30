@@ -1,10 +1,10 @@
 import Link from 'next/link'
 import { requireSession, touchPresence } from '@/lib/session'
-import { visibleNav } from '@/lib/navigation'
+import { visibleNav, visibleNavGroups } from '@/lib/navigation'
+import { CompactNav, SidebarNav } from '@/components/sidebar-nav'
 import { roleLabel } from '@/lib/i18n'
 import { initials } from '@/lib/format'
 import { signOut } from '@/app/login/actions'
-import { NavLink } from '@/components/nav-link'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile, tenant, permissions } = await requireSession()
@@ -18,7 +18,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * escondia `/painel` de quem não podia vê-lo e o `requireScreen` mandava para
    * lá de todo jeito.
    */
-  const nav = visibleNav(permissions)
+  const grupos = visibleNavGroups(permissions)
+  const planos = visibleNav(permissions)
 
   return (
     <div className="min-h-screen">
@@ -63,14 +64,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </header>
 
       <div className="mx-auto flex max-w-[110rem] gap-6 px-4 py-6">
-        <nav aria-label="Navegação principal" className="hidden w-56 shrink-0 lg:block">
-          <ul className="sticky top-20 flex flex-col gap-0.5">
-            {nav.map((item) => (
-              <li key={item.href}>
-                <NavLink href={item.href}>{item.label}</NavLink>
-              </li>
-            ))}
-          </ul>
+        <nav aria-label="Navegação principal" className="hidden w-60 shrink-0 lg:block">
+          <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pb-4">
+            <SidebarNav groups={grupos} />
+          </div>
         </nav>
 
         {/* Navegação compacta para tablet (RNF-07) */}
@@ -78,13 +75,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           aria-label="Navegação principal"
           className="fixed inset-x-0 bottom-0 z-20 overflow-x-auto border-t border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden"
         >
-          <ul className="flex gap-1 px-2 py-1.5">
-            {nav.map((item) => (
-              <li key={item.href} className="shrink-0">
-                <NavLink href={item.href}>{item.label}</NavLink>
-              </li>
-            ))}
-          </ul>
+          <CompactNav items={planos} />
         </nav>
 
         <main id="conteudo" tabIndex={-1} className="min-w-0 flex-1 pb-20 lg:pb-0 focus:outline-none">

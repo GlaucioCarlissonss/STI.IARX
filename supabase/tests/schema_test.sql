@@ -1158,8 +1158,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 114,
-    'catálogo de permissões tem as 114 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 130,
+    'catálogo de permissões tem as 130 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1385,7 +1385,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 114,
+  perform app.assert((select count(*) from public.permission_catalog) = 130,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -1769,8 +1769,8 @@ begin
   perform app.assert(app.storage_permission_key('links', 'anexar') is null,
     'links fica fora até a tela existir');
   perform app.assert(
-    (select count(*) from public.permission_catalog where action in ('anexar','remover_anexo')) = 6,
-    'as 6 chaves de anexo entraram no catálogo');
+    (select count(*) from public.permission_catalog where action in ('anexar','remover_anexo')) = 8,
+    'as 8 chaves de anexo entraram no catálogo (ticket, ativo, linha e título)');
 end
 $$;
 
@@ -1908,6 +1908,338 @@ begin
 end
 $$;
 delete from storage.objects where bucket_id = 'anexos';
+
+
+-- =============================================================================
+\echo '=== 26. Títulos e alçada configurável (0020) ==='
+-- =============================================================================
+reset role;
+
+-- A alçada como DADO: a tabela nasce vazia, e é isso que se prova primeiro.
+do $$
+begin
+  perform app.assert((select count(*) from public.approval_rules) = 0,
+    'approval_rules nasce VAZIA — a regra de alçada é decisão do cliente, não do código');
+  perform app.assert(
+    (select bool_and(not payable_approval_required) from public.tenants),
+    'aprovação de título nasce DESLIGADA em todo tenant');
+end
+$$;
+
+-- Desligada: nenhum nível exigido, e o título nasce aprovado.
+do $$
+declare v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  perform app.assert(
+    app.required_approval_levels(v_t, 999999.00) = array[]::integer[],
+    'sem aprovação exigida, required_approval_levels devolve vazio');
+end
+$$;
+
+-- Ligada SEM regra: erro explícito. É o caso ambíguo, e deixar passar em silêncio
+-- aprovaria sem alçada; deixar parado sem erro esconderia a causa.
+do $$
+declare v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  update public.tenants set payable_approval_required = true where id = v_t;
+  begin
+    perform app.required_approval_levels(v_t, 500.00);
+    perform app.assert(false, 'deveria falhar: aprovação ligada e nenhuma faixa cadastrada');
+  exception when check_violation then
+    perform app.assert(true,
+      'aprovação ligada sem faixa cadastrada levanta erro dizendo o que configurar');
+  end;
+end
+$$;
+
+-- Com faixas cadastradas, a alçada funciona. Os valores abaixo são do TESTE, não
+-- do produto: servem para exercitar a função, e nenhum deles é semeado.
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_perfil uuid;
+begin
+  select id into v_perfil from public.access_profiles
+  where tenant_id = v_t and system_key = 'aprovador_financeiro';
+
+  insert into public.approval_rules
+    (tenant_id, level, level_name, min_amount, max_amount, required_profile_id)
+  values
+    (v_t, 1, 'Coordenação', 0,       1000.00, v_perfil),
+    (v_t, 2, 'Gerência',    1000.01, 10000.00, v_perfil),
+    (v_t, 3, 'Diretoria',   10000.01, null,    v_perfil);
+
+  perform app.assert(app.required_approval_levels(v_t, 500.00) = array[1],
+    'valor baixo exige só o nível 1');
+  perform app.assert(app.required_approval_levels(v_t, 5000.00) = array[2],
+    'valor médio exige o nível 2');
+  perform app.assert(app.required_approval_levels(v_t, 250000.00) = array[3],
+    'faixa sem teto (max_amount nulo) cobre qualquer valor acima dela');
+  -- A borda: 1000,00 é do nível 1 e 1000,01 é do nível 2. Faixa que se sobrepõe
+  -- ou deixa vão no centavo é o defeito clássico de alçada.
+  perform app.assert(app.required_approval_levels(v_t, 1000.00) = array[1],
+    'borda inferior: 1.000,00 fica no nível 1');
+  perform app.assert(app.required_approval_levels(v_t, 1000.01) = array[2],
+    'borda superior: 1.000,01 sobe para o nível 2');
+end
+$$;
+
+-- Escopo por centro de custo: a regra restrita vale só no centro dela.
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_cc uuid;
+begin
+  select id into v_cc from public.cost_centers where tenant_id = v_t and code = 'TI-MAO';
+  insert into public.approval_rules
+    (tenant_id, level, level_name, min_amount, max_amount, cost_center_id)
+  values (v_t, 4, 'Aprovação da filial', 0, null, v_cc);
+
+  perform app.assert(app.required_approval_levels(v_t, 500.00, v_cc) @> array[4],
+    'regra restrita ao centro de custo entra quando o título é daquele centro');
+  perform app.assert(not (app.required_approval_levels(v_t, 500.00) @> array[4]),
+    'e NÃO entra quando o título não tem aquele centro');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- A máquina de estados do título
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_id uuid;
+  v_conta uuid;
+begin
+  select id into v_conta from public.bank_accounts where tenant_id = v_t and name = 'Operação';
+
+  insert into public.payables (tenant_id, description, amount, due_on)
+  values (v_t, 'Despesa de teste', 1500.00, current_date + 10)
+  returning id into v_id;
+  perform app.assert(
+    (select status from public.payables where id = v_id) = 'draft',
+    'título nasce em rascunho');
+
+  -- Pagar sem aprovar é o caminho que a contabilidade proíbe.
+  begin
+    update public.payables set status = 'paid', paid_on = current_date,
+      bank_account_id = v_conta where id = v_id;
+    perform app.assert(false, 'não deveria ir de rascunho direto para pago');
+  exception when check_violation then
+    perform app.assert(true, 'rascunho NÃO vai direto para pago');
+  end;
+
+  update public.payables set status = 'pending_approval' where id = v_id;
+  update public.payables set status = 'approved' where id = v_id;
+  perform app.assert(
+    (select approved_at is not null and approved_by is not null
+     from public.payables where id = v_id),
+    'aprovação carimba quem aprovou e quando, sem a aplicação precisar lembrar');
+
+  -- Pago exige prova: quando e de qual conta.
+  begin
+    update public.payables set status = 'paid' where id = v_id;
+    perform app.assert(false, 'não deveria virar pago sem data e conta');
+  exception when check_violation then
+    perform app.assert(true, 'pago exige data e conta bancária — pago sem rastro não prova nada');
+  end;
+
+  update public.payables set status = 'paid', paid_on = current_date,
+    bank_account_id = v_conta where id = v_id;
+
+  -- Pago é imutável no que importa.
+  begin
+    update public.payables set amount = 99.00 where id = v_id;
+    perform app.assert(false, 'não deveria alterar valor de título pago');
+  exception when check_violation then
+    perform app.assert(true, 'título pago não tem valor alterado — descolaria da movimentação');
+  end;
+
+  -- Estorno volta para aprovado e limpa o rastro de pagamento.
+  update public.payables set status = 'approved' where id = v_id;
+  perform app.assert(
+    (select paid_on is null from public.payables where id = v_id),
+    'estorno limpa a data de pagamento — senão o relatório contaria como pago');
+
+  delete from public.payables where id = v_id;
+end
+$$;
+
+-- Rejeição exige motivo. Rejeitar sem dizer por quê devolve o título para alguém
+-- que não sabe o que corrigir.
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_id uuid;
+begin
+  insert into public.payables (tenant_id, description, amount, due_on, status)
+  values (v_t, 'Para rejeitar', 100.00, current_date + 5, 'pending_approval')
+  returning id into v_id;
+  begin
+    update public.payables set status = 'rejected' where id = v_id;
+    perform app.assert(false, 'não deveria rejeitar sem motivo');
+  exception when check_violation then
+    perform app.assert(true, 'rejeição exige motivo');
+  end;
+  update public.payables set status = 'rejected', rejection_reason = 'Sem nota fiscal'
+  where id = v_id;
+  perform app.assert(
+    (select status from public.payables where id = v_id) = 'rejected',
+    'rejeição com motivo é aceita');
+  delete from public.payables where id = v_id;
+end
+$$;
+
+-- Parcela é título próprio, ligado ao primeiro.
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_pai uuid;
+begin
+  insert into public.payables
+    (tenant_id, description, amount, due_on, installment_number, installment_total)
+  values (v_t, 'Compra em 3x', 300.00, current_date + 30, 1, 3)
+  returning id into v_pai;
+  insert into public.payables
+    (tenant_id, description, amount, due_on, installment_number, installment_total,
+     parent_payable_id)
+  values
+    (v_t, 'Compra em 3x', 300.00, current_date + 60, 2, 3, v_pai),
+    (v_t, 'Compra em 3x', 300.00, current_date + 90, 3, 3, v_pai);
+  perform app.assert(
+    (select count(*) from public.payables where parent_payable_id = v_pai) = 2,
+    'parcelas são títulos próprios ligados ao primeiro');
+  -- Parcela 4 de 3 não existe.
+  begin
+    insert into public.payables
+      (tenant_id, description, amount, due_on, installment_number, installment_total,
+       parent_payable_id)
+    values (v_t, 'Parcela impossível', 300.00, current_date, 4, 3, v_pai);
+    perform app.assert(false, 'não deveria aceitar parcela 4 de 3');
+  exception when check_violation then
+    perform app.assert(true, 'parcela acima do total é recusada');
+  end;
+  delete from public.payables where id = v_pai;
+  perform app.assert(
+    (select count(*) from public.payables where parent_payable_id = v_pai) = 0,
+    'apagar o título-pai leva as parcelas com ele');
+end
+$$;
+
+-- Título a receber: sem aprovação, e a baixa exige prova.
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_id uuid;
+  v_conta uuid;
+  v_cli uuid;
+begin
+  select id into v_conta from public.bank_accounts where tenant_id = v_t and name = 'Operação';
+  select id into v_cli from public.clients where tenant_id = v_t limit 1;
+
+  insert into public.receivables (tenant_id, description, amount, due_on, client_id, status)
+  values (v_t, 'Mensalidade de teste', 4200.00, current_date + 15, v_cli, 'open')
+  returning id into v_id;
+
+  begin
+    update public.receivables set status = 'received' where id = v_id;
+    perform app.assert(false, 'não deveria dar baixa sem data e conta');
+  exception when check_violation then
+    perform app.assert(true, 'baixa de recebimento exige data e conta');
+  end;
+
+  -- `received_amount` separado do valor original: recebimento parcial e desconto
+  -- acontecem, e sobrescrever `amount` apagaria a diferença.
+  update public.receivables set status = 'received', received_on = current_date,
+    received_amount = 4000.00, bank_account_id = v_conta where id = v_id;
+  perform app.assert(
+    (select amount = 4200.00 and received_amount = 4000.00
+     from public.receivables where id = v_id),
+    'valor recebido é guardado à parte do valor do título — o desconto fica visível');
+
+  delete from public.receivables where id = v_id;
+end
+$$;
+
+-- Anexo de título entra no mapa do bucket, pela função substituída na 0020.
+do $$
+begin
+  perform app.assert(
+    app.storage_permission_key('titulos', 'anexar') = 'financeiro.titulos_pagar.anexar',
+    'anexo de título entrou no mapa do Storage');
+  perform app.assert(app.storage_permission_key('titulos', 'inventar') is null,
+    'verbo desconhecido em título continua sem chave');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Os perfis financeiros contra as telas novas
+-- -----------------------------------------------------------------------------
+-- Operador Financeiro: lança despesa, NÃO aprova e NÃO paga. É a separação de
+-- função que o módulo de aprovação existe para garantir.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000006","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('financeiro.titulos_pagar.ver'),
+    'Operador Financeiro consulta títulos');
+  perform app.assert(app.has_permission('financeiro.titulos_pagar.criar'),
+    'Operador Financeiro lança despesa');
+  perform app.assert(app.has_permission('financeiro.titulos_pagar.anexar'),
+    'Operador Financeiro anexa o comprovante');
+  perform app.assert(not app.has_permission('financeiro.titulos_pagar.aprovar'),
+    'Operador Financeiro NÃO aprova — quem lança não autoriza');
+  perform app.assert(not app.has_permission('financeiro.titulos_pagar.pagar'),
+    'Operador Financeiro NÃO dá baixa no pagamento');
+  perform app.assert(not app.has_permission('financeiro.titulos_pagar.configurar'),
+    'Operador Financeiro NÃO mexe na alçada');
+  perform app.assert(not app.has_permission('financeiro.contas_bancarias.criar'),
+    'e continua sem cadastrar conta bancária — a mudança de regra foi cirúrgica');
+end
+$$;
+
+-- Aprovador Financeiro: aprova, e nada mais.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000007","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('financeiro.titulos_pagar.aprovar'),
+    'Aprovador Financeiro aprova título');
+  perform app.assert(not app.has_permission('financeiro.titulos_pagar.criar'),
+    'Aprovador Financeiro NÃO lança despesa — quem autoriza não cria');
+  perform app.assert(not app.has_permission('financeiro.titulos_pagar.pagar'),
+    'Aprovador Financeiro NÃO dá baixa');
+end
+$$;
+
+-- Gestor de TI: mesmo papel gestor, e o financeiro todo fechado.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(not app.has_permission('financeiro.titulos_pagar.ver'),
+    'Gestor de TI NÃO enxerga título a pagar, apesar do papel gestor');
+end
+$$;
+
+-- Isolamento: o tenant 2 não vê título nem alçada do tenant 1.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000099","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert(
+    not exists (select 1 from public.approval_rules
+                where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
+    'tenant 2 NÃO vê a alçada do tenant 1');
+  perform app.assert(
+    not exists (select 1 from public.payables
+                where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
+    'tenant 2 NÃO vê título do tenant 1');
+end
+$$;
+reset role;
+
+-- Limpa o que este teste criou, para não contaminar contagem de outra seção.
+delete from public.approval_rules where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+update public.tenants set payable_approval_required = false
+where id = 'a0000000-0000-4000-8000-000000000001';
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

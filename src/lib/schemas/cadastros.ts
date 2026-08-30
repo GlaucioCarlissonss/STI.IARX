@@ -293,3 +293,169 @@ export const bankTransferSchema = z
     message: 'Origem e destino precisam ser contas diferentes.',
     path: ['to_account_id'],
   })
+
+/* --- Títulos a pagar e a receber (migração 0020) -------------------------- */
+
+/**
+ * Valor em reais vindo de `<input type="number">`.
+ *
+ * Rejeita zero e negativo aqui em vez de deixar o CHECK do banco reclamar: a
+ * mensagem do Postgres fala de constraint, e quem está lançando a despesa não
+ * tem por que saber o que é isso.
+ */
+const dinheiro = z
+  .string()
+  .trim()
+  .min(1, 'Informe o valor.')
+  .transform((v) => Number(v.replace(',', '.')))
+  .refine((v) => Number.isFinite(v) && v > 0, { message: 'O valor precisa ser maior que zero.' })
+  .refine((v) => v <= 999_999_999.99, { message: 'Valor acima do limite do sistema.' })
+
+const dataObrigatoria = (rotulo: string) =>
+  z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, `Informe ${rotulo}.`)
+
+/**
+ * Base comum de título a pagar.
+ *
+ * `issued_on` não pode ser depois de `due_on`: título emitido depois do próprio
+ * vencimento é erro de digitação em 100% dos casos, e passar disso produz
+ * relatório de vencidos que ninguém entende.
+ */
+export const payableSchema = z
+  .object({
+    description: z.string().trim().min(2, 'Descreva a despesa.').max(200, 'Descrição longa demais.'),
+    document_ref: emptyToNull,
+    supplier_id: optionalUuid,
+    supplier_contract_id: optionalUuid,
+    expense_category_id: optionalUuid,
+    cost_center_id: optionalUuid,
+    branch_id: optionalUuid,
+    amount: dinheiro,
+    issued_on: dataObrigatoria('a data de emissão'),
+    due_on: dataObrigatoria('o vencimento'),
+    notes: emptyToNull,
+  })
+  .refine((v) => v.issued_on <= v.due_on, {
+    message: 'O vencimento não pode ser anterior à emissão.',
+    path: ['due_on'],
+  })
+
+/**
+ * Parcelamento.
+ *
+ * Uma parcela é o padrão, e é por isso que o campo aceita 1. Acima de 1 o
+ * servidor gera N títulos ligados — a divisão não é do formulário, porque o
+ * arredondamento do centavo tem de ser resolvido em um lugar só.
+ */
+export const installmentCountSchema = z
+  .string()
+  .trim()
+  .transform((v) => (v === '' ? 1 : Number(v)))
+  .refine((v) => Number.isInteger(v) && v >= 1 && v <= 60, {
+    message: 'O número de parcelas vai de 1 a 60.',
+  })
+
+export const payableWithInstallmentsSchema = z.object({
+  parcelas: installmentCountSchema,
+  /** Dias entre uma parcela e a seguinte. 30 é o intervalo usual. */
+  intervalo_dias: z
+    .string()
+    .trim()
+    .transform((v) => (v === '' ? 30 : Number(v)))
+    .refine((v) => Number.isInteger(v) && v >= 1 && v <= 365, {
+      message: 'O intervalo vai de 1 a 365 dias.',
+    }),
+})
+
+/** Baixa de pagamento. Exige conta e data — o banco também exige. */
+export const payablePaymentSchema = z.object({
+  id: recordId,
+  bank_account_id: z.string().uuid('Selecione a conta de onde saiu o dinheiro.'),
+  paid_on: dataObrigatoria('a data do pagamento'),
+})
+
+export const payableApprovalSchema = z.object({
+  id: recordId,
+  decision: z.enum(['approved', 'rejected']),
+  note: emptyToNull,
+})
+  .refine((v) => v.decision !== 'rejected' || (v.note !== null && v.note.length >= 3), {
+    message: 'Rejeição exige o motivo — sem ele quem recebe o título de volta não sabe o que corrigir.',
+    path: ['note'],
+  })
+
+export const receivableSchema = z
+  .object({
+    description: z.string().trim().min(2, 'Descreva o título.').max(200, 'Descrição longa demais.'),
+    document_ref: emptyToNull,
+    client_id: optionalUuid,
+    sla_contract_id: optionalUuid,
+    cost_center_id: optionalUuid,
+    branch_id: optionalUuid,
+    amount: dinheiro,
+    issued_on: dataObrigatoria('a data de emissão'),
+    due_on: dataObrigatoria('o vencimento'),
+    notes: emptyToNull,
+  })
+  .refine((v) => v.issued_on <= v.due_on, {
+    message: 'O vencimento não pode ser anterior à emissão.',
+    path: ['due_on'],
+  })
+
+/**
+ * Baixa de recebimento.
+ *
+ * `received_amount` é opcional e cai no valor do título quando vazio. Existe
+ * separado porque desconto e recebimento parcial acontecem, e sobrescrever o
+ * valor original apagaria a diferença que a conciliação precisa ver.
+ */
+export const receivableSettlementSchema = z.object({
+  id: recordId,
+  bank_account_id: z.string().uuid('Selecione a conta que recebeu.'),
+  received_on: dataObrigatoria('a data do recebimento'),
+  received_amount: z
+    .string()
+    .trim()
+    .transform((v) => (v === '' ? null : Number(v.replace(',', '.'))))
+    .refine((v) => v === null || (Number.isFinite(v) && v > 0), {
+      message: 'O valor recebido precisa ser maior que zero.',
+    }),
+})
+
+export const expenseCategorySchema = z.object({
+  code: z.string().trim().min(2, 'Informe o código.').max(30, 'Código longo demais.'),
+  name: z.string().trim().min(2, 'Informe o nome.').max(120, 'Nome longo demais.'),
+  requires_supplier: z.union([z.literal('on'), z.literal('')]).optional().transform((v) => v === 'on'),
+})
+
+/**
+ * Faixa de alçada.
+ *
+ * O teto vazio significa "sem teto", e é assim que o último nível se expressa.
+ * Não vou exigir teto: exigir obrigaria a inventar um número grande arbitrário, e
+ * aí um título acima dele ficaria sem alçada nenhuma.
+ */
+export const approvalRuleSchema = z
+  .object({
+    level: intInRange(1, 9),
+    level_name: z.string().trim().min(2, 'Dê um nome ao nível.').max(60, 'Nome longo demais.'),
+    min_amount: z
+      .string()
+      .trim()
+      .transform((v) => (v === '' ? 0 : Number(v.replace(',', '.'))))
+      .refine((v) => Number.isFinite(v) && v >= 0, { message: 'O valor mínimo não pode ser negativo.' }),
+    max_amount: z
+      .string()
+      .trim()
+      .transform((v) => (v === '' ? null : Number(v.replace(',', '.'))))
+      .refine((v) => v === null || (Number.isFinite(v) && v > 0), {
+        message: 'O valor máximo precisa ser maior que zero, ou vazio para "sem teto".',
+      }),
+    cost_center_id: optionalUuid,
+    branch_id: optionalUuid,
+    required_profile_id: optionalUuid,
+  })
+  .refine((v) => v.max_amount === null || v.max_amount > v.min_amount, {
+    message: 'O valor máximo precisa ser maior que o mínimo.',
+    path: ['max_amount'],
+  })

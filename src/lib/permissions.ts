@@ -199,6 +199,28 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 
   /* --- Financeiro (esta rodada entrega a base) --------------------------- */
   mod('financeiro', 'gestor'),
+  /* Ordem do menu: título se lança todo dia, centro de custo se cadastra uma
+     vez. Ver a decisão de agrupamento em src/lib/navigation.ts. */
+  scr('financeiro', 'titulos_pagar', 'Títulos a pagar', 'gestor'),
+  act('financeiro', 'titulos_pagar', 'ver', 'Consultar títulos a pagar', 'gestor'),
+  act('financeiro', 'titulos_pagar', 'criar', 'Lançar despesa', 'gestor'),
+  act('financeiro', 'titulos_pagar', 'editar', 'Editar título', 'gestor'),
+  act('financeiro', 'titulos_pagar', 'aprovar', 'Aprovar ou reprovar', 'gestor'),
+  act('financeiro', 'titulos_pagar', 'pagar', 'Dar baixa no pagamento', 'gestor'),
+  act('financeiro', 'titulos_pagar', 'cancelar', 'Cancelar título', 'gestor'),
+  /* `configurar` é uma chave só para alçada E categorias de despesa: as duas são
+     configuração do módulo e nenhuma tem tela própria. Chave para tela que não
+     existe é configuração morta. Teto `admin` porque mexer na alçada muda quem
+     autoriza pagamento. */
+  act('financeiro', 'titulos_pagar', 'configurar', 'Configurar alçada e categorias', 'admin'),
+  act('financeiro', 'titulos_pagar', 'anexar', 'Anexar NF, boleto ou comprovante', 'gestor'),
+  act('financeiro', 'titulos_pagar', 'remover_anexo', 'Remover anexo do título', 'gestor'),
+  scr('financeiro', 'titulos_receber', 'Títulos a receber', 'gestor'),
+  act('financeiro', 'titulos_receber', 'ver', 'Consultar títulos a receber', 'gestor'),
+  act('financeiro', 'titulos_receber', 'criar', 'Lançar título a receber', 'gestor'),
+  act('financeiro', 'titulos_receber', 'editar', 'Editar título a receber', 'gestor'),
+  act('financeiro', 'titulos_receber', 'baixar', 'Dar baixa no recebimento', 'gestor'),
+  act('financeiro', 'titulos_receber', 'cancelar', 'Cancelar título a receber', 'gestor'),
   scr('financeiro', 'centros_custo', 'Centros de custo', 'gestor'),
   act('financeiro', 'centros_custo', 'ver', 'Consultar centros de custo', 'gestor'),
   act('financeiro', 'centros_custo', 'criar', 'Cadastrar centro de custo', 'gestor'),
