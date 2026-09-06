@@ -685,21 +685,28 @@ declare
 begin
   select id into v_ticket from public.tickets where ticket_number = 1;
 
+  -- Caminho na convenção real ({tenant}/{entidade}/{id}/{arquivo}). Fixture com
+  -- caminho inventado ensinaria a forma errada, e a seção 28 cobra a convenção nas
+  -- cinco tabelas de anexo.
   insert into public.ticket_attachments
     (tenant_id, ticket_id, storage_path, file_name, mime_type, size_bytes)
   values ('a0000000-0000-4000-8000-000000000001', v_ticket,
-          'a0/t1/foto.png', 'foto.png', 'image/png', 1024);
+          format('a0000000-0000-4000-8000-000000000001/tickets/%s/foto.png', v_ticket),
+          'foto.png', 'image/png', 1024);
 
   perform app.assert(
-    (select kind from public.ticket_attachments where storage_path = 'a0/t1/foto.png') = 'image',
+    (select kind from public.ticket_attachments
+      where storage_path like '%/foto.png') = 'image',
     'kind é derivado do MIME, não confiado ao cliente');
 
   insert into public.ticket_attachments
     (tenant_id, ticket_id, storage_path, file_name, mime_type, size_bytes)
   values ('a0000000-0000-4000-8000-000000000001', v_ticket,
-          'a0/t1/audio.mp3', 'audio.mp3', 'audio/mpeg', 2048);
+          format('a0000000-0000-4000-8000-000000000001/tickets/%s/audio.mp3', v_ticket),
+          'audio.mp3', 'audio/mpeg', 2048);
   perform app.assert(
-    (select kind from public.ticket_attachments where storage_path = 'a0/t1/audio.mp3') = 'audio',
+    (select kind from public.ticket_attachments
+      where storage_path like '%/audio.mp3') = 'audio',
     'áudio é classificado como audio');
 
   -- Cota: 500 MB por ticket. Um arquivo de 600 MB precisa ser recusado no banco.
@@ -707,7 +714,8 @@ begin
     insert into public.ticket_attachments
       (tenant_id, ticket_id, storage_path, file_name, mime_type, size_bytes)
     values ('a0000000-0000-4000-8000-000000000001', v_ticket,
-            'a0/t1/gigante.mp4', 'gigante.mp4', 'video/mp4', 600 * 1024 * 1024);
+            format('a0000000-0000-4000-8000-000000000001/tickets/%s/gigante.mp4', v_ticket),
+            'gigante.mp4', 'video/mp4', 600 * 1024 * 1024);
     raise exception 'FALHOU: cota de anexos foi furada';
   exception when check_violation then
     raise notice '  ok  cota de anexos do ticket é aplicada no banco';
@@ -778,6 +786,16 @@ begin
   perform app.assert(
     (select duration_seconds from public.link_availability_events where id = v_event) = 1800,
     'duração do evento é calculada pela coluna gerada');
+
+  -- Reabre a queda. Desde a 0022 o estado do link é DERIVADO dos eventos
+  -- (`trg_link_event_syncs_state`), então fechar este evento aqui devolveria o
+  -- NL-LINK-003 para "no ar" e a seção 19 deixaria de encontrar a filial vermelha
+  -- do mapa. O que este bloco quer provar é a coluna gerada, não mudar o estado do
+  -- parque — então ele desfaz o que fez.
+  update public.link_availability_events set ended_at = null where id = v_event;
+  perform app.assert(
+    (select last_state from public.internet_links where id = v_link) = 'down',
+    'o estado do link acompanha o evento reaberto');
 
   -- Idempotência do webhook de monitoração.
   insert into public.link_availability_events
@@ -1158,8 +1176,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 130,
-    'catálogo de permissões tem as 130 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 141,
+    'catálogo de permissões tem as 141 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1385,7 +1403,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 130,
+  perform app.assert((select count(*) from public.permission_catalog) = 141,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -1764,13 +1782,15 @@ begin
     'entidade desconhecida NÃO tem chave — prefixo novo não nasce liberado');
   perform app.assert(app.storage_permission_key('tickets', 'inventar') is null,
     'verbo desconhecido NÃO tem chave');
-  -- `links` fora de propósito: a tabela existe, a tela não. Chave sem tela é
-  -- configuração morta, o defeito corrigido nesta mesma rodada em 6 chaves.
-  perform app.assert(app.storage_permission_key('links', 'anexar') is null,
-    'links fica fora até a tela existir');
+  -- `links` esteve deliberadamente fora até a 0022, porque a tabela existia e a
+  -- tela não. Entrou junto com a tela — que é a regra, não uma exceção.
+  perform app.assert(app.storage_permission_key('links', 'anexar') = 'conectividade.links.anexar',
+    'links entrou junto com a tela (0022)');
+  perform app.assert(app.storage_permission_key('links', 'assinar') is null,
+    'verbo desconhecido em links também NÃO tem chave');
   perform app.assert(
-    (select count(*) from public.permission_catalog where action in ('anexar','remover_anexo')) = 8,
-    'as 8 chaves de anexo entraram no catálogo (ticket, ativo, linha e título)');
+    (select count(*) from public.permission_catalog where action in ('anexar','remover_anexo')) = 10,
+    'as 10 chaves de anexo entraram no catálogo (ticket, ativo, linha, título e link)');
 end
 $$;
 
@@ -2240,6 +2260,341 @@ reset role;
 delete from public.approval_rules where tenant_id = 'a0000000-0000-4000-8000-000000000001';
 update public.tenants set payable_approval_required = false
 where id = 'a0000000-0000-4000-8000-000000000001';
+
+-- =============================================================================
+\echo '=== 27. Fluxo de caixa: a projeção (0021) ==='
+-- =============================================================================
+reset role;
+
+-- A seção 26 deixou títulos criados. A projeção soma tudo que está em aberto,
+-- então ela precisa de um palco conhecido — senão a asserção mediria o resíduo do
+-- teste anterior em vez da função.
+delete from public.payables;
+delete from public.receivables;
+
+-- Sem título nenhum: a projeção é o saldo, repetido. É o ponto de partida contra
+-- o qual os deltas abaixo são medidos.
+do $$
+declare
+  v_saldo0 numeric;
+  v_saidas numeric;
+begin
+  select running_balance - net into v_saldo0
+    from public.cash_flow_projection(12, 0) order by bucket_start limit 1;
+  select sum(outflow) + sum(inflow) into v_saidas
+    from public.cash_flow_projection(12, 0);
+  perform app.assert(v_saidas = 0,
+    'sem título em aberto a projeção não move nada');
+  perform app.assert(
+    (select count(*) from public.cash_flow_projection(12, 0)) = 12,
+    'o horizonte devolve um balde por mês, inclusive mês sem movimento');
+  perform app.assert(
+    (select count(*) from public.cash_flow_projection(6, 0)) = 6,
+    'o horizonte respeita o parâmetro');
+  -- Teto de 36: o parâmetro chega da barra de endereço, e `?meses=100000` não
+  -- pode virar cem mil linhas.
+  perform app.assert(
+    (select count(*) from public.cash_flow_projection(100000, 0)) = 36,
+    'horizonte absurdo é limitado a 36 meses');
+end
+$$;
+
+-- Cada situação, uma por uma. É a asserção que impede alguém "melhorar" a lista de
+-- status e mudar o número do caixa sem perceber.
+do $$
+declare
+  v_t     uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_conta uuid := 'c2220000-0000-4000-8000-000000000001';
+  v_id    uuid;
+  v_saldo0        numeric;
+  v_total_saida   numeric;
+  v_total_entrada numeric;
+begin
+  select running_balance - net into v_saldo0
+    from public.cash_flow_projection(12, 0) order by bucket_start limit 1;
+
+  -- ENTRA
+  insert into public.payables (tenant_id, description, amount, due_on, status)
+  values (v_t, 'Entra: aguardando aprovação', 1000.00, current_date + 20, 'pending_approval');
+  insert into public.payables (tenant_id, description, amount, due_on, status)
+  values (v_t, 'Entra: aprovado', 2000.00, current_date + 40, 'approved');
+  -- Vencido e não pago é obrigação real: tem de continuar na conta.
+  insert into public.payables (tenant_id, description, amount, due_on, status)
+  values (v_t, 'Entra: vencido', 3000.00, current_date - 5, 'approved')
+  returning id into v_id;
+  update public.payables set status = 'scheduled' where id = v_id;
+
+  -- NÃO ENTRA
+  insert into public.payables (tenant_id, description, amount, due_on)
+  values (v_t, 'Fora: rascunho', 5000.00, current_date + 20);
+
+  insert into public.payables (tenant_id, description, amount, due_on, status)
+  values (v_t, 'Fora: reprovado', 9000.00, current_date + 20, 'pending_approval')
+  returning id into v_id;
+  update public.payables set status = 'rejected', rejection_reason = 'Sem nota' where id = v_id;
+
+  -- Pago já está no saldo bancário: contá-lo de novo seria contar duas vezes.
+  insert into public.payables (tenant_id, description, amount, due_on, status)
+  values (v_t, 'Fora: pago', 7000.00, current_date + 20, 'approved')
+  returning id into v_id;
+  update public.payables
+     set status = 'paid', paid_on = current_date, bank_account_id = v_conta
+   where id = v_id;
+
+  insert into public.receivables (tenant_id, description, amount, due_on, status)
+  values (v_t, 'Entra: aberto', 4000.00, current_date + 20, 'open');
+  insert into public.receivables (tenant_id, description, amount, due_on)
+  values (v_t, 'Fora: rascunho a receber', 8000.00, current_date + 20);
+  insert into public.receivables (tenant_id, description, amount, due_on, status)
+  values (v_t, 'Fora: recebido', 6000.00, current_date + 20, 'open')
+  returning id into v_id;
+  update public.receivables
+     set status = 'received', received_on = current_date, received_amount = 6000.00,
+         bank_account_id = v_conta
+   where id = v_id;
+
+  select sum(outflow), sum(inflow) into v_total_saida, v_total_entrada
+    from public.cash_flow_projection(12, 0);
+
+  perform app.assert(v_total_saida = 6000.00,
+    'saídas = aguardando aprovação + aprovado + agendado; rascunho, reprovado e pago ficam fora');
+  perform app.assert(v_total_entrada = 4000.00,
+    'entradas = só recebível em aberto; rascunho e recebido ficam fora');
+
+  -- O vencido cai no mês corrente e volta DESTACADO, para a tela poder dizer
+  -- "isto é atraso, não previsão".
+  perform app.assert(
+    (select overdue_outflow from public.cash_flow_projection(12, 0)
+     order by bucket_start limit 1) = 3000.00,
+    'o título vencido aparece no primeiro balde, marcado como vencido');
+  perform app.assert(
+    (select peak_day from public.cash_flow_projection(12, 0)
+     order by bucket_start limit 1) = current_date,
+    'o vencido é pagável hoje, então hoje é o maior dia de saída do mês corrente');
+
+  -- Saldo acumulado: cada balde é o anterior mais o resultado do próprio.
+  perform app.assert(
+    (select running_balance from public.cash_flow_projection(12, 0)
+     order by bucket_start desc limit 1) = v_saldo0 + 4000.00 - 6000.00,
+    'o saldo do último balde é o saldo de hoje mais o resultado de todo o período');
+  perform app.assert(
+    not exists (
+      select 1 from (
+        select running_balance, net,
+               lag(running_balance) over (order by bucket_start) as anterior
+        from public.cash_flow_projection(12, 0)
+      ) x where anterior is not null and running_balance <> anterior + net
+    ),
+    'o saldo acumulado é sempre o balde anterior mais o resultado deste');
+
+  -- A inadimplência só toca recebível. Se tocasse saída, "cenário pessimista"
+  -- reduziria a conta a pagar, que é o oposto de pessimista.
+  perform app.assert(
+    (select sum(inflow) from public.cash_flow_projection(12, 100)) = 0,
+    '100% de inadimplência zera as entradas');
+  perform app.assert(
+    (select sum(outflow) from public.cash_flow_projection(12, 100)) = 6000.00,
+    'inadimplência NÃO mexe nas saídas');
+  perform app.assert(
+    (select sum(inflow) from public.cash_flow_projection(12, 25)) = 3000.00,
+    '25% de inadimplência aplica sobre o recebível em aberto');
+  perform app.assert(
+    (select sum(inflow) from public.cash_flow_projection(12, -50)) = 4000.00,
+    'percentual negativo é tratado como zero, não vira entrada inflada');
+end
+$$;
+
+-- Movimento bancário datado no futuro: a armadilha que esta função evita.
+-- `vw_bank_account_balances.current_balance` não tem corte de data, então o
+-- lançamento futuro JÁ está lá — usar aquele saldo como ponto de partida e
+-- projetar o mesmo mês contaria o valor duas vezes.
+do $$
+declare
+  v_t     uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_conta uuid := 'c2220000-0000-4000-8000-000000000001';
+  v_saldo_antes  numeric;
+  v_saldo_depois numeric;
+  v_saida_antes  numeric;
+  v_saida_depois numeric;
+  v_view         numeric;
+begin
+  select running_balance - net into v_saldo_antes
+    from public.cash_flow_projection(12, 0) order by bucket_start limit 1;
+  select sum(outflow) into v_saida_antes from public.cash_flow_projection(12, 0);
+
+  insert into public.bank_account_movements
+    (tenant_id, bank_account_id, direction, amount, moved_on, description)
+  values (v_t, v_conta, 'out', 500.00, current_date + 15, 'Débito programado de teste');
+
+  select running_balance - net into v_saldo_depois
+    from public.cash_flow_projection(12, 0) order by bucket_start limit 1;
+  select sum(outflow) into v_saida_depois from public.cash_flow_projection(12, 0);
+  select sum(current_balance) into v_view from public.vw_bank_account_balances;
+
+  perform app.assert(v_saldo_depois = v_saldo_antes,
+    'movimento datado no futuro NÃO entra no saldo de hoje');
+  perform app.assert(v_saida_depois = v_saida_antes + 500.00,
+    'movimento datado no futuro entra na projeção, como saída do mês dele');
+  -- As duas metades juntas: se a função usasse a view, o valor apareceria nas
+  -- duas pontas.
+  perform app.assert(v_view <> v_saldo_depois,
+    'a view de saldo JÁ inclui o movimento futuro — é por isso que a projeção não a usa como D0');
+
+  delete from public.bank_account_movements
+   where description = 'Débito programado de teste';
+end
+$$;
+
+-- Isolamento: a função é `security invoker`, então o RLS das tabelas base vale
+-- dentro dela. Sem isso a projeção seria um furo por onde o tenant 2 leria o
+-- caixa do tenant 1 agregado.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000099","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert(
+    (select coalesce(sum(outflow) + sum(inflow), 0) from public.cash_flow_projection(12, 0)) = 0,
+    'tenant 2 não vê nenhum fluxo do tenant 1 na projeção');
+  perform app.assert(
+    (select coalesce(max(running_balance), 0) from public.cash_flow_projection(12, 0)) = 0,
+    'nem o saldo bancário do tenant 1');
+end
+$$;
+reset role;
+
+-- Limpa o palco.
+delete from public.payables;
+delete from public.receivables;
+
+-- =============================================================================
+\echo '=== 28. Conectividade: links, eventos e anexos (0022) ==='
+-- =============================================================================
+reset role;
+
+-- O estado do link passa a ser DERIVADO dos eventos. Antes da 0022 nada
+-- sincronizava `internet_links.last_state`, e o protótipo fazia isso no cliente —
+-- ou seja, o webhook do Zabbix teria escrito evento sem mexer no estado.
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_link uuid;
+begin
+  select id into v_link from public.internet_links where contract_number = 'NL-LINK-001';
+
+  insert into public.link_availability_events (tenant_id, link_id, state, source, note)
+  values (v_t, v_link, 'down', 'manual', 'Teste de queda');
+  perform app.assert(
+    (select last_state from public.internet_links where id = v_link) = 'down',
+    'abrir queda marca o link como fora do ar');
+
+  -- Uma queda aberta por link. Sem isso, dois webhooks duplicados abririam duas
+  -- indisponibilidades e o tempo fora do ar seria contado em dobro.
+  begin
+    insert into public.link_availability_events (tenant_id, link_id, state, source)
+    values (v_t, v_link, 'down', 'manual');
+    perform app.assert(false, 'não deveria aceitar uma segunda queda aberta');
+  exception when unique_violation then
+    perform app.assert(true, 'no máximo UMA queda aberta por link');
+  end;
+
+  update public.link_availability_events set ended_at = now()
+   where link_id = v_link and ended_at is null;
+  perform app.assert(
+    (select last_state from public.internet_links where id = v_link) = 'up',
+    'fechar a queda devolve o link para no ar');
+end
+$$;
+
+-- Link sem host monitorado NUNCA volta como "no ar": volta como "não monitorado".
+-- Chamar as duas coisas pelo mesmo nome esconderia que falta configurar a
+-- monitoração, e alarmaria sobre um link que pode estar perfeito.
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_link uuid;
+begin
+  select id into v_link from public.internet_links where contract_number = 'NL-LINK-002';
+  update public.internet_links set monitoring_host = null where id = v_link;
+
+  insert into public.link_availability_events (tenant_id, link_id, state, source)
+  values (v_t, v_link, 'down', 'manual');
+  update public.link_availability_events set ended_at = now()
+   where link_id = v_link and ended_at is null;
+
+  perform app.assert(
+    (select last_state from public.internet_links where id = v_link) = 'unknown',
+    'link sem host volta para NÃO MONITORADO, não para no ar');
+
+  delete from public.link_availability_events where link_id = v_link;
+  update public.internet_links set monitoring_host = '10.20.0.1' where id = v_link;
+end
+$$;
+
+-- Caminho de anexo, nas CINCO tabelas de uma vez.
+-- Esta é a asserção que pegaria o defeito corrigido no seed: o contrato do
+-- NL-LINK-001 estava gravado com DOIS segmentos, e `app.can_touch_attachment()`
+-- nega caminho que não tenha exatamente 3 pastas — o arquivo nunca poderia ser
+-- baixado, e nenhum teste dizia isso.
+do $$
+declare
+  t       text;
+  v_fora  bigint;
+begin
+  foreach t in array array[
+    'ticket_attachments', 'asset_attachments', 'telecom_line_attachments',
+    'internet_link_attachments', 'payable_attachments'
+  ]
+  loop
+    execute format($f$
+      select count(*) from public.%s
+      where array_length(storage.foldername(storage_path), 1) <> 3
+         or app.storage_tenant(storage_path) is distinct from tenant_id
+    $f$, t) into v_fora;
+    perform app.assert(v_fora = 0,
+      format('todo storage_path de %s segue a convenção {tenant}/{entidade}/{id}/{arquivo}', t));
+  end loop;
+end
+$$;
+
+-- O módulo novo tem de chegar aos perfis certos. As regras de
+-- `app.seed_system_access_profiles()` são POR MÓDULO, e um módulo ausente da
+-- lista do Gestor de TI não daria erro: daria menu faltando.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('conectividade.links.ver'),
+    'Gestor de TI enxerga links de internet');
+  perform app.assert(app.has_permission('conectividade.links.criar'),
+    'Gestor de TI cadastra link — é parque de TI, não financeiro');
+  perform app.assert(not app.has_permission('financeiro.fluxo_caixa.ver'),
+    'Gestor de TI NÃO enxerga o fluxo de caixa');
+end
+$$;
+
+-- Operador de TI: consulta, não cadastra. Mesma regra do inventário e da
+-- telefonia.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('conectividade.links.ver'),
+    'Operador de TI consulta links');
+  perform app.assert(not app.has_permission('conectividade.links.criar'),
+    'Operador de TI NÃO cadastra link');
+end
+$$;
+
+-- Gestor Financeiro: o oposto exato. A projeção é dele; o link não.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000006","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('financeiro.fluxo_caixa.ver'),
+    'Operador Financeiro enxerga a projeção de caixa');
+  perform app.assert(not app.has_permission('conectividade.links.ver'),
+    'Operador Financeiro NÃO enxerga links de internet');
+end
+$$;
+reset role;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

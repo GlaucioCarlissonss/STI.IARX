@@ -86,6 +86,44 @@ export const lineStatusLabel: Record<string, string> = {
   cancelled: 'Cancelada',
 }
 
+/* --- Conectividade ------------------------------------------------------- */
+
+export const linkTechnologyLabel: Record<string, string> = {
+  fiber: 'Fibra',
+  radio: 'Rádio',
+  satellite: 'Satélite',
+  mobile_4g: '4G',
+  mobile_5g: '5G',
+  xdsl: 'xDSL',
+  other: 'Outra',
+}
+
+export const linkStatusLabel: Record<string, string> = {
+  active: 'Ativo',
+  suspended: 'Suspenso',
+  cancelled: 'Cancelado',
+}
+
+/**
+ * Estado de monitoração.
+ *
+ * `unknown` é "Não monitorado", NUNCA "Fora do ar". Link sem host cadastrado não
+ * está caído: ninguém está olhando. Chamar as duas coisas pelo mesmo nome faria a
+ * tela alarmar sobre um link que pode estar perfeito — e, pior, esconderia que
+ * falta configurar a monitoração.
+ */
+export const linkStateLabel: Record<string, string> = {
+  up: 'No ar',
+  down: 'Fora do ar',
+  unknown: 'Não monitorado',
+}
+
+export const linkStateTone: Record<string, 'ok' | 'breach' | 'neutral'> = {
+  up: 'ok',
+  down: 'breach',
+  unknown: 'neutral',
+}
+
 export const integrationStatusLabel: Record<string, string> = {
   active: 'Ativa',
   paused: 'Pausada',

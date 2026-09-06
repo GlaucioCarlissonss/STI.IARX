@@ -20,6 +20,23 @@ export function formatDate(value: string | Date | null | undefined, timeZone?: s
   return new Intl.DateTimeFormat(LOCALE, { dateStyle: 'short', timeZone }).format(new Date(value))
 }
 
+/**
+ * Rótulo curto de mês: "nov/26".
+ *
+ * A data vem do banco como `date` pura ("2026-11-01"). `new Date('2026-11-01')`
+ * seria interpretada como meia-noite UTC e, num fuso a oeste, voltaria como
+ * outubro — o mês inteiro deslocado numa tela de projeção financeira. Por isso a
+ * string é quebrada e a data é montada no fuso local.
+ */
+export function formatMonth(value: string | null | undefined): string {
+  if (!value) return '—'
+  const [ano, mes] = value.split('-').map(Number)
+  if (!ano || !mes) return '—'
+  return new Intl.DateTimeFormat(LOCALE, { month: 'short', year: '2-digit' }).format(
+    new Date(ano, mes - 1, 1),
+  )
+}
+
 export function formatCurrency(value: number | null | undefined): string {
   if (value === null || value === undefined) return '—'
   return new Intl.NumberFormat(LOCALE, { style: 'currency', currency: 'BRL' }).format(value)

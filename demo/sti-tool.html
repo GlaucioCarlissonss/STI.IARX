@@ -468,10 +468,12 @@
 <script>
 (() => {
   'use strict';
-  // v7: títulos a pagar e a receber, categorias de despesa e faixas de alçada.
-  // Um estado v6 não tem `payables`, e a tela de títulos abriria vazia sem dizer
-  // por quê.
-  const KEY = 'sti.helpdesk.v7';
+  // v8: fluxo de caixa e permissões próprias de conectividade.
+  // Um estado v7 tem os perfis de sistema com as concessões ANTIGAS gravadas, sem
+  // `conectividade.links.*` nem `financeiro.fluxo_caixa.*` — as duas telas
+  // simplesmente não apareceriam no menu, e sem erro nenhum. Estado velho de
+  // permissão é pior que estado velho de dado: o sintoma é menu faltando.
+  const KEY = 'sti.helpdesk.v8';
   const MIN = 60000;
 
   /* ===================== Catálogos ===================== */
@@ -601,6 +603,15 @@
     ['telefonia.linhas.mudar_status','telefonia','linhas','mudar_status','Suspender/reativar linha','gestor'],
     ['telefonia.linhas.anexar','telefonia','linhas','anexar','Anexar contrato ou termo','gestor'],
     ['telefonia.linhas.remover_anexo','telefonia','linhas','remover_anexo','Remover anexo da linha','gestor'],
+    ['conectividade','conectividade',null,null,'Conectividade','visualizador'],
+    ['conectividade.links','conectividade','links',null,'Links de internet','visualizador'],
+    ['conectividade.links.ver','conectividade','links','ver','Consultar links','visualizador'],
+    ['conectividade.links.criar','conectividade','links','criar','Cadastrar link','gestor'],
+    ['conectividade.links.editar','conectividade','links','editar','Editar link','gestor'],
+    ['conectividade.links.mudar_status','conectividade','links','mudar_status','Suspender/cancelar link','gestor'],
+    ['conectividade.links.registrar_evento','conectividade','links','registrar_evento','Registrar queda ou retorno','gestor'],
+    ['conectividade.links.anexar','conectividade','links','anexar','Anexar contrato ou laudo','gestor'],
+    ['conectividade.links.remover_anexo','conectividade','links','remover_anexo','Remover anexo do link','gestor'],
     ['clientes','clientes',null,null,'Clientes e filiais','gestor'],
     ['clientes.grupos','clientes','grupos',null,'Grupos econômicos','gestor'],
     ['clientes.grupos.ver','clientes','grupos','ver','Consultar clientes','gestor'],
@@ -657,6 +668,8 @@
     ['financeiro.contas_bancarias.inativar','financeiro','contas_bancarias','inativar','Bloquear/reativar conta','gestor'],
     ['financeiro.contas_bancarias.movimentar','financeiro','contas_bancarias','movimentar','Lançar entrada/saída','gestor'],
     ['financeiro.contas_bancarias.transferir','financeiro','contas_bancarias','transferir','Transferir entre contas','gestor'],
+    ['financeiro.fluxo_caixa','financeiro','fluxo_caixa',null,'Fluxo de caixa','gestor'],
+    ['financeiro.fluxo_caixa.ver','financeiro','fluxo_caixa','ver','Consultar a projeção','gestor'],
     ['usuarios','usuarios',null,null,'Usuários e acesso','gestor'],
     ['usuarios.usuarios','usuarios','usuarios',null,'Usuários','gestor'],
     ['usuarios.usuarios.ver','usuarios','usuarios','ver','Consultar usuários','gestor'],
@@ -706,9 +719,10 @@
     return PERM_CATALOG.some(([k,m,s,a]) => m === module && a && can(granted, k));
   }
 
-  /* As MESMAS regras da função app.seed_system_access_profiles (0017:596-633).
-     Expressas como regra sobre o catálogo, não lista de chaves: listar 108
-     chaves nove vezes garantiria esquecer a próxima permissão em algum perfil. */
+  /* As MESMAS regras da função app.seed_system_access_profiles — 0017 na origem,
+     atualizada na 0020 (títulos) e na 0022 (conectividade).
+     Expressas como regra sobre o catálogo, não lista de chaves: listar o catálogo
+     inteiro nove vezes garantiria esquecer a próxima permissão em algum perfil. */
   const SYSTEM_PROFILES = [
     { key:'admin_cliente', name:'Admin do Cliente', baseRole:'admin',
       desc:'Acesso total ao ambiente do cliente.', rule:() => true },
@@ -716,12 +730,12 @@
       desc:'Leitura de tudo que o papel gestor alcança, sem escrita.',
       rule:(m,s,a) => !a || a === 'ver' },
     { key:'gestor_ti', name:'Gestor de TI', baseRole:'gestor',
-      desc:'Operação de TI completa: helpdesk, inventário, telefonia, mapas, SLA e cadastros.',
-      rule:(m) => ['helpdesk','inventario','telefonia','mapas','sla','clientes','fornecedores','tv'].includes(m) },
+      desc:'Operação de TI completa: helpdesk, inventário, telefonia, conectividade, mapas, SLA e cadastros.',
+      rule:(m) => ['helpdesk','inventario','telefonia','conectividade','mapas','sla','clientes','fornecedores','tv'].includes(m) },
     { key:'operador_ti', name:'Operador de TI', baseRole:'atendente',
-      desc:'Atende ticket e consulta inventário e telefonia; não cadastra.',
+      desc:'Atende ticket e consulta inventário, telefonia e links; não cadastra.',
       rule:(m,s,a) => m === 'helpdesk'
-        || (['inventario','telefonia','mapas'].includes(m) && (!a || a === 'ver')) },
+        || (['inventario','telefonia','conectividade','mapas'].includes(m) && (!a || a === 'ver')) },
     { key:'gestor_financeiro', name:'Gestor Financeiro', baseRole:'gestor',
       desc:'Financeiro completo, mais fornecedores e leitura de clientes.',
       rule:(m,s,a,k) => ['financeiro','fornecedores'].includes(m)
@@ -3284,14 +3298,8 @@
       <div class="page-head"><div><p class="eyebrow">Conectividade</p><h1>Links de Internet</h1>
         <p class="lede">Módulo novo. Contrato, banda, IP, CPE e monitoração ON/OFF por filial.
         Link sem host monitorado aparece como <em>não monitorado</em> — nunca como fora do ar.</p></div>
-        <button type="button" class="btn" id="link-new">Novo link</button></div>
-      <div class="alert" data-kind="warn">
-        <strong>Esta tela ainda não tem permissão própria</strong> — ela aparece para qualquer
-        perfil, inclusive os do financeiro. Não é falha da camada de permissão: a tela existe no
-        protótipo e a página equivalente ainda não existe na aplicação, então não há chave no
-        catálogo. Cadastrar a chave antes da tela produziria configuração que não governa nada, que
-        é justamente o defeito corrigido nesta rodada em seis outras chaves.
-      </div>
+        ${ifMay('conectividade.links.criar',
+          `<button type="button" class="btn" id="link-new">Novo link</button>`)}</div>
       ${viewToggle(linkMode,'links')}
       <div class="tiles">
         ${tile('Links na seleção', list.length)}
@@ -4155,6 +4163,144 @@
   };
   const movementsOfCostCenter = id => db.movements.filter(m => m.costCenterId === id);
 
+  /* ===================== Fluxo de caixa (Módulo 7) ===================== */
+  /* Espelho de `public.cash_flow_projection()` na migração 0021. As MESMAS
+     decisões, porque protótipo que projeta diferente da aplicação é pior que
+     protótipo sem a tela:
+
+       - entra `pending_approval`, `approved` e `scheduled`; e `open` no recebível;
+       - NÃO entra pago nem recebido (já estão no saldo — contar de novo seria
+         contar o mesmo dinheiro duas vezes), nem rascunho, nem reprovado;
+       - vencido e não pago é obrigação real: cai no mês corrente, com dia
+         efetivo hoje, e volta destacado;
+       - movimento bancário datado no futuro não entra no saldo de hoje e entra
+         como fluxo do mês dele;
+       - inadimplência é um NÚMERO DIGITADO, não três cenários com nome. Nenhum
+         percentual está escrito em documento de negócio, e batizar um de
+         "realista" faria o sistema afirmar o que não sabe. */
+  let fluxoMeses = 12;
+  let fluxoInad = 0;
+
+  function cashFlowProjection(meses, taxa) {
+    const hoje = hojeISO();
+    const base = new Date(hoje + 'T12:00:00');
+    const chave = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const baldes = [];
+    for (let i = 0; i < meses; i++) {
+      baldes.push(new Date(base.getFullYear(), base.getMonth() + i, 1));
+    }
+    const ate = chave(baldes[baldes.length - 1]);
+
+    const saldo0 = db.bankAccounts.reduce((sm,a) => sm + a.openingBalance, 0)
+      + db.movements.filter(m => m.movedOn <= hoje)
+          .reduce((sm,m) => sm + (m.direction === 'in' ? m.amount : -m.amount), 0);
+
+    const fluxos = [];
+    const efetivo = venc => (venc < hoje ? hoje : venc);
+    db.payables
+      .filter(t => ['pending_approval','approved','scheduled'].includes(t.status))
+      .forEach(t => fluxos.push({ dia:efetivo(t.dueOn), entrada:0, saida:t.amount,
+        vencido:t.dueOn < hoje, p:1, r:0 }));
+    db.receivables
+      .filter(t => t.status === 'open')
+      .forEach(t => fluxos.push({ dia:efetivo(t.dueOn),
+        entrada:Math.round(t.amount * (1 - taxa / 100) * 100) / 100, saida:0,
+        vencido:t.dueOn < hoje, p:0, r:1 }));
+    db.movements
+      .filter(m => m.movedOn > hoje)
+      .forEach(m => fluxos.push({ dia:m.movedOn,
+        entrada:m.direction === 'in' ? m.amount : 0,
+        saida:m.direction === 'out' ? m.amount : 0, vencido:false, p:0, r:0 }));
+
+    let acumulado = saldo0;
+    const linhas = baldes.map(b => {
+      const k = chave(b);
+      const doMes = fluxos.filter(f => f.dia.slice(0,7) === k && f.dia.slice(0,7) <= ate);
+      const entrada = doMes.reduce((sm,f) => sm + f.entrada, 0);
+      const saida = doMes.reduce((sm,f) => sm + f.saida, 0);
+      const porDia = {};
+      doMes.filter(f => f.saida > 0).forEach(f => { porDia[f.dia] = (porDia[f.dia] || 0) + f.saida; });
+      const pico = Object.entries(porDia).sort((x,y) => y[1] - x[1])[0] || null;
+      acumulado += entrada - saida;
+      return { mes:b, entrada, saida, net:entrada - saida, saldo:acumulado,
+        pagar:doMes.reduce((sm,f) => sm + f.p, 0),
+        receber:doMes.reduce((sm,f) => sm + f.r, 0),
+        vencidoSaida:doMes.filter(f => f.vencido).reduce((sm,f) => sm + f.saida, 0),
+        picoDia:pico ? pico[0] : null, picoValor:pico ? pico[1] : 0 };
+    });
+    return { saldo0, linhas, ate };
+  }
+
+  const mesRotulo = d => d.toLocaleDateString('pt-BR', { month:'short', year:'2-digit' });
+
+  views['fluxo-caixa'] = () => {
+    const { saldo0, linhas, ate } = cashFlowProjection(fluxoMeses, fluxoInad);
+    const totalEntrada = linhas.reduce((s0,l) => s0 + l.entrada, 0);
+    const totalSaida = linhas.reduce((s0,l) => s0 + l.saida, 0);
+    const negativo = linhas.find(l => l.saldo < 0);
+    const vencidoPrimeiro = linhas[0] ? linhas[0].vencidoSaida : 0;
+    const alem = db.payables.filter(t =>
+      ['pending_approval','approved','scheduled'].includes(t.status) && t.dueOn.slice(0,7) > ate);
+    const totalAlem = alem.reduce((s0,t) => s0 + t.amount, 0);
+    const dinheiro = v => `<span class="num"${v < 0 ? ' data-neg="1"' : ''}>${brl(v)}</span>`;
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Financeiro</p><h1>Fluxo de caixa</h1>
+        <p class="lede">Projeção sobre os títulos <strong>já lançados</strong>. Não há estimativa
+        de tendência aqui: sem histórico de pagamento, média de atraso seria número inventado com
+        casa decimal — e número inventado parece mais confiável que número nenhum.</p></div></div>
+
+      <div class="card" style="margin-bottom:1rem">
+        <div class="form-grid">
+          <div class="field"><label for="fc-meses">Horizonte</label>
+            <select id="fc-meses">${[6,12,24].map(m =>
+              `<option value="${m}"${m===fluxoMeses?' selected':''}>${m} meses</option>`).join('')}</select></div>
+          <div class="field"><label for="fc-inad">Inadimplência presumida (%)</label>
+            <input type="number" id="fc-inad" min="0" max="100" step="0.1" value="${fluxoInad}">
+            <span class="dim">Aplicada só sobre os recebíveis. 0 = todos entram integralmente.</span></div>
+        </div>
+      </div>
+
+      <div class="tiles">
+        ${tile('Saldo hoje', brl(saldo0), 'contas bancárias, sem lançamento futuro',
+          saldo0 < 0 ? 'breach' : 'ok')}
+        ${tile('A receber no horizonte', brl(totalEntrada),
+          fluxoInad > 0 ? `líquido de ${fluxoInad}% de inadimplência` : 'valor integral')}
+        ${tile('A pagar no horizonte', brl(totalSaida))}
+        ${tile('Primeiro mês negativo', negativo ? mesRotulo(negativo.mes) : 'nenhum',
+          negativo ? brl(negativo.saldo) : 'o saldo projetado não fica negativo',
+          negativo ? 'breach' : 'ok')}
+      </div>
+
+      ${negativo ? `<div class="alert" data-kind="error">O saldo projetado fica negativo em
+        <strong>${mesRotulo(negativo.mes)}</strong>, chegando a ${brl(negativo.saldo)}.</div>` : ''}
+      ${vencidoPrimeiro ? `<div class="alert" data-kind="warn">${brl(vencidoPrimeiro)} do mês atual
+        já está <strong>vencido</strong> — é atraso, não previsão.</div>` : ''}
+      ${totalAlem ? `<div class="alert" data-kind="info">${brl(totalAlem)} em ${alem.length}
+        título(s) vence depois do horizonte de ${fluxoMeses} meses e não está na tabela.</div>` : ''}
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Período</th><th>Entradas</th><th>Saídas</th><th>Resultado</th>
+          <th>Saldo projetado</th><th>Maior dia de saída</th></tr></thead>
+        <tbody>${linhas.map(l => `<tr>
+          <td class="strong">${mesRotulo(l.mes)}
+            ${l.vencidoSaida ? pill('inclui vencidos','warn') : ''}</td>
+          <td class="num">${brl(l.entrada)} <span class="dim">${l.receber} tít.</span></td>
+          <td class="num">${brl(l.saida)} <span class="dim">${l.pagar} tít.</span></td>
+          <td>${dinheiro(l.net)}</td>
+          <td>${dinheiro(l.saldo)}</td>
+          <td class="muted">${l.picoDia
+            ? `${fmtDate(l.picoDia)} — ${brl(l.picoValor)} (${Math.round(l.picoValor / l.saida * 100)}% do mês)`
+            : '—'}</td></tr>`).join('')}</tbody></table></div>
+
+      <p class="dim" style="margin-top:.8rem">Entram títulos a pagar aguardando aprovação,
+      aprovados e agendados, e títulos a receber em aberto. Ficam de fora rascunhos, reprovados,
+      cancelados e tudo que já foi pago ou recebido — estes porque já estão no saldo, e contá-los
+      de novo seria contar o mesmo dinheiro duas vezes. Limite de crédito não é caixa e não entra
+      em lugar nenhum desta conta.</p>`;
+  };
+
   views.centros = () => {
     const ordered = [...db.costCenters].sort((a,b) => costCenterPath(a).localeCompare(costCenterPath(b)));
     const noTerceiro = ordered.filter(c => costCenterDepth(c) === 3).length;
@@ -4825,8 +4971,9 @@
           <section><p class="eyebrow" style="margin:0 0 .5rem">Disponibilidade</p>
             ${k.monitoringHost ? `
               <div class="row-actions" style="margin-bottom:.6rem">
-                <button type="button" class="btn btn-sm" data-variant="${k.state==='down'?'':'danger'}"
-                  id="link-toggle">${k.state==='down'?'Simular retorno do link':'Simular queda do link'}</button>
+                ${ifMay('conectividade.links.registrar_evento',
+                  `<button type="button" class="btn btn-sm" data-variant="${k.state==='down'?'':'danger'}"
+                    id="link-toggle">${k.state==='down'?'Simular retorno do link':'Simular queda do link'}</button>`)}
                 <span class="dim">Reproduz o evento que o Zabbix enviaria ao webhook.</span></div>
               ${open?`<div class="alert" data-kind="error" style="margin-bottom:.6rem">
                 Fora do ar desde ${fmtWhen(open.startedAt)} — ${fmtMs(Date.now()-open.startedAt)} de indisponibilidade.
@@ -4852,7 +4999,8 @@
               <label for="lk-dockind">Tipo do próximo anexo</label><select id="lk-dockind">
               ${['contract','amendment','loyalty_term','cancellation','installation_report','other'].map(x=>
                 `<option value="${x}">${DOC_KIND[x]}</option>`).join('')}</select></div>
-            ${dropZone('lkdoc-'+k.id,'Contrato ou laudo — PDF, DOCX ou imagem')}
+            ${ifMay('conectividade.links.anexar',
+              dropZone('lkdoc-'+k.id,'Contrato ou laudo — PDF, DOCX ou imagem'))}
             <div class="att-grid" style="margin-top:.6rem">${docs.map(x=>attCard(x,'link:'+k.id)).join('')
               || '<p class="dim">Nenhum documento anexado.</p>'}</div>
           </section>
@@ -5334,16 +5482,14 @@
       ['titulos-receber','Títulos a receber',true,'financeiro.titulos_receber.ver'],
       ['contas','Contas bancárias',false,'financeiro.contas_bancarias.ver'],
       ['centros','Centros de custo',false,'financeiro.centros_custo.ver'],
-      [null,'Fluxo de caixa',false,null,true,
-       'Projeção de entradas e saídas. Depende dos títulos em uso.'],
+      ['fluxo-caixa','Fluxo de caixa',true,'financeiro.fluxo_caixa.ver'],
     ]],
     ['Infraestrutura', [
       ['inventario','Inventário de TI',false,'inventario.ativos.ver'],
       ['telefonia','Telefonia',false,'telefonia.linhas.ver'],
-      /* Links de Internet existe no protótipo e NÃO no PERMISSION_CATALOG: a tela
-         da aplicação não foi construída. Fica sem permissão em vez de ganhar uma
-         chave inventada. */
-      ['links','Links de internet',false,null],
+      /* Ganhou chave própria na migração 0022, junto com a tela da aplicação —
+         permissão entra com a tela que ela governa, nunca antes. */
+      ['links','Links de internet',true,'conectividade.links.ver'],
       ['mapas','Mapa das filiais',false,'mapas.geolocalizacao.ver'],
     ]],
     ['Cadastros', [
@@ -5700,6 +5846,7 @@
 
     // Link: simular queda/retorno (o que o Zabbix enviaria)
     if (T.id === 'link-toggle' && openDrawer?.kind === 'link') {
+      if (!guard('conectividade.links.registrar_evento')) return;
       const k = db.links.find(x => x.id === openDrawer.id);
       const err = toggleLinkState(k);
       if (err) toast(err); else toast(k.state === 'down' ? 'Queda registrada' : 'Link restabelecido');
@@ -5891,7 +6038,7 @@
       return;
     }
 
-    if (T.id === 'link-new') { linkModal(); return; }
+    if (T.id === 'link-new') { if (!guard('conectividade.links.criar')) return; linkModal(); return; }
     if (T.id === 'bulk-open') { bulkModal(); return; }
     if (T.id === 'bulk-clear') { selected.clear(); render(); return; }
 
@@ -6627,6 +6774,7 @@
         closeModal(); render(); toast(editingLine ? 'Linha atualizada' : 'Linha cadastrada'); return;
       }
       if (document.getElementById('nk-carrier')) {
+        if (!guard('conectividade.links.criar')) return;
         const ip = document.getElementById('nk-ip').value.trim();
         const err = createLink({ contractNumber:document.getElementById('nk-contract').value,
           carrier:document.getElementById('nk-carrier').value, tech:document.getElementById('nk-tech').value,
@@ -6671,6 +6819,16 @@
       render(); return;
     }
     if (T.id === 'tl-nc') { telFilters.noContract = T.checked; render(); return; }
+
+    /* Fluxo de caixa. O recorte fica em variável de módulo e não no `db`: é
+       parâmetro de leitura, não dado do cliente — gravá-lo no estado faria a
+       escolha de um analista virar configuração do tenant. */
+    if (T.id === 'fc-meses') { fluxoMeses = Number(T.value) || 12; render(); return; }
+    if (T.id === 'fc-inad') {
+      const v = Number(T.value);
+      fluxoInad = Number.isFinite(v) ? Math.min(Math.max(v, 0), 100) : 0;
+      render(); return;
+    }
     if (T.id === 'am-branch') { renderAreaList(); return; }
 
     if (T.id === 'd-assignee' && openDrawer?.kind === 'ticket') {

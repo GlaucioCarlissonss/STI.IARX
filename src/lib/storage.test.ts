@@ -130,9 +130,30 @@ describe('ATTACHMENT_TARGETS', () => {
     expect(ATTACHMENT_TARGETS.tickets.hasCategory).toBe(false)
   })
 
-  it('links fica fora — a tela não existe, e chave sem tela é configuração morta', () => {
-    expect(isAttachmentEntity('links')).toBe(false)
-    expect(PERMISSION_KEYS.some((k) => k.includes('links'))).toBe(false)
+  /*
+   * `links` esteve deliberadamente fora até a migração 0022, porque a tabela
+   * `internet_link_attachments` existia e a tela não. Entrou junto com a tela — que
+   * é a regra desta base, não uma exceção. O teste virou de lado com ela.
+   */
+  it('links entrou junto com a tela, com as chaves de conectividade', () => {
+    expect(isAttachmentEntity('links')).toBe(true)
+    expect(ATTACHMENT_TARGETS.links.table).toBe('internet_link_attachments')
+    expect(ATTACHMENT_TARGETS.links.fkColumn).toBe('link_id')
+    expect(ATTACHMENT_TARGETS.links.permissions.anexar).toBe('conectividade.links.anexar')
+    // Seis tipos, iguais ao CHECK de `internet_link_attachments` (0013).
+    expect(ATTACHMENT_TARGETS.links.kinds.map((k) => k.value)).toEqual([
+      'contract',
+      'amendment',
+      'loyalty_term',
+      'cancellation',
+      'installation_report',
+      'other',
+    ])
+  })
+
+  it('entidade que não existe continua fora', () => {
+    expect(isAttachmentEntity('faturas')).toBe(false)
+    expect(PERMISSION_KEYS.some((k) => k.includes('faturas'))).toBe(false)
   })
 })
 

@@ -102,11 +102,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: '/financeiro/contas-bancarias', label: 'Contas bancárias', permission: 'financeiro.contas_bancarias.ver' },
       { href: '/financeiro/centros-de-custo', label: 'Centros de custo', permission: 'financeiro.centros_custo.ver' },
       {
-        href: null,
+        href: '/financeiro/fluxo-de-caixa',
         label: 'Fluxo de caixa',
-        permission: null,
-        soon: true,
-        hint: 'Projeção de entradas e saídas. Depende dos títulos a pagar e a receber em uso.',
+        permission: 'financeiro.fluxo_caixa.ver',
       },
     ],
   },
@@ -115,13 +113,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { href: '/inventario', label: 'Inventário de TI', permission: 'inventario.ativos.ver' },
       { href: '/telefonia', label: 'Telefonia', permission: 'telefonia.linhas.ver' },
-      {
-        href: null,
-        label: 'Links de internet',
-        permission: null,
-        soon: true,
-        hint: 'A camada de dados existe desde a migração 0013; a tela ainda não foi construída.',
-      },
+      { href: '/conectividade/links', label: 'Links de internet', permission: 'conectividade.links.ver' },
       { href: '/mapas', label: 'Mapa das filiais', permission: 'mapas.geolocalizacao.ver' },
     ],
   },

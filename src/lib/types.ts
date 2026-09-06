@@ -463,3 +463,90 @@ export interface PayableSummaryRow {
   total_vencido: number | null
   vence_em_7_dias: number
 }
+
+/**
+ * Uma linha por mês de `public.cash_flow_projection()`.
+ *
+ * `overdue_*` não é um mês à parte: é a fatia do mês corrente que já venceu e
+ * continua devendo. Separar deixa a tela dizer "isto não é previsão, é atraso"
+ * sem inventar um balde falso no eixo do tempo.
+ */
+export interface CashFlowBucket {
+  bucket_start: string
+  inflow: number
+  outflow: number
+  net: number
+  running_balance: number
+  payables_count: number
+  receivables_count: number
+  overdue_inflow: number | null
+  overdue_outflow: number | null
+  peak_day: string | null
+  peak_day_outflow: number
+}
+
+/* --- Conectividade -------------------------------------------------------- */
+
+export type LinkTechnology =
+  | 'fiber'
+  | 'radio'
+  | 'satellite'
+  | 'mobile_4g'
+  | 'mobile_5g'
+  | 'xdsl'
+  | 'other'
+
+export type LinkStatus = 'active' | 'suspended' | 'cancelled'
+
+/** Estado de monitoração. `unknown` é "ninguém está olhando", não "caiu". */
+export type LinkState = 'up' | 'down' | 'unknown'
+
+export interface InternetLink {
+  id: string
+  branch_id: string
+  branch_area_id: string | null
+  contract_number: string | null
+  supplier_id: string | null
+  carrier_name: string | null
+  technology: LinkTechnology
+  download_mbps: number | null
+  upload_mbps: number | null
+  guaranteed_mbps: number | null
+  has_static_ip: boolean
+  static_ip: string | null
+  cpe_brand: string | null
+  cpe_model: string | null
+  cpe_serial: string | null
+  status: LinkStatus
+  monthly_cost: number | null
+  activated_on: string | null
+  cancelled_on: string | null
+  contract_start: string | null
+  contract_end: string | null
+  monitoring_host: string | null
+  last_state: LinkState
+  last_state_at: string | null
+  notes: string | null
+}
+
+export interface LinkAvailabilityEvent {
+  id: number
+  link_id: string
+  state: 'up' | 'down'
+  started_at: string
+  ended_at: string | null
+  duration_seconds: number | null
+  source: 'zabbix' | 'manual' | 'api'
+  note: string | null
+}
+
+/** Linha de `vw_connectivity_cost`: telefonia e internet lado a lado por filial. */
+export interface ConnectivityCostRow {
+  branch_id: string
+  branch_name: string
+  lines_active: number
+  telecom_monthly_cost: number
+  links_active: number
+  internet_monthly_cost: number
+  total_monthly_cost: number
+}

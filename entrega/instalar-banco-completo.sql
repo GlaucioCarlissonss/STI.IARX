@@ -35,7 +35,7 @@ begin;
 
 
 -- =============================================================================
--- ARQUIVO 1 de 21: 0001_foundation.sql
+-- ARQUIVO 1 de 23: 0001_foundation.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -146,7 +146,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 2 de 21: 0002_core.sql
+-- ARQUIVO 2 de 23: 0002_core.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -376,7 +376,7 @@ select app.harden_table('public.user_branches');
 
 
 -- =============================================================================
--- ARQUIVO 3 de 21: 0003_business_hours.sql
+-- ARQUIVO 3 de 23: 0003_business_hours.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -615,7 +615,7 @@ select app.harden_table('public.business_hours_holidays');
 
 
 -- =============================================================================
--- ARQUIVO 4 de 21: 0004_taxonomy_queues.sql
+-- ARQUIVO 4 de 23: 0004_taxonomy_queues.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -802,7 +802,7 @@ select app.harden_table('public.queue_rules');
 
 
 -- =============================================================================
--- ARQUIVO 5 de 21: 0005_tickets.sql
+-- ARQUIVO 5 de 23: 0005_tickets.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -1201,7 +1201,7 @@ select app.harden_table('public.ticket_status_transitions');
 
 
 -- =============================================================================
--- ARQUIVO 6 de 21: 0006_sla.sql
+-- ARQUIVO 6 de 23: 0006_sla.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -1564,7 +1564,7 @@ select app.harden_table('public.sla_pauses');
 
 
 -- =============================================================================
--- ARQUIVO 7 de 21: 0007_inventory.sql
+-- ARQUIVO 7 de 23: 0007_inventory.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -1783,7 +1783,7 @@ select app.harden_table('public.ticket_telecom_lines');
 
 
 -- =============================================================================
--- ARQUIVO 8 de 21: 0008_suppliers.sql
+-- ARQUIVO 8 de 23: 0008_suppliers.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -1860,7 +1860,7 @@ select app.harden_table('public.supplier_contracts');
 
 
 -- =============================================================================
--- ARQUIVO 9 de 21: 0009_integrations.sql
+-- ARQUIVO 9 de 23: 0009_integrations.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -2084,7 +2084,7 @@ select app.harden_table('public.integration_sync_state');
 
 
 -- =============================================================================
--- ARQUIVO 10 de 21: 0010_audit.sql
+-- ARQUIVO 10 de 23: 0010_audit.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -2219,7 +2219,7 @@ select app.harden_table('public.audit_log');
 
 
 -- =============================================================================
--- ARQUIVO 11 de 21: 0011_dashboard.sql
+-- ARQUIVO 11 de 23: 0011_dashboard.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -2559,7 +2559,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 12 de 21: 0012_rls_policies.sql
+-- ARQUIVO 12 de 23: 0012_rls_policies.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -2947,7 +2947,7 @@ grant usage on all sequences in schema public to authenticated;
 
 
 -- =============================================================================
--- ARQUIVO 13 de 21: 0013_areas_anexos_links.sql
+-- ARQUIVO 13 de 23: 0013_areas_anexos_links.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -3919,7 +3919,7 @@ select app.attach_audit('public.internet_link_attachments');
 
 
 -- =============================================================================
--- ARQUIVO 14 de 21: 0014_geocode_precision.sql
+-- ARQUIVO 14 de 23: 0014_geocode_precision.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -4060,7 +4060,7 @@ grant select on public.vw_map_tickets, public.vw_map_assets,
 
 
 -- =============================================================================
--- ARQUIVO 15 de 21: 0015_endereco_estruturado.sql
+-- ARQUIVO 15 de 23: 0015_endereco_estruturado.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -4465,7 +4465,7 @@ grant select on public.vw_map_tickets, public.vw_map_assets,
 
 
 -- =============================================================================
--- ARQUIVO 16 de 21: 0016_ultimo_log_geocode.sql
+-- ARQUIVO 16 de 23: 0016_ultimo_log_geocode.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -4490,7 +4490,7 @@ grant select on public.vw_branch_last_geocode_log to authenticated;
 
 
 -- =============================================================================
--- ARQUIVO 17 de 21: 0017_perfis_e_permissoes.sql
+-- ARQUIVO 17 de 23: 0017_perfis_e_permissoes.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -5239,7 +5239,7 @@ where ap.tenant_id = p.tenant_id
 
 
 -- =============================================================================
--- ARQUIVO 18 de 21: 0018_financeiro_base.sql
+-- ARQUIVO 18 de 23: 0018_financeiro_base.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -5533,7 +5533,7 @@ grant select on public.vw_bank_account_balances to authenticated;
 
 
 -- =============================================================================
--- ARQUIVO 19 de 21: 0019_storage_anexos.sql
+-- ARQUIVO 19 de 23: 0019_storage_anexos.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -5797,7 +5797,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 20 de 21: 0020_titulos_e_alcadas.sql
+-- ARQUIVO 20 de 23: 0020_titulos_e_alcadas.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -6585,7 +6585,564 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 21 de 21: seed.sql — dados de exemplo
+-- ARQUIVO 21 de 23: 0021_fluxo_de_caixa.sql
+-- =============================================================================
+
+-- =============================================================================
+-- 0021 — Fluxo de caixa: projeção sobre o que já está lançado
+-- =============================================================================
+-- Fecha o MÓDULO 7 de docs/07. Não cria tabela nenhuma: a projeção é derivada de
+-- `bank_accounts` + `bank_account_movements` + `payables` + `receivables`, todos
+-- entregues nas migrações 0018 e 0020.
+--
+-- O QUE ESTA TELA PROJETA, E O QUE ELA NÃO PROJETA
+-- ------------------------------------------------
+-- Projeta o COMPROMETIDO: um título aprovado com vencimento em 10/nov é uma
+-- obrigação registrada, não estimativa. Isso é dado real.
+--
+-- NÃO projeta tendência. `payables.paid_on` está vazio nesta base — não há
+-- histórico de pagamento —, então nada de média de atraso, sazonalidade ou
+-- previsão de faturamento. Número inventado com casa decimal parece mais
+-- confiável que número nenhum, e é pior.
+--
+-- POR QUE NO BANCO E NÃO EM TYPESCRIPT
+-- ------------------------------------
+-- "Qual situação conta como previsto" é regra financeira, e aqui ela pode ser
+-- PROVADA: `supabase/tests/schema_test.sql` roda contra PostgreSQL real com papel
+-- sem `bypassrls`. O vitest desta base não tem banco.
+--
+-- POR QUE NÃO É `security definer`
+-- --------------------------------
+-- Nada aqui precisa furar o RLS. Sendo invoker, a consulta enxerga exatamente o
+-- que a sessão enxerga — inclusive o escopo por filial. E não há fachada em `app`
+-- como a de `required_approval_levels_for()` porque não há parâmetro de tenant a
+-- proteger: o tenant vem do RLS das tabelas base.
+-- =============================================================================
+
+
+/**
+ * Projeção de caixa por mês.
+ *
+ * O QUE ENTRA (e cada exclusão tem motivo, não é esquecimento):
+ *
+ *   payables.draft             NÃO — alguém ainda digitando não é compromisso.
+ *   payables.pending_approval  SIM — a despesa já foi incorrida; excluir deixaria
+ *                                    a projeção otimista. Volta somada, e a tela
+ *                                    mostra o valor à parte para quem quiser
+ *                                    subtrair.
+ *   payables.approved          SIM
+ *   payables.scheduled         SIM
+ *   payables.rejected          NÃO — não será pago.
+ *   payables.paid              NÃO — já está no saldo bancário. Incluir seria
+ *                                    contar o mesmo dinheiro duas vezes.
+ *   payables.cancelled         NÃO
+ *
+ *   receivables.open           SIM — única entrada prevista.
+ *   receivables.draft          NÃO — não emitido.
+ *   receivables.received       NÃO — já está no saldo.
+ *   receivables.cancelled      NÃO
+ *
+ * TÍTULO VENCIDO E NÃO PAGO é obrigação real: não pode sumir da conta. Entra no
+ * mês corrente com dia efetivo = hoje (`greatest(due_on, current_date)`) e volta
+ * destacado em `overdue_inflow`/`overdue_outflow`, para a tela poder dizer quanto
+ * do mês atual é atraso e não previsão.
+ *
+ * SALDO DE D0 — a armadilha que este código evita:
+ * `vw_bank_account_balances.current_balance` NÃO tem corte de data, e
+ * `bank_account_movements.moved_on` é uma `date` livre. Um lançamento datado no
+ * futuro já está dentro daquele saldo hoje. Usá-lo como ponto de partida e depois
+ * projetar o mesmo mês contaria o valor duas vezes. Aqui o saldo de D0 é
+ * `opening_balance` mais os movimentos ATÉ hoje, e os movimentos futuros entram
+ * como terceiro braço da projeção.
+ *
+ * INADIMPLÊNCIA é parâmetro, não regra: nenhum percentual está escrito em
+ * documento de negócio algum, e três percentuais escolhidos por mim seriam regra
+ * inventada com cara de fato. Mesma decisão da alçada na 0020, que nasce vazia.
+ * Padrão 0 = todos os recebíveis entram integralmente.
+ *
+ * FILTRO POR CONTA BANCÁRIA foi deliberadamente NÃO implementado, embora docs/07
+ * o cite. Título em aberto quase nunca tem `bank_account_id` — a conta só é
+ * gravada na baixa —, então filtrar por conta esvaziaria a projeção e pareceria
+ * "não há nada a pagar". Filtro que mente é pior que filtro ausente.
+ */
+create or replace function public.cash_flow_projection(
+  p_months           integer default 12,
+  p_delinquency_rate numeric default 0,
+  p_branch_id        uuid    default null,
+  p_cost_center_id   uuid    default null
+)
+returns table (
+  bucket_start      date,
+  inflow            numeric,
+  outflow           numeric,
+  net               numeric,
+  running_balance   numeric,
+  payables_count    integer,
+  receivables_count integer,
+  overdue_inflow    numeric,
+  overdue_outflow   numeric,
+  peak_day          date,
+  peak_day_outflow  numeric
+)
+language sql
+stable
+as $$
+with p as (
+  -- Teto de 36 meses e piso de 1: o parâmetro vem da barra de endereço, e
+  -- `?meses=100000` geraria cem mil linhas sem que ninguém tivesse pedido isso.
+  select
+    greatest(1, least(coalesce(p_months, 12), 36))                    as months,
+    least(greatest(coalesce(p_delinquency_rate, 0), 0), 100) / 100.0  as rate,
+    date_trunc('month', current_date)::date                           as first_month
+),
+baldes as (
+  select (p.first_month + make_interval(months => n::int))::date as bucket_start
+  from p, generate_series(0, p.months - 1) as n
+),
+horizonte as (
+  select (max(bucket_start) + interval '1 month' - interval '1 day')::date as ate
+  from baldes
+),
+-- Movimentos de conta não excluída. `bank_account_movements` não tem
+-- `deleted_at`; a junção é o que impede somar movimento de conta apagada.
+movimentos as (
+  select m.direction, m.amount, m.moved_on, m.cost_center_id
+  from public.bank_account_movements m
+  join public.bank_accounts a
+    on a.id = m.bank_account_id and a.deleted_at is null
+),
+saldo_d0 as (
+  select
+    (select coalesce(sum(opening_balance), 0)
+       from public.bank_accounts where deleted_at is null)
+  + (select coalesce(sum(case when direction = 'in' then amount else -amount end), 0)
+       from movimentos where moved_on <= current_date)
+    as valor
+),
+fluxos as (
+  select
+    greatest(pa.due_on, current_date) as efetivo,
+    0::numeric                        as entrada,
+    pa.amount                         as saida,
+    (pa.due_on < current_date)        as vencido,
+    1                                 as e_pagar,
+    0                                 as e_receber
+  from public.payables pa
+  where pa.deleted_at is null
+    and pa.status in ('pending_approval', 'approved', 'scheduled')
+    and (p_branch_id is null or pa.branch_id = p_branch_id)
+    and (p_cost_center_id is null or pa.cost_center_id = p_cost_center_id)
+
+  union all
+
+  select
+    greatest(re.due_on, current_date),
+    round(re.amount * (1 - (select rate from p)), 2),
+    0::numeric,
+    (re.due_on < current_date),
+    0, 1
+  from public.receivables re
+  where re.deleted_at is null
+    and re.status = 'open'
+    and (p_branch_id is null or re.branch_id = p_branch_id)
+    and (p_cost_center_id is null or re.cost_center_id = p_cost_center_id)
+
+  union all
+
+  -- Movimento bancário datado no futuro: já existe, ainda não aconteceu.
+  -- Sai da conta quando há filtro de filial porque movimento bancário não tem
+  -- filial — atribuí-lo a uma seria inventar o dado.
+  select
+    mv.moved_on,
+    case when mv.direction = 'in'  then mv.amount else 0 end,
+    case when mv.direction = 'out' then mv.amount else 0 end,
+    false, 0, 0
+  from movimentos mv
+  where mv.moved_on > current_date
+    and p_branch_id is null
+    and (p_cost_center_id is null or mv.cost_center_id = p_cost_center_id)
+),
+por_balde as (
+  select
+    date_trunc('month', f.efetivo)::date              as bucket_start,
+    sum(f.entrada)                                    as inflow,
+    sum(f.saida)                                      as outflow,
+    coalesce(sum(f.entrada) filter (where f.vencido), 0) as overdue_inflow,
+    coalesce(sum(f.saida)   filter (where f.vencido), 0) as overdue_outflow,
+    sum(f.e_pagar)                                    as payables_count,
+    sum(f.e_receber)                                  as receivables_count
+  from fluxos f
+  where f.efetivo <= (select ate from horizonte)
+  group by 1
+),
+-- Maior dia de saída DENTRO de cada mês: dá a granularidade de dia sem devolver
+-- uma linha por dia. É observação, não alarme — quem lê decide o que fazer com
+-- "12/nov concentra 40% do mês".
+picos as (
+  select
+    date_trunc('month', f.efetivo)::date as bucket_start,
+    f.efetivo                            as dia,
+    sum(f.saida)                         as saida_dia,
+    row_number() over (
+      partition by date_trunc('month', f.efetivo)
+      order by sum(f.saida) desc, f.efetivo
+    ) as rn
+  from fluxos f
+  where f.efetivo <= (select ate from horizonte)
+    and f.saida > 0
+  group by 1, 2
+)
+select
+  b.bucket_start,
+  coalesce(q.inflow, 0),
+  coalesce(q.outflow, 0),
+  coalesce(q.inflow, 0) - coalesce(q.outflow, 0),
+  (select valor from saldo_d0)
+    + sum(coalesce(q.inflow, 0) - coalesce(q.outflow, 0))
+        over (order by b.bucket_start rows between unbounded preceding and current row),
+  coalesce(q.payables_count, 0)::integer,
+  coalesce(q.receivables_count, 0)::integer,
+  q.overdue_inflow,
+  q.overdue_outflow,
+  pk.dia,
+  coalesce(pk.saida_dia, 0)
+from baldes b
+left join por_balde q on q.bucket_start = b.bucket_start
+left join picos    pk on pk.bucket_start = b.bucket_start and pk.rn = 1
+order by b.bucket_start;
+$$;
+
+revoke all on function public.cash_flow_projection(integer, numeric, uuid, uuid) from public;
+grant execute on function public.cash_flow_projection(integer, numeric, uuid, uuid) to authenticated;
+
+comment on function public.cash_flow_projection(integer, numeric, uuid, uuid) is
+  'Projeção mensal de caixa sobre títulos comprometidos. `security invoker`: enxerga o que a sessão enxerga.';
+
+-- -----------------------------------------------------------------------------
+-- Chaves novas no catálogo
+-- -----------------------------------------------------------------------------
+-- Em sincronia com PERMISSION_CATALOG em src/lib/permissions.ts.
+--
+-- DUAS chaves, e só duas: a tela não escreve nada. Uma chave `configurar` não
+-- governaria coisa alguma — o percentual de inadimplência é parâmetro de consulta,
+-- não configuração gravada —, e chave que não governa nada é o defeito já
+-- corrigido em seis chaves nesta base.
+--
+-- Ficar DENTRO do módulo `financeiro`, em vez de virar módulo próprio, é o que faz
+-- `app.seed_system_access_profiles()` conceder a tela ao Gestor Financeiro
+-- automaticamente (regra `c.module = 'financeiro'`) e o `.ver` ao Operador e ao
+-- Aprovador (regra `c.action = 'ver'`), sem tocar na função.
+--
+-- `sort_order` 890-891: continua depois da última chave do módulo
+-- (`financeiro.contas_bancarias.transferir`, 880 na 0017), que é a mesma posição
+-- que as entradas ocupam no array de `src/lib/permissions.ts`. Manter a ordem do
+-- banco igual à ordem do TypeScript evita que a matriz de perfis e o catálogo
+-- contem histórias diferentes.
+insert into public.permission_catalog
+  (key, module, screen, action, label, min_base_role, sort_order)
+values
+  ('financeiro.fluxo_caixa', 'financeiro', 'fluxo_caixa', null,
+   'Fluxo de caixa', 'gestor', 890),
+  ('financeiro.fluxo_caixa.ver', 'financeiro', 'fluxo_caixa', 'ver',
+   'Consultar a projeção', 'gestor', 891)
+on conflict (key) do update
+  set label         = excluded.label,
+      min_base_role = excluded.min_base_role,
+      sort_order    = excluded.sort_order;
+
+-- Perfis de sistema já provisionados não conhecem as chaves novas. A função
+-- expressa as concessões como REGRA sobre o catálogo, então rodá-la de novo
+-- distribui as chaves novas sem duplicar as antigas.
+do $$
+declare
+  v_tenant uuid;
+begin
+  for v_tenant in select id from public.tenants loop
+    perform app.seed_system_access_profiles(v_tenant);
+  end loop;
+end;
+$$;
+
+
+
+-- =============================================================================
+-- ARQUIVO 22 de 23: 0022_conectividade_links.sql
+-- =============================================================================
+
+-- =============================================================================
+-- 0022 — Conectividade: a tela de Links de Internet ganha permissões
+-- =============================================================================
+-- Sem DDL de tabela: `internet_links`, `internet_link_attachments`,
+-- `link_availability_events` e as views `vw_internet_dashboard` e
+-- `vw_connectivity_cost` existem desde a 0013. Faltava a TELA — e é a tela que
+-- autoriza as chaves.
+--
+-- A 0019 deixou isto escrito, dentro do docblock de `app.storage_permission_key`:
+--
+--   "`links` está deliberadamente FORA. A tabela `internet_link_attachments`
+--    existe (0013:496), mas a tela de Links de Internet não existe na aplicação —
+--    só no protótipo. Cadastrar `conectividade.links.anexar` agora criaria
+--    permissão que não governa tela nenhuma... Entra junto com a tela."
+--
+-- É esta migração.
+-- =============================================================================
+
+
+-- -----------------------------------------------------------------------------
+-- 1. Chaves novas no catálogo
+-- -----------------------------------------------------------------------------
+-- Em sincronia com PERMISSION_CATALOG em src/lib/permissions.ts.
+--
+-- `sort_order` 481-489 é exatamente o vão livre entre a última chave de telefonia
+-- (480) e a primeira de clientes (490) — nove posições para nove chaves. Cabe
+-- porque nada em `src/` lê `permission_catalog.sort_order` (a coluna só ordena a
+-- listagem no banco) e porque `on conflict do update` permite renumerar depois.
+-- Manter a ordem do banco igual à ordem do array em TypeScript evita que a matriz
+-- de perfis e o catálogo contem histórias diferentes.
+--
+-- `registrar_evento` é `gestor`, não `atendente`. A policy de escrita de
+-- `link_availability_events` (0013) exige `app.can_manage_records()`, que é gestor
+-- para cima; uma chave em `atendente` liberaria o botão e o banco negaria
+-- devolvendo zero linhas. Permissão que não governa nada é o defeito que esta base
+-- já corrigiu duas vezes — afrouxar a policy é decisão do cliente, não desta
+-- migração.
+insert into public.permission_catalog
+  (key, module, screen, action, label, min_base_role, sort_order)
+values
+  ('conectividade', 'conectividade', null, null,
+   'Conectividade', 'visualizador', 481),
+  ('conectividade.links', 'conectividade', 'links', null,
+   'Links de internet', 'visualizador', 482),
+  ('conectividade.links.ver', 'conectividade', 'links', 'ver',
+   'Consultar links', 'visualizador', 483),
+  ('conectividade.links.criar', 'conectividade', 'links', 'criar',
+   'Cadastrar link', 'gestor', 484),
+  ('conectividade.links.editar', 'conectividade', 'links', 'editar',
+   'Editar link', 'gestor', 485),
+  ('conectividade.links.mudar_status', 'conectividade', 'links', 'mudar_status',
+   'Suspender/cancelar link', 'gestor', 486),
+  ('conectividade.links.registrar_evento', 'conectividade', 'links', 'registrar_evento',
+   'Registrar queda ou retorno', 'gestor', 487),
+  ('conectividade.links.anexar', 'conectividade', 'links', 'anexar',
+   'Anexar contrato ou laudo', 'gestor', 488),
+  ('conectividade.links.remover_anexo', 'conectividade', 'links', 'remover_anexo',
+   'Remover anexo do link', 'gestor', 489)
+on conflict (key) do update
+  set label         = excluded.label,
+      min_base_role = excluded.min_base_role,
+      sort_order    = excluded.sort_order;
+
+-- -----------------------------------------------------------------------------
+-- 2. O bucket passa a aceitar anexo de link
+-- -----------------------------------------------------------------------------
+-- Só o mapa muda; o predicado `app.can_touch_attachment()` da 0019 continua o
+-- mesmo, inclusive negando por omissão para entidade desconhecida.
+create or replace function app.storage_permission_key(p_entity text, p_verb text)
+returns text
+language sql
+immutable
+as $$
+  select case p_entity
+    when 'tickets' then case p_verb
+      when 'ver'     then 'helpdesk.tickets.ver'
+      when 'anexar'  then 'helpdesk.tickets.anexar'
+      when 'remover' then 'helpdesk.tickets.remover_anexo'
+      else null end
+    when 'ativos' then case p_verb
+      when 'ver'     then 'inventario.ativos.ver'
+      when 'anexar'  then 'inventario.ativos.anexar'
+      when 'remover' then 'inventario.ativos.remover_anexo'
+      else null end
+    when 'linhas' then case p_verb
+      when 'ver'     then 'telefonia.linhas.ver'
+      when 'anexar'  then 'telefonia.linhas.anexar'
+      when 'remover' then 'telefonia.linhas.remover_anexo'
+      else null end
+    when 'titulos' then case p_verb
+      when 'ver'     then 'financeiro.titulos_pagar.ver'
+      when 'anexar'  then 'financeiro.titulos_pagar.anexar'
+      when 'remover' then 'financeiro.titulos_pagar.remover_anexo'
+      else null end
+    when 'links' then case p_verb
+      when 'ver'     then 'conectividade.links.ver'
+      when 'anexar'  then 'conectividade.links.anexar'
+      when 'remover' then 'conectividade.links.remover_anexo'
+      else null end
+    else null
+  end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 3. O estado do link passa a ser derivado dos eventos
+-- -----------------------------------------------------------------------------
+-- `link_availability_events` grava a queda, mas `internet_links.last_state` e
+-- `last_state_at` são colunas separadas e NADA as sincronizava — o protótipo fazia
+-- isso no cliente. Dois caminhos de escrita (a tela e, no futuro, a Edge Function
+-- do Zabbix) divergiriam no primeiro evento vindo de fora da tela.
+--
+-- A regra é recalculada, não incrementada: "há queda aberta?" responde certo
+-- mesmo que os eventos cheguem fora de ordem, que é justamente o que um webhook
+-- faz.
+--
+-- Sem `security definer` de propósito: quem consegue gravar o evento
+-- (`can_manage_records`, pela policy da 0013) já consegue atualizar o link pela
+-- mesma regra, então não há nada a contornar aqui.
+create or replace function app.sync_link_state()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_link uuid := coalesce(new.link_id, old.link_id);
+begin
+  update public.internet_links k
+     set last_state = case
+           when exists (
+             select 1 from public.link_availability_events e
+             where e.link_id = k.id and e.state = 'down' and e.ended_at is null
+           ) then 'down'
+           -- Link sem host monitorado nunca é "no ar": é "não monitorado".
+           -- Dizer "up" porque ninguém reportou queda seria afirmar o que não se
+           -- sabe, e é a distinção que o protótipo já fazia.
+           when k.monitoring_host is null or btrim(k.monitoring_host) = '' then 'unknown'
+           else 'up'
+         end,
+         last_state_at = now()
+   where k.id = v_link;
+  return null;
+end;
+$$;
+
+comment on function app.sync_link_state() is
+  'Mantém internet_links.last_state coerente com os eventos de disponibilidade.';
+
+drop trigger if exists trg_link_event_syncs_state on public.link_availability_events;
+create trigger trg_link_event_syncs_state
+  after insert or update or delete on public.link_availability_events
+  for each row execute function app.sync_link_state();
+
+-- -----------------------------------------------------------------------------
+-- 4. Os perfis de sistema precisam conhecer o módulo novo
+-- -----------------------------------------------------------------------------
+-- ISTO NÃO É FORMALIDADE. As regras de `app.seed_system_access_profiles()` são
+-- POR MÓDULO, e `conectividade` não está em nenhuma delas. Sem esta alteração as
+-- nove chaves iriam só para Admin do Cliente, Diretoria e Visualizador — e o
+-- Gestor de TI, que é exatamente quem cuida de link de internet, não veria a tela.
+-- Sintoma: menu faltando, não erro.
+create or replace function app.seed_system_access_profiles(p_tenant_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_profile record;
+begin
+  insert into public.access_profiles (tenant_id, name, description, base_role, is_system, system_key)
+  values
+    (p_tenant_id, 'Admin do Cliente',
+     'Acesso total ao ambiente do cliente.', 'admin', true, 'admin_cliente'),
+    (p_tenant_id, 'Diretoria',
+     'Leitura de tudo que o papel gestor alcança, sem escrita.', 'gestor', true, 'diretoria'),
+    (p_tenant_id, 'Gestor de TI',
+     'Operação de TI completa: helpdesk, inventário, telefonia, conectividade, mapas, SLA e cadastros.',
+     'gestor', true, 'gestor_ti'),
+    (p_tenant_id, 'Operador de TI',
+     'Atende ticket e consulta inventário, telefonia e links; não cadastra.',
+     'atendente', true, 'operador_ti'),
+    (p_tenant_id, 'Gestor Financeiro',
+     'Financeiro completo, mais fornecedores e leitura de clientes.', 'gestor', true, 'gestor_financeiro'),
+    (p_tenant_id, 'Operador Financeiro',
+     'Lança despesa e movimentação; não cadastra conta, não transfere e não aprova.',
+     'gestor', true, 'operador_financeiro'),
+    (p_tenant_id, 'Aprovador Financeiro',
+     'Consulta o financeiro e aprova o que a alçada permitir.', 'gestor', true, 'aprovador_financeiro'),
+    (p_tenant_id, 'Visualizador',
+     'Somente leitura do que o papel visualizador alcança.', 'visualizador', true, 'visualizador'),
+    (p_tenant_id, 'Solicitante',
+     'Abre e acompanha os próprios tickets; consulta o que o papel alcança.',
+     'solicitante', true, 'solicitante')
+  on conflict do nothing;
+
+  -- A descrição de dois perfis mudou junto com o módulo novo; `on conflict do
+  -- nothing` acima não atualiza quem já existe, e um texto velho na tela de
+  -- perfis é exatamente o tipo de mentira silenciosa que esta base persegue.
+  update public.access_profiles set description =
+    'Operação de TI completa: helpdesk, inventário, telefonia, conectividade, mapas, SLA e cadastros.'
+   where tenant_id = p_tenant_id and system_key = 'gestor_ti';
+  update public.access_profiles set description =
+    'Atende ticket e consulta inventário, telefonia e links; não cadastra.'
+   where tenant_id = p_tenant_id and system_key = 'operador_ti';
+
+  for v_profile in
+    select id, base_role, system_key from public.access_profiles
+    where tenant_id = p_tenant_id and is_system
+  loop
+    insert into public.permission_grants (tenant_id, profile_id, permission_key)
+    select p_tenant_id, v_profile.id, c.key
+    from public.permission_catalog c
+    where app.role_rank(c.min_base_role) <= app.role_rank(v_profile.base_role)
+      and case v_profile.system_key
+        when 'admin_cliente' then true
+
+        when 'diretoria'    then c.action is null or c.action = 'ver'
+        when 'visualizador' then c.action is null or c.action = 'ver'
+
+        -- `conectividade` entra aqui: link de internet é parque de TI.
+        when 'gestor_ti' then c.module in
+          ('helpdesk','inventario','telefonia','conectividade','mapas','sla',
+           'clientes','fornecedores','tv')
+
+        when 'operador_ti' then
+          c.module = 'helpdesk'
+          or (c.module in ('inventario','telefonia','conectividade','mapas')
+              and (c.action is null or c.action = 'ver'))
+
+        when 'gestor_financeiro' then
+          c.module in ('financeiro','fornecedores')
+          or (c.module = 'clientes' and (c.action is null or c.action = 'ver'))
+          or c.key in ('sla','sla.compliance','sla.compliance.ver')
+
+        -- Lançar despesa e anexar comprovante É o trabalho do operador. Aprovar,
+        -- pagar e configurar alçada não são — e continuam de fora.
+        when 'operador_financeiro' then
+          c.module = 'financeiro'
+          and (c.action is null
+               or c.action in ('ver','movimentar')
+               or (c.screen in ('titulos_pagar','titulos_receber')
+                   and c.action in ('criar','editar','anexar','remover_anexo')))
+
+        when 'aprovador_financeiro' then
+          c.module = 'financeiro'
+          and (c.action is null
+               or c.action = 'ver'
+               or (c.screen = 'titulos_pagar' and c.action = 'aprovar'))
+
+        when 'solicitante' then true
+
+        else false
+      end
+    on conflict do nothing;
+  end loop;
+end;
+$$;
+
+comment on function app.seed_system_access_profiles(uuid) is
+  'Cria os 9 perfis de sistema do tenant e concede as chaves por REGRA sobre o catálogo. Idempotente.';
+
+do $$
+declare
+  v_tenant uuid;
+begin
+  for v_tenant in select id from public.tenants loop
+    perform app.seed_system_access_profiles(v_tenant);
+  end loop;
+end;
+$$;
+
+
+
+-- =============================================================================
+-- ARQUIVO 23 de 23: seed.sql — dados de exemplo
 -- =============================================================================
 -- Só faz sentido em banco novo ou de teste: cria 7 usuários em auth.users. Num
 -- banco com dado real, apague daqui para baixo antes de rodar.
@@ -7079,7 +7636,11 @@ from public.internet_links k where k.contract_number = 'NL-LINK-003';
 insert into public.internet_link_attachments
   (tenant_id, link_id, kind, storage_path, file_name, mime_type, size_bytes, uploaded_by)
 select k.tenant_id, k.id, 'contract',
-       format('%s/%s/contrato-nl-link-001.pdf', k.tenant_id, k.id),
+       -- Quatro segmentos: {tenant}/{entidade}/{entity_id}/{arquivo}. O caminho
+       -- de dois segmentos que estava aqui NUNCA poderia ser baixado:
+       -- `app.can_touch_attachment()` (0019) nega quando o caminho não tem
+       -- exatamente 3 pastas, e a entidade sairia sendo o uuid do link.
+       format('%s/links/%s/contrato-nl-link-001.pdf', k.tenant_id, k.id),
        'contrato-nl-link-001.pdf', 'application/pdf', 184320,
        '22220000-0000-4000-8000-000000000001'
 from public.internet_links k where k.contract_number = 'NL-LINK-001';

@@ -68,7 +68,7 @@ Constraints: `key = concat_ws('.', module, screen, action)` — a chave é deriv
 da trinca, e gravar as duas coisas deixando-as divergir quebraria a árvore da
 UI; `action is null or screen is not null`.
 
-**108 entradas, GERADAS de `src/lib/permissions.ts`.** O teste de schema compara
+**141 entradas, GERADAS de `src/lib/permissions.ts`.** O teste de schema compara
 a contagem: mexer no TypeScript sem regenerar derruba o CI em vez de virar
 permissão fantasma.
 
@@ -471,7 +471,34 @@ Compromisso programado que se converte em título na data prevista.
 ## MÓDULO 7 — Fluxo de Caixa
 
 ### Status
-- [ ] **Especificado, não implementado**
+- [x] **Implementado** — migração `0021_fluxo_de_caixa.sql`, tela
+  `/financeiro/fluxo-de-caixa`, chaves `financeiro.fluxo_caixa.*`.
+
+### O que ficou de fora, e por quê
+- **`future_entries`** (Módulo 6 daqui) não existe: depende de job agendado, que a
+  plataforma não tem. A função foi escrita para receber os lançamentos futuros como
+  **mais um braço de UNION**, sem reescrever nada.
+- **Tendência histórica.** `payables.paid_on` está vazio — não há histórico de
+  pagamento nesta base. Média de atraso, sazonalidade e previsão de faturamento
+  seriam número inventado com casa decimal, e número inventado parece mais
+  confiável que número nenhum. A tela projeta o **comprometido** e diz que é isso.
+- **Os três cenários com nome** (otimista/realista/pessimista). A inadimplência
+  virou **um campo numérico**, padrão 0. Nenhum percentual está escrito em documento
+  de negócio algum, e batizar um deles de "realista" faria o sistema afirmar o que
+  não sabe. Mesma decisão da alçada, que nasce vazia.
+- **Filtro por conta bancária**, embora citado abaixo. Título em aberto quase nunca
+  tem `bank_account_id` — a conta só é gravada na baixa —, então o filtro
+  esvaziaria a projeção e pareceria "não há nada a pagar". Filtro que mente é pior
+  que filtro ausente. Sobraram filial, centro de custo, horizonte e inadimplência.
+
+### Uma armadilha encontrada na implementação
+`vw_bank_account_balances.current_balance` **não tem corte de data**, e
+`bank_account_movements.moved_on` é uma `date` livre: lançamento datado no futuro já
+está dentro daquele saldo hoje. Usá-lo como ponto de partida e depois projetar o
+mesmo mês contaria o valor **duas vezes**. A função calcula o saldo de D0 como
+`opening_balance` mais os movimentos até hoje, e trata os futuros como fluxo. Há
+asserção para as duas metades — e uma terceira provando que a view e o D0
+**divergem** quando existe movimento futuro, que é a razão de não usar a view.
 
 ### Descrição
 Saldo atual + recebimentos previstos − pagamentos previstos, com cenários.
@@ -555,10 +582,10 @@ Orçado vs. realizado por categoria, centro de custo e filial.
 | 2 | Revisão de código (permissões) | 1 | Crítica | Alta | **Pronto** |
 | 3 | Centros de Custo | 1 | Alta | Baixa | **Pronto** |
 | 4 | Contas Bancárias | 1 | Alta | Média | **Pronto** |
-| 5 | Contas a Pagar + aprovação | 1–4 | Alta | **Muito alta** | Especificado |
-| 6 | Contas a Receber + contrato | 1–4 | Alta | Alta | Especificado |
+| 5 | Contas a Pagar + aprovação | 1–4 | Alta | **Muito alta** | **Pronto** (0020) |
+| 6 | Contas a Receber + contrato | 1–4 | Alta | Alta | **Pronto** (0020) |
 | 7 | Lançamentos Futuros | 5, 6 | Média | Média | Especificado |
-| 8 | Fluxo de Caixa | 5–7 | Média | Média | Especificado |
+| 8 | Fluxo de Caixa | 5, 6 | Média | Média | **Pronto** (0021) |
 | 9 | Controle de Despesas | 5 | Média | Média | Especificado |
 | 10 | Orçamento e Indicadores | 3, 5, 9 | Baixa | Média | Especificado |
 
@@ -586,7 +613,7 @@ tela existir.
 | Visualizador | visualizador | ◐ | — | ◐ | ◐ | ◐ | — | — | — | — | — | — | — |
 | Solicitante | solicitante | ● (próprio) | — | ◐ | ◐ | ◐ | — | — | — | — | — | — | — |
 
-O catálogo completo (108 entradas com o papel mínimo de cada uma) está em
+O catálogo completo (141 entradas com o papel mínimo de cada uma) está em
 `src/lib/permissions.ts` e semeado em `permission_catalog`.
 
 ---

@@ -32,22 +32,26 @@ export const metadata: Metadata = { title: 'Visão geral' }
 export default async function VisaoGeralPage() {
   const { profile } = await requireSession()
 
-  const [verHelpdesk, verSla, verPagar, verReceber, verContas, verInventario, verTelefonia, verTv] =
-    await Promise.all([
+  const [
+    verHelpdesk, verSla, verPagar, verReceber, verContas, verFluxo,
+    verInventario, verTelefonia, verLinks, verTv,
+  ] = await Promise.all([
       allowed('helpdesk.painel.ver'),
       allowed('sla.compliance.ver'),
       allowed('financeiro.titulos_pagar.ver'),
       allowed('financeiro.titulos_receber.ver'),
       allowed('financeiro.contas_bancarias.ver'),
+      allowed('financeiro.fluxo_caixa.ver'),
       allowed('inventario.ativos.ver'),
       allowed('telefonia.linhas.ver'),
+      allowed('conectividade.links.ver'),
       allowed('tv.tokens.ver'),
     ])
 
   const supabase = await createClient()
   const hoje = new Date().toISOString().slice(0, 10)
 
-  const [metrics, online, atRisk, mine, saldos, aPagar, aReceber, ativos, linhas] =
+  const [metrics, online, atRisk, mine, saldos, aPagar, aReceber, ativos, linhas, links] =
     await Promise.all([
       verHelpdesk
         ? supabase.from('vw_dashboard_metrics').select('*').maybeSingle<DashboardMetrics>()
@@ -111,6 +115,15 @@ export default async function VisaoGeralPage() {
             .is('deleted_at', null)
             .eq('status', 'active')
         : null,
+      // Contagem e estado dos links vêm da mesma consulta: "quantos" sem "quantos
+      // fora do ar" seria o número menos útil dos dois.
+      verLinks
+        ? supabase
+            .from('internet_links')
+            .select('id, status, last_state')
+            .is('deleted_at', null)
+            .returns<{ id: string; status: string; last_state: string }[]>()
+        : null,
     ])
 
   const m = metrics?.data
@@ -125,8 +138,12 @@ export default async function VisaoGeralPage() {
   const receberVencido = receber.filter((t) => t.due_on < hoje)
   const saldoTotal = contas.reduce((s, c) => s + Number(c.current_balance), 0)
 
+  const conexoes = links?.data ?? []
+  const linksAtivos = conexoes.filter((k) => k.status === 'active')
+  const linksForaDoAr = conexoes.filter((k) => k.last_state === 'down')
+
   const verFinanceiro = verPagar || verReceber || verContas
-  const verInfra = verInventario || verTelefonia
+  const verInfra = verInventario || verTelefonia || verLinks
   const nenhumBloco = !verHelpdesk && !verFinanceiro && !verInfra && !verSla
 
   return (
@@ -161,7 +178,17 @@ export default async function VisaoGeralPage() {
           tela para olhar dinheiro, e o helpdesk tem tela própria e painel de TV. */}
       {verFinanceiro && (
         <section className="mb-8">
-          <h2 className="mb-3 text-lg font-semibold text-[var(--color-ink)]">Financeiro</h2>
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold text-[var(--color-ink)]">Financeiro</h2>
+            {verFluxo && (
+              <Link
+                href="/financeiro/fluxo-de-caixa"
+                className="text-sm font-semibold text-[var(--color-brand-ink)] hover:underline"
+              >
+                Ver a projeção de caixa →
+              </Link>
+            )}
+          </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {verContas && (
               <StatTile
@@ -293,6 +320,17 @@ export default async function VisaoGeralPage() {
             )}
             {verTelefonia && (
               <StatTile label="Linhas ativas" value={linhas?.count ?? 0} />
+            )}
+            {verLinks && (
+              <StatTile label="Links de internet ativos" value={linksAtivos.length} />
+            )}
+            {verLinks && (
+              <StatTile
+                label="Links fora do ar"
+                value={linksForaDoAr.length}
+                hint="estado da última medição"
+                tone={linksForaDoAr.length > 0 ? 'breach' : 'ok'}
+              />
             )}
           </div>
         </section>

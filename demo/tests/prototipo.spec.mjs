@@ -33,6 +33,12 @@ const fechar = async () => {
   await p.waitForTimeout(120)
 }
 const trocar = async id => { await fechar(); await p.selectOption('#acting-user', id); await p.waitForTimeout(160) }
+/* A chave do localStorage sobe de versão a cada mudança de estado do protótipo
+   (v7 → v8 nesta rodada). Repeti-la literalmente aqui fazia o teste morrer com
+   "reading 'payables' of null" no bump seguinte, o que não diz nada sobre o
+   defeito. Descobrir a chave é uma linha e não envelhece. */
+const estado = () => p.evaluate(() =>
+  JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.startsWith('sti.helpdesk.')))))
 const irPara = async texto => {
   await fechar()
   await p.evaluate(t => [...document.querySelectorAll('.side button')]
@@ -48,7 +54,7 @@ ok(grupos.length >= 6 && grupos.length <= 7, `${grupos.length} grupos — dentro
 ok(grupos.includes('Financeiro') && grupos.includes('Integrações'), 'Financeiro e Integrações presentes')
 const previstos = await p.$$eval('.nav-soon', ss => ss.map(s => s.textContent.replace('em breve','').trim()))
 console.log('  em breve:', previstos.join(' | '))
-ok(previstos.length === 7, `${previstos.length} itens previstos: 6 integrações + fluxo de caixa. 'Links de internet' TEM tela no protótipo, então não é previsto`)
+ok(previstos.length === 6, `${previstos.length} itens previstos: só as 6 integrações. Fluxo de caixa e Links de internet TÊM tela e permissão própria desde as migrações 0021/0022`)
 
 console.log('\n=== 2. Grupo desaparece inteiro quando nada é alcançável ===')
 await trocar('u6')  // Operador Financeiro
@@ -58,8 +64,13 @@ ok(!gruposFin.includes('Atendimento'), 'Operador Financeiro NÃO vê o grupo Ate
 ok(!gruposFin.includes('Administração'), 'nem o grupo Administração')
 ok(gruposFin.includes('Financeiro'), 'e vê o grupo Financeiro')
 const soonFin = await p.$$eval('.nav-soon', ss => ss.length)
-ok(soonFin > 0 && !gruposFin.includes('Integrações'),
-   'item previsto não fez o grupo Integrações aparecer sozinho')
+/* Os 6 previstos que restam são TODOS de Integrações, e o único item real desse
+   grupo (o hub de tickets) está fora do alcance deste perfil. Então o grupo
+   desaparece inteiro apesar de ter 6 itens previstos — que é exatamente a regra.
+   Antes da 0021 este perfil ainda via um previsto (o Fluxo de caixa, no grupo
+   Financeiro); agora ele vê zero, e é isso que a asserção passa a afirmar. */
+ok(soonFin === 0 && !gruposFin.includes('Integrações'),
+   'os 6 previstos são todos de Integrações, e o grupo não aparece para quem não alcança o item real dele')
 
 console.log('\n=== 3. Títulos a pagar — separação de função ===')
 await irPara('Títulos a pagar')
@@ -93,8 +104,7 @@ ok(/motivo/i.test(msgRej), 'reprovação sem motivo é recusada')
 await p.fill('#apm-note', 'Falta a proposta comercial anexada.')
 await p.evaluate(() => document.getElementById('apm-reject')?.click())
 await p.waitForTimeout(250)
-const reprovado = await p.evaluate(() =>
-  JSON.parse(localStorage.getItem('sti.helpdesk.v7')).payables.filter(t => t.status === 'rejected').length)
+const reprovado = (await estado()).payables.filter(t => t.status === 'rejected').length
 ok(reprovado >= 2, 'reprovação com motivo é gravada')
 
 console.log('\n=== 5. Alçada: ligar sem faixa é recusado ===')
@@ -115,8 +125,7 @@ await p.evaluate(() => document.getElementById('modal-save').click())
 await p.waitForTimeout(250)
 await p.evaluate(() => document.getElementById('tp-toggle-approval')?.click())
 await p.waitForTimeout(250)
-const ligado = await p.evaluate(() =>
-  JSON.parse(localStorage.getItem('sti.helpdesk.v7')).approvalRequired)
+const ligado = (await estado()).approvalRequired
 ok(ligado === true, 'com faixa cadastrada, a aprovação liga')
 
 console.log('\n=== 7. Lançar despesa acima da faixa é recusado com explicação ===')
@@ -135,11 +144,10 @@ await p.fill('#tpm-amount', '100')
 await p.fill('#tpm-parcelas', '3')
 await p.evaluate(() => document.getElementById('modal-save').click())
 await p.waitForTimeout(300)
-const parcelas = await p.evaluate(() => {
-  const db = JSON.parse(localStorage.getItem('sti.helpdesk.v7'))
-  const g = db.payables.filter(t => t.description === 'Despesa acima de qualquer faixa')
-  return g.sort((a,b) => a.installment - b.installment).map(t => t.amount)
-})
+const parcelas = (await estado()).payables
+  .filter(t => t.description === 'Despesa acima de qualquer faixa')
+  .sort((a,b) => a.installment - b.installment)
+  .map(t => t.amount)
 console.log('  parcelas de R$ 100 em 3x:', parcelas.join(' + '), '=', parcelas.reduce((a,b)=>a+b,0))
 ok(parcelas.length === 3, '3 parcelas geradas')
 ok(Math.abs(parcelas.reduce((a,b)=>a+b,0) - 100) < 0.001, 'a soma fecha exatamente em 100')
@@ -156,8 +164,7 @@ await p.fill('#pm-name', 'Auditor externo')
 await p.fill('#pm-desc', 'Somente leitura para auditoria.')
 await p.evaluate(() => document.getElementById('modal-save').click())
 await p.waitForTimeout(300)
-const renomeado = await p.evaluate(() =>
-  JSON.parse(localStorage.getItem('sti.helpdesk.v7')).accessProfiles.some(x => x.name === 'Auditor externo'))
+const renomeado = (await estado()).accessProfiles.some(x => x.name === 'Auditor externo')
 ok(renomeado, 'perfil renomeado — antes ficava "Novo perfil" para sempre')
 
 console.log('\n=== 10. Baixa de recebimento com desconto ===')
@@ -168,14 +175,69 @@ await p.waitForTimeout(200)
 await p.fill('#bxm-amount', '7000')
 await p.evaluate(() => document.getElementById('modal-save').click())
 await p.waitForTimeout(300)
-const comDesconto = await p.evaluate(() => {
-  const t = JSON.parse(localStorage.getItem('sti.helpdesk.v7')).receivables
-    .find(x => x.receivedAmount === 7000)
-  return t ? { original:t.amount, recebido:t.receivedAmount } : null
-})
+const baixado = (await estado()).receivables.find(x => x.receivedAmount === 7000)
+const comDesconto = baixado
+  ? { original:baixado.amount, recebido:baixado.receivedAmount }
+  : null
 console.log('  ', JSON.stringify(comDesconto))
 ok(comDesconto && comDesconto.original !== comDesconto.recebido,
    'valor original preservado — a diferença fica visível em vez de desaparecer')
+
+console.log('\n=== 11. Fluxo de caixa: a projeção responde ao percentual ===')
+await trocar('u1')
+await irPara('Fluxo de caixa')
+console.log('  título:', await p.$eval('h1', h => h.textContent.trim()))
+const linhasFluxo = await p.$$eval('.table-wrap tbody tr', rs => rs.length)
+ok(linhasFluxo === 12, `${linhasFluxo} baldes — um por mês do horizonte padrão`)
+
+const lerReceber = () => p.$$eval('.tile', ts => {
+  const t = ts.find(x => x.querySelector('.tile-label')?.textContent.includes('A receber'))
+  return t ? t.querySelector('.tile-value').textContent.trim() : null
+})
+const receberIntegral = await lerReceber()
+await p.selectOption('#fc-meses', '24')
+await p.waitForTimeout(160)
+const linhas24 = await p.$$eval('.table-wrap tbody tr', rs => rs.length)
+ok(linhas24 === 24, `horizonte de 24 meses devolve ${linhas24} baldes`)
+
+await p.fill('#fc-inad', '100')
+await p.$eval('#fc-inad', el => el.dispatchEvent(new Event('change', { bubbles:true })))
+await p.waitForTimeout(160)
+const receberZerado = await lerReceber()
+console.log('  a receber:', receberIntegral, '→', receberZerado)
+ok(receberIntegral !== receberZerado && /0,00/.test(receberZerado),
+   '100% de inadimplência zera as entradas, e só as entradas')
+const pagarCom100 = await p.$$eval('.tile', ts => {
+  const t = ts.find(x => x.querySelector('.tile-label')?.textContent.includes('A pagar'))
+  return t ? t.querySelector('.tile-value').textContent.trim() : null
+})
+ok(pagarCom100 && !/^R\$ 0,00$/.test(pagarCom100),
+   'inadimplência NÃO mexe no que se tem a pagar — senão "pessimista" reduziria a dívida')
+
+console.log('\n=== 12. Links de internet: permissão própria, finalmente ===')
+await p.fill('#fc-inad', '0')
+await p.$eval('#fc-inad', el => el.dispatchEvent(new Event('change', { bubbles:true })))
+await irPara('Links de internet')
+const semAviso = await p.$$eval('.alert', as =>
+  as.every(a => !a.textContent.includes('ainda não tem permissão própria')))
+ok(semAviso, 'o aviso de "tela sem permissão própria" saiu — a chave existe agora')
+const botaoNovoLink = await p.$$eval('#link-new', bs => bs.length)
+ok(botaoNovoLink === 1, 'o Admin vê o botão de novo link')
+
+// Operador Financeiro NÃO alcança conectividade: o item some do menu.
+await trocar('u6')
+const itens = await p.$$eval('.side button', bs => bs.map(b => b.textContent.trim()))
+ok(!itens.some(t => t.startsWith('Links de internet')),
+   'Operador Financeiro não vê Links de internet — módulo conectividade não é dele')
+ok(itens.some(t => t.startsWith('Fluxo de caixa')),
+   'e vê Fluxo de caixa, que é do módulo financeiro')
+
+// Operador de TI consulta o link e NÃO cadastra.
+await trocar('u3')
+await irPara('Links de internet')
+const novoLinkOperador = await p.$$eval('#link-new', bs => bs.length)
+console.log('  título:', await p.$eval('h1', h => h.textContent.trim()))
+ok(novoLinkOperador === 0, 'Operador de TI consulta links e NÃO vê o botão de cadastrar')
 
 console.log('\n=== Erros de página ===')
 console.log(erros.length ? erros.join('\n') : '  nenhum')

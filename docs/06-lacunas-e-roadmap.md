@@ -44,7 +44,7 @@ a **interface** — e, nos casos marcados, a decisão do operador.
 | M5 — Anexos em Tickets | ✅ `kind` derivado do MIME, cota no banco, `scan_status` | ⬜ upload, players, galeria |
 | M6 — Dashboard Telefonia | ✅ `vw_telecom_dashboard`, índices de filtro | ⬜ filtros, gráficos, exportação |
 | M7 — Contrato da Linha | ✅ `telecom_line_attachments`, vigência | ⬜ aba de documentos, alerta |
-| M8 — Links de Internet | ✅ `internet_links`, anexos, `link_availability_events`, dashboards | ⬜ CRUD, Edge Function do Zabbix |
+| M8 — Links de Internet | ✅ `internet_links`, anexos, `link_availability_events`, dashboards, CRUD em `/conectividade/links`, chaves `conectividade.links.*` (0022) | ⬜ Edge Function do Zabbix — hoje a queda é registrada à mão, pelo mesmo evento que o webhook vai gravar |
 | M9 — Área na Telefonia | ✅ `company_area_id` + trigger | ⬜ campo no formulário, filtro |
 | M10 — Edição de Integrações | ✅ `integration_mapping_versions` + trigger, campos de rotação | ⬜ telas de configuração e dry run |
 | M11 — Mapas | ✅ `latitude`/`longitude`, precisão do geocode, 5 views com semáforo | ✅ Google Maps em `/mapas`, geocodificação e coordenada colada do Maps |

@@ -120,6 +120,78 @@ export const telecomLineSchema = z
     path: ['cancelled_on'],
   })
 
+/* --- Link de internet --------------------------------------------------- */
+
+export const linkStatusSchema = z.enum(['active', 'suspended', 'cancelled'])
+
+export const linkTechnologySchema = z.enum([
+  'fiber',
+  'radio',
+  'satellite',
+  'mobile_4g',
+  'mobile_5g',
+  'xdsl',
+  'other',
+])
+
+/**
+ * Espelha os quatro CHECKs de `public.internet_links` (migração 0013:465-479).
+ *
+ * Validar aqui não substitui o banco — substituiria seria perigoso —, mas é o que
+ * permite dizer "a operadora é obrigatória" em vez de repassar
+ * `violates check constraint "link_has_carrier"` para a tela.
+ *
+ * `has_static_ip` não é campo do formulário: é derivado de `static_ip` ter valor.
+ * Pedir a marcação e o endereço separados criaria o estado "marquei mas não
+ * preenchi", que é justamente o que o CHECK `link_static_ip_pair` recusa.
+ */
+export const internetLinkSchema = z
+  .object({
+    branch_id: z.string().uuid('Selecione a filial.'),
+    branch_area_id: optionalUuid,
+    contract_number: emptyToNull,
+    supplier_id: optionalUuid,
+    carrier_name: emptyToNull,
+    technology: linkTechnologySchema,
+    download_mbps: optionalPositiveInt,
+    upload_mbps: optionalPositiveInt,
+    guaranteed_mbps: optionalPositiveInt,
+    static_ip: emptyToNull,
+    cpe_brand: emptyToNull,
+    cpe_model: emptyToNull,
+    cpe_serial: emptyToNull,
+    status: linkStatusSchema,
+    monthly_cost: optionalNonNegativeNumber,
+    activated_on: emptyToNull,
+    cancelled_on: emptyToNull,
+    contract_start: emptyToNull,
+    contract_end: emptyToNull,
+    monitoring_host: emptyToNull,
+    notes: emptyToNull,
+  })
+  .transform((v) => ({ ...v, has_static_ip: v.static_ip !== null }))
+  .refine((v) => v.supplier_id !== null || v.carrier_name !== null, {
+    message: 'Informe o fornecedor cadastrado ou o nome da operadora.',
+    path: ['carrier_name'],
+  })
+  .refine((v) => v.status !== 'cancelled' || v.cancelled_on !== null, {
+    message: 'Link cancelado exige a data de cancelamento.',
+    path: ['cancelled_on'],
+  })
+  .refine(
+    (v) => v.contract_end === null || v.contract_start === null || v.contract_end >= v.contract_start,
+    {
+      message: 'O fim da vigência não pode ser anterior ao início.',
+      path: ['contract_end'],
+    },
+  )
+
+/** Registro manual de queda. O retorno não precisa de campo: fecha a queda aberta. */
+export const linkOutageSchema = z.object({
+  link_id: recordId,
+  note: emptyToNull,
+})
+
 /* --- Fornecedor --------------------------------------------------------- */
 
 export const supplierSchema = z.object({

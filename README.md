@@ -150,7 +150,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 149 testes: mapeamento, coordenadas, geolocalização, cadastros e herança de permissão
-npm run db:validate   # migrações + seed + 279 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 316 asserções em PostgreSQL real
 ```
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
@@ -213,18 +213,24 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado nesta entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 192 testes unitários e 279 asserções de banco passando — incluindo
+apontamentos, 196 testes unitários e 316 asserções de banco passando — incluindo
 a aritmética de horário útil conferida contra 8 cenários (almoço, fim de semana,
 feriado, fora de expediente).
 
 **Ainda não implementado** (schema pronto, interface pendente):
 
-- Upload de anexos pela UI — as tabelas e o vínculo existem, falta ligar ao
-  Supabase Storage.
-- Cadastro de áreas da filial, anexos, links de internet e dashboard de
-  telefonia — banco pronto (migrações `0013`–`0016`), interface pendente; a
-  especificação de cada um está em
-  [docs/06-lacunas-e-roadmap.md](docs/06-lacunas-e-roadmap.md).
+- Validação do upload de anexo contra o Supabase real. O bucket privado, as
+  policies por caminho e a tela existem desde a migração `0019`, e são conferidos
+  contra PostgreSQL local — mas o Storage é um serviço separado, e serviço separado
+  só se prova usando. Depende dos três passos de
+  [docs/09](docs/09-conectar-no-supabase.md).
+- Cadastro de áreas da filial e dashboard de telefonia — banco pronto
+  (migrações `0013`–`0016`), interface pendente; a especificação de cada um está
+  em [docs/06-lacunas-e-roadmap.md](docs/06-lacunas-e-roadmap.md).
+  Os **links de internet** saíram desta lista: a tela existe em
+  `/conectividade/links` desde a migração `0022`, com as chaves
+  `conectividade.links.*` — falta apenas a Edge Function do Zabbix, e até ela a
+  queda é registrada à mão pelo mesmo evento que o webhook vai gravar.
 - Recuperação de senha ("esqueci minha senha"): existe troca de senha logado
   (`/conta`) e criação de usuário com senha temporária (`/usuarios`), mas não
   um fluxo de redefinição para quem está deslogado.
@@ -264,3 +270,4 @@ aceitável. A resolução depende de uma atualização do Next.
 | [06 — Lacunas e Roadmap](docs/06-lacunas-e-roadmap.md) | Especificação dos 11 módulos pendentes, cronograma em lotes e 14 lacunas globais |
 | [07 — Financeiro e Permissões](docs/07-financeiro-e-permissoes.md) | Permissões granulares, financeiro (contas a pagar/receber, fluxo de caixa) e controle de despesas: 9 módulos no template, matriz de permissões e 15 lacunas |
 | [08 — Arquitetura de informação](docs/08-arquitetura-de-informacao.md) | Agrupamento do menu, nomenclatura e as decisões de usabilidade |
+| [09 — Conectar no Supabase](docs/09-conectar-no-supabase.md) | Passo a passo para ligar a plataforma no Supabase auto-hospedado do cliente, e as duas regras de chave que não podem ser quebradas |

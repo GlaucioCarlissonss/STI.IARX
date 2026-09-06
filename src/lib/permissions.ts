@@ -60,6 +60,7 @@ export const MODULE_LABEL: Record<string, string> = {
   sla: 'SLA e filas',
   inventario: 'Inventário',
   telefonia: 'Telefonia',
+  conectividade: 'Conectividade',
   clientes: 'Clientes e filiais',
   fornecedores: 'Fornecedores',
   mapas: 'Mapas',
@@ -164,6 +165,29 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('telefonia', 'linhas', 'anexar', 'Anexar contrato ou termo', 'gestor'),
   act('telefonia', 'linhas', 'remover_anexo', 'Remover anexo da linha', 'gestor'),
 
+  /* --- Conectividade ------------------------------------------------------
+     Entra agora porque a TELA entra agora. A camada de dados existe desde a
+     migração 0013 (`internet_links`, `internet_link_attachments`,
+     `link_availability_events`), e a 0019 deixou anotado que `conectividade.links`
+     não seria cadastrada antes da tela: permissão que não governa tela é
+     configuração morta.
+
+     `registrar_evento` fica em `gestor`, e não em `atendente` como seria natural.
+     O motivo é o banco: a policy de escrita de `link_availability_events` (0013)
+     exige `app.can_manage_records()`, que é gestor para cima. Uma chave em
+     `atendente` concederia na tela o que o banco negaria devolvendo zero linhas —
+     permissão que não governa nada, o defeito que esta base já corrigiu duas
+     vezes. Afrouxar aquela policy é decisão de segurança do cliente, não minha. */
+  mod('conectividade', 'visualizador'),
+  scr('conectividade', 'links', 'Links de internet', 'visualizador'),
+  act('conectividade', 'links', 'ver', 'Consultar links', 'visualizador'),
+  act('conectividade', 'links', 'criar', 'Cadastrar link', 'gestor'),
+  act('conectividade', 'links', 'editar', 'Editar link', 'gestor'),
+  act('conectividade', 'links', 'mudar_status', 'Suspender/cancelar link', 'gestor'),
+  act('conectividade', 'links', 'registrar_evento', 'Registrar queda ou retorno', 'gestor'),
+  act('conectividade', 'links', 'anexar', 'Anexar contrato ou laudo', 'gestor'),
+  act('conectividade', 'links', 'remover_anexo', 'Remover anexo do link', 'gestor'),
+
   /* --- Clientes e filiais ------------------------------------------------ */
   mod('clientes', 'gestor'),
   scr('clientes', 'grupos', 'Grupos econômicos', 'gestor'),
@@ -233,6 +257,14 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('financeiro', 'contas_bancarias', 'inativar', 'Bloquear/reativar conta', 'gestor'),
   act('financeiro', 'contas_bancarias', 'movimentar', 'Lançar entrada/saída', 'gestor'),
   act('financeiro', 'contas_bancarias', 'transferir', 'Transferir entre contas', 'gestor'),
+  /* Fluxo de caixa é só leitura: projeta o que já está lançado e não grava nada.
+     Por isso DUAS chaves e não mais — uma `configurar` não governaria coisa
+     alguma, porque o percentual de inadimplência é parâmetro de consulta e não
+     configuração gravada. Fica dentro de `financeiro` de propósito: é o que faz o
+     Gestor Financeiro receber a tela e o Operador/Aprovador receberem o `ver`
+     pelas regras que `app.seed_system_access_profiles()` já tem. */
+  scr('financeiro', 'fluxo_caixa', 'Fluxo de caixa', 'gestor'),
+  act('financeiro', 'fluxo_caixa', 'ver', 'Consultar a projeção', 'gestor'),
 
   /* --- Usuários e acesso ------------------------------------------------- */
   mod('usuarios', 'gestor'),

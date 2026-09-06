@@ -272,7 +272,7 @@ abertos. O índice parcial mantém a estrutura pequena mesmo com a tabela grande
 | `app.payables_guard()` / `app.receivables_guard()` | Máquina de estados do título. Função e não tabela: o fluxo do ticket é personalizado por cliente e vive como dado, o do título é imposto por contabilidade |
 
 As concessões dos perfis de sistema são **regra sobre o catálogo**, não lista de
-chaves. Listar ~108 chaves nove vezes garantiria que a próxima permissão entrasse
+chaves. Listar o catálogo inteiro nove vezes garantiria que a próxima permissão entrasse
 em alguns perfis e fosse esquecida em outros.
 
 ## 5. Triggers

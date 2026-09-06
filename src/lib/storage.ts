@@ -21,11 +21,11 @@ export const MAX_FILE_BYTES = 26_214_400 // 25 MiB, igual ao `file_size_limit` d
 /**
  * Entidades que podem receber anexo.
  *
- * Espelha `app.storage_permission_key()` na 0019. `links` está fora nos dois
- * lugares porque a tela de Links de Internet não existe na aplicação — permissão
- * sem tela é configuração morta.
+ * Espelha `app.storage_permission_key()` — na 0019 para as quatro primeiras, na
+ * 0022 para `links`. `links` só entrou agora porque só agora existe a tela: até
+ * então seria permissão sem tela, que é configuração morta.
  */
-export const ATTACHMENT_ENTITIES = ['tickets', 'ativos', 'linhas', 'titulos'] as const
+export const ATTACHMENT_ENTITIES = ['tickets', 'ativos', 'linhas', 'titulos', 'links'] as const
 export type AttachmentEntity = (typeof ATTACHMENT_ENTITIES)[number]
 
 /**
@@ -242,6 +242,27 @@ export const ATTACHMENT_TARGETS: Record<AttachmentEntity, AttachmentTarget> = {
       { value: 'other', label: 'Outro' },
     ],
     // `telecom_line_attachments` não tem coluna `category`, mas exige `kind`.
+    hasCategory: false,
+  },
+  links: {
+    entity: 'links',
+    table: 'internet_link_attachments',
+    fkColumn: 'link_id',
+    revalidate: '/conectividade/links',
+    permissions: {
+      ver: 'conectividade.links.ver',
+      anexar: 'conectividade.links.anexar',
+      remover: 'conectividade.links.remover_anexo',
+    },
+    // Os seis valores do CHECK de `internet_link_attachments` (0013:502).
+    kinds: [
+      { value: 'contract', label: 'Contrato' },
+      { value: 'amendment', label: 'Adendo' },
+      { value: 'loyalty_term', label: 'Termo de fidelidade' },
+      { value: 'cancellation', label: 'Termo de cancelamento' },
+      { value: 'installation_report', label: 'Laudo de instalação' },
+      { value: 'other', label: 'Outro' },
+    ],
     hasCategory: false,
   },
   titulos: {

@@ -488,7 +488,11 @@ from public.internet_links k where k.contract_number = 'NL-LINK-003';
 insert into public.internet_link_attachments
   (tenant_id, link_id, kind, storage_path, file_name, mime_type, size_bytes, uploaded_by)
 select k.tenant_id, k.id, 'contract',
-       format('%s/%s/contrato-nl-link-001.pdf', k.tenant_id, k.id),
+       -- Quatro segmentos: {tenant}/{entidade}/{entity_id}/{arquivo}. O caminho
+       -- de dois segmentos que estava aqui NUNCA poderia ser baixado:
+       -- `app.can_touch_attachment()` (0019) nega quando o caminho não tem
+       -- exatamente 3 pastas, e a entidade sairia sendo o uuid do link.
+       format('%s/links/%s/contrato-nl-link-001.pdf', k.tenant_id, k.id),
        'contrato-nl-link-001.pdf', 'application/pdf', 184320,
        '22220000-0000-4000-8000-000000000001'
 from public.internet_links k where k.contract_number = 'NL-LINK-001';

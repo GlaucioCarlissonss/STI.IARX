@@ -48,8 +48,8 @@ destino, não categoria.
 |---|---|
 | — | Visão geral |
 | **Atendimento** | Tickets · Abrir ticket · Filas · SLA e prazos |
-| **Financeiro** | Títulos a pagar · Títulos a receber · Contas bancárias · Centros de custo · *Fluxo de caixa* |
-| **Infraestrutura** | Inventário de TI · Telefonia · *Links de internet* · Mapa das filiais |
+| **Financeiro** | Títulos a pagar · Títulos a receber · Contas bancárias · Centros de custo · Fluxo de caixa |
+| **Infraestrutura** | Inventário de TI · Telefonia · Links de internet · Mapa das filiais |
 | **Cadastros** | Clientes e filiais · Fornecedores e contratos |
 | **Integrações** | Sistemas de tickets · *Automação (N8N)* · *WhatsApp* · *Telegram* · *Bancos de dados* · *Pagamento bancário* · *Recebimento bancário* |
 | **Administração** | Usuários · Perfis de acesso · Painéis de TV |
@@ -79,6 +79,11 @@ deliberada.
 Sete subgrupos de integração foram pedidos e **um existe**. Os outros seis entram
 no menu marcados como previstos, por decisão tomada com o cliente: o menu passa a
 comunicar o roteiro.
+
+Os **seis previstos são hoje todos de Integrações**. *Fluxo de caixa* e *Links de
+internet* saíram da lista: ganharam tela e chave própria nas migrações 0021 e 0022,
+que é como um previsto deve terminar — a permissão entra junto com a tela, nunca
+antes.
 
 Três regras impedem que isso vire promessa vazia:
 
@@ -118,6 +123,8 @@ Quem não alcança bloco nenhum recebe um aviso explícito, em vez de uma tela v
 | Destino pós-negação nunca é tela negada, e nunca é `/conta` como 1ª opção | `src/lib/navigation.test.ts` |
 | Estrutura do protótipo idêntica à da aplicação | `src/lib/permissions.demo.test.ts` |
 | Comportamento em navegador: grupos, "em breve", separação de função | `demo/tests/prototipo.spec.mjs` |
+| A projeção de caixa reage ao percentual, e só nas entradas | `demo/tests/prototipo.spec.mjs` §11 |
+| Links some do menu de quem não tem `conectividade`; Operador de TI não cadastra | `demo/tests/prototipo.spec.mjs` §12 |
 
 O teste de navegador não é enfeite: foi ele que achou `ROLE_RANK` invertido no
 protótipo e as regras de perfil paradas antes da migração 0020 — dois defeitos cujo
