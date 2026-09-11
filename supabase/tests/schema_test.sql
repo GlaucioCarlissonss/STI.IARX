@@ -1176,8 +1176,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 141,
-    'catálogo de permissões tem as 141 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 147,
+    'catálogo de permissões tem as 147 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1403,7 +1403,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 141,
+  perform app.assert((select count(*) from public.permission_catalog) = 147,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -2592,6 +2592,227 @@ begin
     'Operador Financeiro enxerga a projeção de caixa');
   perform app.assert(not app.has_permission('conectividade.links.ver'),
     'Operador Financeiro NÃO enxerga links de internet');
+end
+$$;
+reset role;
+
+-- =============================================================================
+\echo '=== 29. Áreas da filial e custódia de equipamento (0023) ==='
+-- =============================================================================
+reset role;
+
+-- `fn_seed_branch_areas` é idempotente. Não é detalhe: a tela expõe o botão
+-- "usar as áreas padrão", e clicar duas vezes é o comportamento esperado de
+-- quem não tem certeza se clicou. Duplicar área destruiria o agrupamento que a
+-- tabela existe para garantir.
+do $$
+declare
+  v_branch uuid := '11110000-0000-4000-8000-000000000001';
+  v_antes  integer;
+  v_novas  integer;
+begin
+  select count(*) into v_antes from public.branch_areas where branch_id = v_branch;
+  select public.seed_branch_areas(v_branch) into v_novas;
+  perform app.assert(
+    (select count(*) from public.branch_areas where branch_id = v_branch) = v_antes,
+    'rodar as áreas padrão de novo não duplica nenhuma (uq_area_name é por lower(name))');
+  perform app.assert(v_novas = 0,
+    'e a função devolve zero, para a tela poder dizer "já tem todas"');
+end
+$$;
+
+-- Área de OUTRA filial é recusada nas duas pontas — ativo e linha. São duas
+-- triggers distintas (`validate_area_branch` com coluna diferente), e cobrir só
+-- uma deixaria a outra livre para aceitar o incoerente.
+do $$
+declare
+  v_area_manaus uuid;
+  v_ativo_sp    uuid;
+  v_linha_sp    uuid;
+begin
+  select a.id into v_area_manaus from public.branch_areas a
+   where a.branch_id = '11110000-0000-4000-8000-000000000003' limit 1;
+  select id into v_ativo_sp from public.it_assets
+   where branch_id = '11110000-0000-4000-8000-000000000001' limit 1;
+  select id into v_linha_sp from public.telecom_lines
+   where branch_id = '11110000-0000-4000-8000-000000000001' limit 1;
+
+  begin
+    update public.it_assets set branch_area_id = v_area_manaus where id = v_ativo_sp;
+    perform app.assert(false, 'não deveria aceitar área de outra filial no ativo');
+  exception when others then
+    perform app.assert(true, 'ativo recusa área que pertence a outra filial');
+  end;
+
+  begin
+    update public.telecom_lines set company_area_id = v_area_manaus where id = v_linha_sp;
+    perform app.assert(false, 'não deveria aceitar área de outra filial na linha');
+  exception when others then
+    perform app.assert(true, 'linha recusa área que pertence a outra filial');
+  end;
+end
+$$;
+
+-- Classificar área pela primeira vez (NULL → valor) é CLASSIFICAÇÃO, não
+-- movimentação. A regra está na 0013 e nunca teve cobertura: sem ela, a
+-- migração dos ativos legados geraria um evento falso de realocação por ativo.
+do $$
+declare
+  v_ativo uuid;
+  v_area  uuid;
+  v_antes integer;
+begin
+  select id into v_ativo from public.it_assets
+   where branch_id = '11110000-0000-4000-8000-000000000001'
+     and branch_area_id is null limit 1;
+  select a.id into v_area from public.branch_areas a
+   where a.branch_id = '11110000-0000-4000-8000-000000000001' limit 1;
+
+  select count(*) into v_antes from public.asset_assignments where asset_id = v_ativo;
+  update public.it_assets set branch_area_id = v_area where id = v_ativo;
+  perform app.assert(
+    (select count(*) from public.asset_assignments where asset_id = v_ativo) = v_antes,
+    'atribuir área a um ativo que não tinha NÃO gera evento de realocação');
+end
+$$;
+
+-- O motivo chega à trigger. Esta é a asserção que prova que a RPC serve para
+-- alguma coisa: um `update` direto gravaria `outro`, e o campo de motivo do
+-- formulário não governaria nada.
+do $$
+declare
+  v_ativo   uuid;
+  v_dono    uuid;
+  v_antes   uuid;
+  v_eventos integer;
+  v_ev      record;
+begin
+  -- Estado anterior e novo dono são LIDOS, não escritos à mão: seções anteriores
+  -- mexem no parque, e um id fixo aqui faria o bloco medir um evento antigo em
+  -- vez do que ele acabou de provocar. Foi exatamente o que aconteceu na
+  -- primeira escrita deste teste: ele passou lendo evento de outra seção.
+  select id, assigned_user_id into v_ativo, v_antes
+    from public.it_assets where asset_tag = 'PAT-001042';
+  select id into v_dono from public.profiles
+   where tenant_id = 'a0000000-0000-4000-8000-000000000001'
+     and id is distinct from v_antes and role <> 'super_admin'
+   order by id limit 1;
+  select count(*) into v_eventos from public.asset_assignments where asset_id = v_ativo;
+
+  perform public.change_asset_custody(
+    v_ativo, v_dono, '11110000-0000-4000-8000-000000000001', null,
+    'substituicao', 'Notebook trocado por defeito na tela');
+
+  perform app.assert(
+    (select count(*) from public.asset_assignments where asset_id = v_ativo) = v_eventos + 1,
+    'a transferência gera exatamente UM evento novo');
+
+  select * into v_ev from public.asset_assignments
+   where asset_id = v_ativo order by started_at desc limit 1;
+
+  perform app.assert(v_ev.reason = 'substituicao',
+    'o motivo informado chega à trigger pela mesma transação da RPC');
+  perform app.assert(v_ev.reason_note = 'Notebook trocado por defeito na tela',
+    'a observação também — `reason_note` existia desde a 0013 e nada a preenchia');
+  perform app.assert(v_ev.user_id = v_dono,
+    'o evento registra o novo responsável');
+  perform app.assert(v_ev.previous_user_id is not distinct from v_antes,
+    'e o responsável ANTERIOR, que é o que torna o histórico legível');
+  perform app.assert(v_ev.event_type = 'assignment',
+    'troca de responsável é `assignment`, não realocação');
+end
+$$;
+
+-- O motivo NÃO vaza para a transação seguinte. É o que `is_local => true`
+-- garante, e é o ponto inteiro do desenho: a conexão vem de um pool, e um
+-- `set_config` global aplicaria o motivo de uma pessoa à requisição de outra.
+-- Este `update` roda FORA do bloco acima, ou seja, em outra transação.
+update public.it_assets
+   set assigned_user_id = '22220000-0000-4000-8000-000000000003'
+ where asset_tag = 'PAT-001042';
+
+do $$
+begin
+  perform app.assert(
+    (select reason from public.asset_assignments
+      where asset_id = (select id from public.it_assets where asset_tag = 'PAT-001042')
+      order by started_at desc limit 1) = 'outro',
+    'o motivo não sobrevive à transação — escrita seguinte volta ao padrão `outro`');
+end
+$$;
+
+-- Motivo fora do CHECK vira `outro` em vez de estourar. A RPC é chamada com o
+-- que vier do formulário, e derrubar a operação por causa de um rótulo
+-- desconhecido seria trocar um dado impreciso por nenhum dado.
+do $$
+declare
+  v_ativo uuid;
+  v_dono  uuid;
+begin
+  select id into v_ativo from public.it_assets where asset_tag = 'PAT-001043';
+  select id into v_dono from public.profiles
+   where tenant_id = 'a0000000-0000-4000-8000-000000000001' and role <> 'super_admin'
+   order by id limit 1;
+
+  -- Preparo: o ativo precisa TER um responsável para que tirá-lo seja devolução.
+  -- Sem isto o bloco não mudaria nada, nenhum evento nasceria, e a asserção
+  -- estaria lendo o evento de outra seção — foi assim que este teste passou
+  -- errado na primeira escrita.
+  perform public.change_asset_custody(
+    v_ativo, v_dono, '11110000-0000-4000-8000-000000000001', null, 'aquisicao', null);
+
+  perform public.change_asset_custody(
+    v_ativo, null, '11110000-0000-4000-8000-000000000001', null, 'inventado', null);
+  perform app.assert(
+    (select reason from public.asset_assignments
+      where asset_id = v_ativo order by started_at desc limit 1) = 'devolucao',
+    'motivo desconhecido cai no padrão e a trigger deriva pelo que mudou (devolução)');
+  perform app.assert(
+    (select assigned_user_id from public.it_assets where id = v_ativo) is null,
+    'e a devolução de fato tirou o responsável');
+end
+$$;
+
+-- A RPC respeita o RLS: é `security invoker`, e o tenant 2 não alcança ativo do
+-- tenant 1. Devolver NULL é o que permite a ação dizer "não encontrado ou sem
+-- permissão" em vez de "salvo".
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000099","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+declare v_ativo uuid;
+begin
+  reset role;
+  select id into v_ativo from public.it_assets where asset_tag = 'PAT-001043';
+  set role rls_tester;
+  perform app.assert(
+    public.change_asset_custody(v_ativo, null, null, null, 'outro', null) is null,
+    'tenant 2 não move a custódia de ativo do tenant 1 — a RPC devolve NULL');
+end
+$$;
+reset role;
+
+-- As chaves novas chegam aos perfis certos. `clientes.areas` e
+-- `inventario.ativos.custodiar` caem em módulos que as regras já citam, mas
+-- "cair no módulo certo" é suposição até alguém medir — foi supor isso que
+-- deixou `conectividade` fora de todos os perfis na rodada anterior.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('clientes.areas.criar'),
+    'Gestor de TI cadastra área da filial');
+  perform app.assert(app.has_permission('inventario.ativos.custodiar'),
+    'Gestor de TI transfere custódia');
+end
+$$;
+
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(not app.has_permission('inventario.ativos.custodiar'),
+    'Operador de TI NÃO transfere custódia — é ato patrimonial, não de atendimento');
+  perform app.assert(app.has_permission('inventario.ativos.ver'),
+    'mas continua consultando o parque');
 end
 $$;
 reset role;

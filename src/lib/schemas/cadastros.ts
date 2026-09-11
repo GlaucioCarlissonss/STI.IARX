@@ -85,12 +85,49 @@ export const assetSchema = z.object({
   model: emptyToNull,
   status: assetStatusSchema,
   branch_id: optionalUuid,
+  branch_area_id: optionalUuid,
   assigned_user_id: optionalUuid,
   supplier_id: optionalUuid,
   acquisition_date: emptyToNull,
   warranty_until: emptyToNull,
   acquisition_cost: optionalNonNegativeNumber,
   notes: emptyToNull,
+})
+
+/* --- Área da filial ----------------------------------------------------- */
+
+export const areaKindSchema = z.enum(['assistencial', 'administrativa', 'apoio', 'tecnica'])
+
+export const branchAreaSchema = z.object({
+  branch_id: z.string().uuid('Selecione a filial.'),
+  name: z.string().trim().min(2, 'Informe o nome da área.'),
+  code: emptyToNull,
+  kind: areaKindSchema,
+  // `smallint` no banco: 32767 é o teto real, e aceitar mais aqui trocaria uma
+  // mensagem em português por um erro de overflow vindo do PostgreSQL.
+  sort_order: intInRange(0, 32767),
+})
+
+/* --- Custódia de ativo -------------------------------------------------- */
+
+export const custodyReasonSchema = z.enum([
+  'realocacao',
+  'devolucao',
+  'substituicao',
+  'baixa',
+  'manutencao',
+  'aquisicao',
+  'perda',
+  'outro',
+])
+
+export const assetCustodySchema = z.object({
+  asset_id: recordId,
+  assigned_user_id: optionalUuid,
+  branch_id: optionalUuid,
+  branch_area_id: optionalUuid,
+  reason: custodyReasonSchema,
+  note: emptyToNull,
 })
 
 /* --- Linha telefônica --------------------------------------------------- */
@@ -105,6 +142,7 @@ export const telecomLineSchema = z
     line_type: z.enum(['postpaid', 'prepaid', 'control']),
     status: telecomStatusSchema,
     branch_id: optionalUuid,
+    company_area_id: optionalUuid,
     assigned_user_id: optionalUuid,
     device_asset_id: optionalUuid,
     monthly_cost: optionalNonNegativeNumber,

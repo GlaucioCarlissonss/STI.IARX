@@ -5,7 +5,12 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
-import { assetSchema, assetStatusSchema, recordId } from '@/lib/schemas/cadastros'
+import {
+  assetCustodySchema,
+  assetSchema,
+  assetStatusSchema,
+  recordId,
+} from '@/lib/schemas/cadastros'
 
 const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem permissão.'
 const DUPLICATE = 'Já existe um ativo com este patrimônio ou número de série.'
@@ -106,4 +111,55 @@ export async function changeAssetStatus(
 
   revalidatePath('/inventario')
   return { success: 'Status do ativo atualizado.' }
+}
+
+/**
+ * Transfere a custódia de um ativo.
+ *
+ * Chama a RPC `change_asset_custody` (migração 0023) em vez de fazer o `update`
+ * direto, e o motivo é concreto: a trigger que grava o histórico
+ * (`app.assets_after_update_history`, 0013) lê o motivo de uma variável de
+ * sessão, e o cliente Supabase fala com o banco por um pool de conexões — não há
+ * como definir essa variável e garantir que ela chegue na mesma transação do
+ * `update`. Um `.from('it_assets').update(...)` aqui gravaria TODO evento com
+ * motivo `outro`, e o campo do formulário não governaria nada.
+ *
+ * A RPC devolve o id do ativo, ou nulo quando o RLS negou — negação do PostgREST
+ * volta como ausência de dado e nenhum erro, e dizer "salvo" nesse caso seria a
+ * pior falha possível num registro patrimonial.
+ */
+export async function changeAssetCustody(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { profile } = await requireSession()
+  const gate = await requirePermission('inventario.ativos.custodiar')
+  if ('error' in gate) return gate
+  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+
+  const parsed = assetCustodySchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('change_asset_custody', {
+    p_asset_id: parsed.data.asset_id,
+    p_user_id: parsed.data.assigned_user_id,
+    p_branch_id: parsed.data.branch_id,
+    p_area_id: parsed.data.branch_area_id,
+    p_reason: parsed.data.reason,
+    p_note: parsed.data.note,
+  })
+
+  if (error) {
+    // A trigger `trg_assets_area_branch` (0013) recusa área de outra filial.
+    // A mensagem crua viria como violação de constraint, em inglês.
+    if (error.code === '23514' || /area/i.test(error.message)) {
+      return { error: 'A área informada pertence a outra filial.' }
+    }
+    return { error: error.message }
+  }
+  if (!data) return { error: NOT_AFFECTED }
+
+  revalidatePath('/inventario')
+  return { success: 'Custódia registrada.' }
 }

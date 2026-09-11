@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import {
+  branchAreaSchema,
   branchSchema,
   clientSchema,
   clientStatusSchema,
@@ -188,4 +189,141 @@ export async function setBranchActive(_prev: ActionState, formData: FormData): P
   revalidatePath('/clientes')
   revalidatePath('/mapas')
   return { success: isActive ? 'Filial reativada.' : 'Filial inativada.' }
+}
+
+/* --- Áreas da filial ------------------------------------------------------ */
+
+/**
+ * Área é subdivisão da filial, e o que dá sentido a "onde o equipamento está".
+ *
+ * Até aqui ela só podia nascer por SQL, embora ativo, linha e link a exijam na
+ * prática — um cadastro obrigatório sem tela de cadastro. As três ações abaixo
+ * fecham isso; a EXCLUSÃO não entra de propósito: área com ativo, linha ou link
+ * vinculado não pode sumir (as FKs são `restrict`/`set null` justamente por
+ * isso), e o caminho certo é inativar, que preserva o histórico.
+ */
+export async function createBranchArea(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { profile } = await requireSession()
+  const gate = await requirePermission('clientes.areas.criar')
+  if ('error' in gate) return gate
+  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+
+  const parsed = branchAreaSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('branch_areas')
+    .insert({ ...parsed.data, tenant_id: profile.tenant_id })
+
+  if (error) {
+    // `uq_area_name` é por `lower(name)`: "Enfermagem" e "enfermagem" são a
+    // mesma área, e é essa unicidade que o módulo existe para garantir.
+    if (error.code === '23505') return { error: 'Já existe uma área com este nome nesta filial.' }
+    return { error: error.message }
+  }
+
+  revalidatePath('/clientes')
+  return { success: 'Área cadastrada.' }
+}
+
+export async function updateBranchArea(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { profile } = await requireSession()
+  const gate = await requirePermission('clientes.areas.editar')
+  if ('error' in gate) return gate
+  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+
+  const id = recordId.safeParse(formData.get('id'))
+  if (!id.success) return { error: 'Registro inválido.' }
+
+  const parsed = branchAreaSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
+
+  const supabase = await createClient()
+  const { data: updated, error } = await supabase
+    .from('branch_areas')
+    .update(parsed.data)
+    .eq('id', id.data)
+    .select('id')
+
+  if (error) {
+    if (error.code === '23505') return { error: 'Já existe uma área com este nome nesta filial.' }
+    return { error: error.message }
+  }
+  if (!updated?.length) return { error: NOT_AFFECTED }
+
+  revalidatePath('/clientes')
+  return { success: 'Área atualizada.' }
+}
+
+export async function setBranchAreaActive(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { profile } = await requireSession()
+  const gate = await requirePermission('clientes.areas.inativar')
+  if ('error' in gate) return gate
+  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+
+  const parsed = z
+    .object({ id: recordId, is_active: z.enum(['true', 'false']) })
+    .safeParse({ id: formData.get('id'), is_active: formData.get('is_active') })
+  if (!parsed.success) return { error: 'Situação inválida.' }
+
+  const isActive = parsed.data.is_active === 'true'
+
+  const supabase = await createClient()
+  const { data: updated, error } = await supabase
+    .from('branch_areas')
+    .update({ is_active: isActive })
+    .eq('id', parsed.data.id)
+    .select('id')
+
+  if (error) return { error: error.message }
+  if (!updated?.length) return { error: NOT_AFFECTED }
+
+  revalidatePath('/clientes')
+  return { success: isActive ? 'Área reativada.' : 'Área inativada.' }
+}
+
+/**
+ * Cria as áreas padrão da filial.
+ *
+ * Chama `app.fn_seed_branch_areas()` pela fachada da 0023 em vez de trazer a
+ * lista para cá: a lista já existe no banco desde a 0013, e uma segunda cópia no
+ * TypeScript divergiria da primeira na manutenção seguinte.
+ *
+ * É idempotente — `uq_area_name` impede duplicar —, então clicar duas vezes
+ * completa o que falta em vez de errar.
+ */
+export async function seedBranchAreas(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { profile } = await requireSession()
+  const gate = await requirePermission('clientes.areas.criar')
+  if ('error' in gate) return gate
+  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+
+  const id = recordId.safeParse(formData.get('branch_id'))
+  if (!id.success) return { error: 'Filial inválida.' }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('seed_branch_areas', { p_branch_id: id.data })
+
+  if (error) return { error: error.message }
+
+  const criadas = Number(data ?? 0)
+  revalidatePath('/clientes')
+  return {
+    success: criadas > 0
+      ? `${criadas} área(s) padrão cadastrada(s).`
+      : 'Esta filial já tem todas as áreas padrão.',
+  }
 }

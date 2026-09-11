@@ -11,6 +11,8 @@ import {
   supplierContractSchema,
   supplierSchema,
   telecomLineSchema,
+  branchAreaSchema,
+  assetCustodySchema,
 } from './cadastros'
 
 /**
@@ -112,6 +114,7 @@ describe('assetSchema', () => {
     model: '',
     status: 'active',
     branch_id: '',
+    branch_area_id: '',
     assigned_user_id: '',
     supplier_id: '',
     acquisition_date: '',
@@ -145,6 +148,7 @@ describe('telecomLineSchema', () => {
     line_type: 'postpaid',
     status: 'active',
     branch_id: '',
+    company_area_id: '',
     assigned_user_id: '',
     device_asset_id: '',
     monthly_cost: '89,90'.replace(',', '.'),
@@ -336,5 +340,64 @@ describe('slaDefinitionSchema', () => {
     expect(firstError(slaDefinitionSchema.safeParse({ ...base, priority_id: '' }))).toBe(
       'Selecione a prioridade.',
     )
+  })
+})
+
+describe('branchAreaSchema', () => {
+  const base = { branch_id: UUID, name: 'Enfermagem', code: '', kind: 'assistencial', sort_order: '20' }
+
+  it('aceita uma área completa', () => {
+    const parsed = branchAreaSchema.parse(base)
+    expect(parsed.kind).toBe('assistencial')
+    expect(parsed.sort_order).toBe(20)
+    expect(parsed.code).toBeNull()
+  })
+
+  it('exige nome com ao menos dois caracteres', () => {
+    expect(branchAreaSchema.safeParse({ ...base, name: 'A' }).success).toBe(false)
+  })
+
+  it('recusa natureza fora do CHECK do banco', () => {
+    expect(branchAreaSchema.safeParse({ ...base, kind: 'financeira' }).success).toBe(false)
+  })
+
+  /*
+   * `sort_order` é `smallint` no banco. Aceitar 40000 aqui trocaria uma mensagem
+   * em português por um erro de overflow do PostgreSQL, que chega à tela em
+   * inglês e sem dizer qual campo estourou.
+   */
+  it('respeita o teto do smallint', () => {
+    expect(branchAreaSchema.safeParse({ ...base, sort_order: '40000' }).success).toBe(false)
+    expect(branchAreaSchema.safeParse({ ...base, sort_order: '32767' }).success).toBe(true)
+  })
+})
+
+describe('assetCustodySchema', () => {
+  const base = {
+    asset_id: UUID,
+    assigned_user_id: '',
+    branch_id: '',
+    branch_area_id: '',
+    reason: 'realocacao',
+    note: '',
+  }
+
+  it('aceita transferência sem responsável — devolução é um destino válido', () => {
+    const parsed = assetCustodySchema.parse(base)
+    expect(parsed.assigned_user_id).toBeNull()
+    expect(parsed.note).toBeNull()
+  })
+
+  /*
+   * Os oito valores são os mesmos do CHECK de `asset_assignments.reason`. Um
+   * motivo fora da lista chegaria à RPC e a trigger o trocaria por `outro` em
+   * silêncio — melhor recusar aqui, onde dá para dizer o que está errado.
+   */
+  it('recusa motivo fora da lista do banco', () => {
+    expect(assetCustodySchema.safeParse({ ...base, reason: 'emprestimo' }).success).toBe(false)
+  })
+
+  it('exige o ativo', () => {
+    expect(assetCustodySchema.safeParse({ ...base, asset_id: 'x' }).success).toBe(false)
   })
 })

@@ -468,12 +468,12 @@
 <script>
 (() => {
   'use strict';
-  // v8: fluxo de caixa e permissões próprias de conectividade.
-  // Um estado v7 tem os perfis de sistema com as concessões ANTIGAS gravadas, sem
-  // `conectividade.links.*` nem `financeiro.fluxo_caixa.*` — as duas telas
-  // simplesmente não apareceriam no menu, e sem erro nenhum. Estado velho de
-  // permissão é pior que estado velho de dado: o sintoma é menu faltando.
-  const KEY = 'sti.helpdesk.v8';
+  // v9: permissões próprias das áreas da filial e da custódia de equipamento.
+  // Estado anterior tem os perfis de sistema com as concessões ANTIGAS gravadas,
+  // sem `clientes.areas.*` nem `inventario.ativos.custodiar` — o botão some e
+  // nenhum erro aparece. Estado velho de permissão é pior que estado velho de
+  // dado: o sintoma é botão faltando.
+  const KEY = 'sti.helpdesk.v9';
   const MIN = 60000;
 
   /* ===================== Catálogos ===================== */
@@ -593,6 +593,7 @@
     ['inventario.ativos.criar','inventario','ativos','criar','Cadastrar ativo','gestor'],
     ['inventario.ativos.editar','inventario','ativos','editar','Editar ativo','gestor'],
     ['inventario.ativos.mudar_status','inventario','ativos','mudar_status','Mover ciclo de vida','gestor'],
+    ['inventario.ativos.custodiar','inventario','ativos','custodiar','Transferir custódia','gestor'],
     ['inventario.ativos.anexar','inventario','ativos','anexar','Anexar nota ou foto','gestor'],
     ['inventario.ativos.remover_anexo','inventario','ativos','remover_anexo','Remover anexo do ativo','gestor'],
     ['telefonia','telefonia',null,null,'Telefonia','visualizador'],
@@ -623,6 +624,11 @@
     ['clientes.filiais.criar','clientes','filiais','criar','Cadastrar filial','gestor'],
     ['clientes.filiais.editar','clientes','filiais','editar','Editar filial','gestor'],
     ['clientes.filiais.inativar','clientes','filiais','inativar','Ativar/inativar filial','gestor'],
+    ['clientes.areas','clientes','areas',null,'Áreas da filial','gestor'],
+    ['clientes.areas.ver','clientes','areas','ver','Consultar áreas','gestor'],
+    ['clientes.areas.criar','clientes','areas','criar','Cadastrar área','gestor'],
+    ['clientes.areas.editar','clientes','areas','editar','Editar área','gestor'],
+    ['clientes.areas.inativar','clientes','areas','inativar','Ativar/inativar área','gestor'],
     ['fornecedores','fornecedores',null,null,'Fornecedores','gestor'],
     ['fornecedores.cadastro','fornecedores','cadastro',null,'Fornecedores','gestor'],
     ['fornecedores.cadastro.ver','fornecedores','cadastro','ver','Consultar fornecedores','gestor'],
@@ -3113,7 +3119,8 @@
       <div class="page-head"><div><p class="eyebrow">Patrimônio</p><h1>Inventário de TI</h1>
         <p class="lede">Clique num ativo para ver documentos, fotos e a timeline de custódia.</p></div>
         <div class="row-actions">
-          <button type="button" class="btn" data-variant="ghost" id="areas-open">Gerenciar áreas</button>
+          ${ifMay('clientes.areas.ver',
+            `<button type="button" class="btn" data-variant="ghost" id="areas-open">Gerenciar áreas</button>`)}
           <button type="button" class="btn" id="asset-new">Novo ativo</button></div></div>
       ${viewToggle(invMode,'inventario')}
       <div class="tiles">
@@ -4827,7 +4834,8 @@
             ${Object.entries(ASSET_STATUS).map(([k,v])=>`<option value="${k}"${a.status===k?' selected':''}>${v.label}</option>`).join('')}</select></div>
           <div class="form-full" id="drawer-msg"></div>
           <div class="form-full row-actions" style="justify-content:flex-end">
-            <button type="button" class="btn" id="as-save">Salvar mudança</button></div>
+            ${ifMay('inventario.ativos.custodiar',
+              `<button type="button" class="btn" id="as-save">Salvar mudança</button>`)}</div>
         </div></section>`;
 
     const documentos = `<section>
@@ -5260,7 +5268,8 @@
             `<option value="${k}">${v}</option>`).join('')}</select></div>
         <div class="form-full" id="am-msg"></div>
         <div class="form-full row-actions" style="justify-content:flex-end">
-          <button type="button" class="btn btn-sm" id="am-add">Adicionar área</button></div>
+          ${ifMay('clientes.areas.criar',
+            `<button type="button" class="btn btn-sm" id="am-add">Adicionar área</button>`)}</div>
       </div>`, { noFooter:true });
     renderAreaList();
   }
@@ -5275,9 +5284,11 @@
         ${pill(AREA_KIND[a.kind],'neutral')}
         <span class="dim">${use} item(ns)</span>
         <span style="margin-left:auto" class="row-actions">
-          <button type="button" class="btn btn-sm" data-variant="ghost" data-area-toggle="${a.id}">
-            ${a.active?'Desativar':'Ativar'}</button>
-          <button type="button" class="btn btn-sm" data-variant="danger" data-area-del="${a.id}">Excluir</button>
+          ${ifMay('clientes.areas.inativar',
+            `<button type="button" class="btn btn-sm" data-variant="ghost" data-area-toggle="${a.id}">
+              ${a.active?'Desativar':'Ativar'}</button>`)}
+          ${ifMay('clientes.areas.editar',
+            `<button type="button" class="btn btn-sm" data-variant="danger" data-area-del="${a.id}">Excluir</button>`)}
         </span></div>`;
     }).join('') || '<p class="dim">Nenhuma área nesta filial.</p>'}</div>`;
   }
@@ -5832,6 +5843,7 @@
 
     // Ativo: salvar custódia
     if (T.id === 'as-save' && openDrawer?.kind === 'asset') {
+      if (!guard('inventario.ativos.custodiar')) return;
       const a = db.assets.find(x => x.id === openDrawer.id);
       const areaId = document.getElementById('as-area').value;
       if (!areaId) { drawerMsg('A área da filial é obrigatória.', 'error'); return; }
@@ -5859,7 +5871,7 @@
     if (se) { slaModal(se.dataset.slaEdit); return; }
     const qe = T.closest('[data-queue-edit]');
     if (qe) { queueModal(qe.dataset.queueEdit); return; }
-    if (T.id === 'areas-open') { areasModal(); return; }
+    if (T.id === 'areas-open') { if (!guard('clientes.areas.ver')) return; areasModal(); return; }
     if (T.id === 'asset-new') { assetModal(null); return; }
     if (T.id === 'line-new') { lineModal(null); return; }
 
@@ -6044,6 +6056,7 @@
 
     // Áreas no modal
     if (T.id === 'am-add') {
+      if (!guard('clientes.areas.criar')) return;
       const err = createArea(document.getElementById('am-branch').value,
         document.getElementById('am-name').value, document.getElementById('am-kind').value);
       const msg = document.getElementById('am-msg');
@@ -6052,9 +6065,13 @@
       renderAreaList(); toast('Área criada'); return;
     }
     const atg = T.closest('[data-area-toggle]');
-    if (atg) { toggleArea(atg.dataset.areaToggle); renderAreaList(); return; }
+    if (atg) {
+      if (!guard('clientes.areas.inativar')) return;
+      toggleArea(atg.dataset.areaToggle); renderAreaList(); return;
+    }
     const adl = T.closest('[data-area-del]');
     if (adl) {
+      if (!guard('clientes.areas.editar')) return;
       const err = deleteArea(adl.dataset.areaDel);
       const msg = document.getElementById('am-msg');
       if (err) msg.innerHTML = `<div class="alert" data-kind="error">${esc(err)}</div>`;

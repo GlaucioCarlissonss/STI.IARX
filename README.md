@@ -150,7 +150,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 149 testes: mapeamento, coordenadas, geolocalização, cadastros e herança de permissão
-npm run db:validate   # migrações + seed + 316 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 335 asserções em PostgreSQL real
 ```
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
@@ -213,7 +213,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado nesta entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 196 testes unitários e 316 asserções de banco passando — incluindo
+apontamentos, 203 testes unitários e 335 asserções de banco passando — incluindo
 a aritmética de horário útil conferida contra 8 cenários (almoço, fim de semana,
 feriado, fora de expediente).
 
@@ -224,13 +224,13 @@ feriado, fora de expediente).
   contra PostgreSQL local — mas o Storage é um serviço separado, e serviço separado
   só se prova usando. Depende dos três passos de
   [docs/09](docs/09-conectar-no-supabase.md).
-- Cadastro de áreas da filial e dashboard de telefonia — banco pronto
-  (migrações `0013`–`0016`), interface pendente; a especificação de cada um está
-  em [docs/06-lacunas-e-roadmap.md](docs/06-lacunas-e-roadmap.md).
-  Os **links de internet** saíram desta lista: a tela existe em
-  `/conectividade/links` desde a migração `0022`, com as chaves
-  `conectividade.links.*` — falta apenas a Edge Function do Zabbix, e até ela a
-  queda é registrada à mão pelo mesmo evento que o webhook vai gravar.
+- Dashboard de telefonia (`vw_telecom_dashboard`, criada na `0013` e ainda não
+  consultada por nenhuma tela): a página já mostra custo por filial e operadora,
+  faltam os filtros e a leitura da view própria.
+  Saíram desta lista, com tela e permissão próprias: **links de internet**
+  (`/conectividade/links`, migração `0022` — falta só a Edge Function do Zabbix,
+  e até ela a queda é registrada à mão pelo mesmo evento que o webhook vai
+  gravar), **áreas da filial** e **custódia de equipamento** (migração `0023`).
 - Recuperação de senha ("esqueci minha senha"): existe troca de senha logado
   (`/conta`) e criação de usuário com senha temporária (`/usuarios`), mas não
   um fluxo de redefinição para quem está deslogado.

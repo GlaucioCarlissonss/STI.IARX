@@ -68,7 +68,7 @@ Constraints: `key = concat_ws('.', module, screen, action)` — a chave é deriv
 da trinca, e gravar as duas coisas deixando-as divergir quebraria a árvore da
 UI; `action is null or screen is not null`.
 
-**141 entradas, GERADAS de `src/lib/permissions.ts`.** O teste de schema compara
+**147 entradas, GERADAS de `src/lib/permissions.ts`.** O teste de schema compara
 a contagem: mexer no TypeScript sem regenerar derruba o CI em vez de virar
 permissão fantasma.
 
@@ -613,7 +613,7 @@ tela existir.
 | Visualizador | visualizador | ◐ | — | ◐ | ◐ | ◐ | — | — | — | — | — | — | — |
 | Solicitante | solicitante | ● (próprio) | — | ◐ | ◐ | ◐ | — | — | — | — | — | — | — |
 
-O catálogo completo (141 entradas com o papel mínimo de cada uma) está em
+O catálogo completo (147 entradas com o papel mínimo de cada uma) está em
 `src/lib/permissions.ts` e semeado em `permission_catalog`.
 
 ---

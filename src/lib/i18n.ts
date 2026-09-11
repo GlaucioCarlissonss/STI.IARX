@@ -86,6 +86,41 @@ export const lineStatusLabel: Record<string, string> = {
   cancelled: 'Cancelada',
 }
 
+/* --- Áreas da filial e custódia ------------------------------------------- */
+
+/**
+ * Natureza da área.
+ *
+ * Não é enfeite de cadastro: em Home Care, parada na Enfermagem tem impacto
+ * assistencial que a Administração não tem, e é esse campo que permite ler o
+ * inventário por peso operacional em vez de só por quantidade.
+ */
+export const areaKindLabel: Record<string, string> = {
+  assistencial: 'Assistencial',
+  administrativa: 'Administrativa',
+  apoio: 'Apoio',
+  tecnica: 'Técnica',
+}
+
+export const custodyReasonLabel: Record<string, string> = {
+  realocacao: 'Realocação',
+  devolucao: 'Devolução',
+  substituicao: 'Substituição',
+  baixa: 'Baixa',
+  manutencao: 'Manutenção',
+  aquisicao: 'Aquisição',
+  perda: 'Perda',
+  outro: 'Outro',
+}
+
+export const custodyEventLabel: Record<string, string> = {
+  assignment: 'Troca de responsável',
+  relocation: 'Realocação',
+  return: 'Devolução',
+  retirement: 'Baixa',
+  loss: 'Perda',
+}
+
 /* --- Conectividade ------------------------------------------------------- */
 
 export const linkTechnologyLabel: Record<string, string> = {

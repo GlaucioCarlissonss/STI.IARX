@@ -1,6 +1,6 @@
 'use client'
 
-import type { Branch, Profile, TelecomLine } from '@/lib/types'
+import type { Branch, BranchArea, Profile, TelecomLine } from '@/lib/types'
 import { lineStatusLabel, lineTypeLabel } from '@/lib/i18n'
 import { ActionForm, SubmitButton } from '@/components/action-form'
 import { Field, inputClass } from '@/components/ui'
@@ -15,11 +15,12 @@ export interface DeviceOption {
 
 interface Lookups {
   branches: Branch[]
+  areas: BranchArea[]
   agents: Profile[]
   devices: DeviceOption[]
 }
 
-function LineFields({ branches, agents, devices, defaults }: Lookups & { defaults?: TelecomLine }) {
+function LineFields({ branches, areas, agents, devices, defaults }: Lookups & { defaults?: TelecomLine }) {
   const uid = defaults ? `l-${defaults.id}` : 'l-new'
   return (
     <>
@@ -88,6 +89,27 @@ function LineFields({ branches, agents, devices, defaults }: Lookups & { default
           </select>
         </Field>
       </div>
+
+      {/* Select único com a filial no rótulo, e não dois encadeados: encadear
+          exigiria JavaScript, e a trigger `trg_lines_area_branch` (0013) já
+          recusa área de outra filial. A coluna existe desde aquela migração e o
+          formulário nunca a ofereceu — a linha ficava sem lugar dentro da
+          filial, enquanto ativo e link já tinham. */}
+      <Field label="Área da empresa" htmlFor={`${uid}-company_area_id`}>
+        <select
+          id={`${uid}-company_area_id`}
+          name="company_area_id"
+          defaultValue={defaults?.company_area_id ?? ''}
+          className={inputClass}
+        >
+          <option value="">Sem área</option>
+          {areas.map((a) => (
+            <option key={a.id} value={a.id}>
+              {branches.find((b) => b.id === a.branch_id)?.name ?? '—'} · {a.name}
+            </option>
+          ))}
+        </select>
+      </Field>
 
       <Field label="Filial" htmlFor={`${uid}-branch_id`}>
         <select

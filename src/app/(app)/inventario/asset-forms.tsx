@@ -1,10 +1,10 @@
 'use client'
 
-import type { Branch, ItAsset, Profile } from '@/lib/types'
-import { assetStatusLabel, assetTypeLabel } from '@/lib/i18n'
+import type { Branch, BranchArea, ItAsset, Profile } from '@/lib/types'
+import { assetStatusLabel, assetTypeLabel, custodyReasonLabel } from '@/lib/i18n'
 import { ActionForm, SubmitButton } from '@/components/action-form'
 import { Field, inputClass } from '@/components/ui'
-import { changeAssetStatus, createAsset, updateAsset } from './actions'
+import { changeAssetCustody, changeAssetStatus, createAsset, updateAsset } from './actions'
 
 export interface SupplierOption {
   id: string
@@ -13,8 +13,43 @@ export interface SupplierOption {
 
 interface Lookups {
   branches: Branch[]
+  areas: BranchArea[]
   agents: Profile[]
   suppliers: SupplierOption[]
+}
+
+/**
+ * Seletor de área.
+ *
+ * Um select só, com a filial no rótulo, em vez de dois encadeados: encadear
+ * exigiria JavaScript, e a trigger `trg_assets_area_branch` (0013) já recusa
+ * área de outra filial. Assim o formulário continua sendo enviado ao servidor
+ * mesmo antes de a hidratação terminar, como o resto desta base.
+ */
+function AreaSelect({
+  id,
+  name,
+  areas,
+  branches,
+  value,
+}: {
+  id: string
+  name: string
+  areas: BranchArea[]
+  branches: Branch[]
+  value: string | null | undefined
+}) {
+  const branchName = new Map(branches.map((b) => [b.id, b.name]))
+  return (
+    <select id={id} name={name} defaultValue={value ?? ''} className={inputClass}>
+      <option value="">Sem área</option>
+      {areas.map((a) => (
+        <option key={a.id} value={a.id}>
+          {branchName.get(a.branch_id) ?? '—'} · {a.name}
+        </option>
+      ))}
+    </select>
+  )
 }
 
 /*
@@ -22,7 +57,7 @@ interface Lookups {
  * cliente e filial: um campo que existisse só no cadastro seria apagado a cada
  * edição, sem aviso.
  */
-function AssetFields({ branches, agents, suppliers, defaults }: Lookups & { defaults?: ItAsset }) {
+function AssetFields({ branches, areas, agents, suppliers, defaults }: Lookups & { defaults?: ItAsset }) {
   const uid = defaults ? `a-${defaults.id}` : 'a-new'
   return (
     <>
@@ -114,6 +149,20 @@ function AssetFields({ branches, agents, suppliers, defaults }: Lookups & { defa
             </option>
           ))}
         </select>
+      </Field>
+
+      <Field
+        label="Área da filial"
+        htmlFor={`${uid}-branch_area_id`}
+        hint="Onde o equipamento fica. É o que permite ler o parque por setor."
+      >
+        <AreaSelect
+          id={`${uid}-branch_area_id`}
+          name="branch_area_id"
+          areas={areas}
+          branches={branches}
+          value={defaults?.branch_area_id}
+        />
       </Field>
 
       <Field label="Responsável" htmlFor={`${uid}-assigned_user_id`}>
@@ -238,5 +287,95 @@ export function EditAssetForm({ asset, ...lookups }: Lookups & { asset: ItAsset 
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Transferência de custódia.
+ *
+ * Separada da edição da ficha de propósito: trocar o responsável por um
+ * equipamento é um ato com motivo e registro, não uma correção de cadastro. É
+ * por isso que tem chave de permissão própria (`inventario.ativos.custodiar`) e
+ * que o motivo é obrigatório — sem ele o histórico diria "mudou" sem dizer por
+ * quê, que é a metade inútil de um registro patrimonial.
+ */
+export function CustodyForm({
+  asset,
+  branches,
+  areas,
+  agents,
+}: {
+  asset: ItAsset
+  branches: Branch[]
+  areas: BranchArea[]
+  agents: Profile[]
+}) {
+  const uid = `cu-${asset.id}`
+  return (
+    <ActionForm action={changeAssetCustody} className="flex flex-col gap-3">
+      <input type="hidden" name="asset_id" value={asset.id} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Responsável" htmlFor={`${uid}-user`}>
+          <select
+            id={`${uid}-user`}
+            name="assigned_user_id"
+            defaultValue={asset.assigned_user_id ?? ''}
+            className={inputClass}
+          >
+            <option value="">Sem responsável</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.full_name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Filial" htmlFor={`${uid}-branch`}>
+          <select
+            id={`${uid}-branch`}
+            name="branch_id"
+            defaultValue={asset.branch_id ?? ''}
+            className={inputClass}
+          >
+            <option value="">Não vinculado</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Área" htmlFor={`${uid}-area`}>
+          <AreaSelect
+            id={`${uid}-area`}
+            name="branch_area_id"
+            areas={areas}
+            branches={branches}
+            value={asset.branch_area_id}
+          />
+        </Field>
+        <Field label="Motivo" htmlFor={`${uid}-reason`} required>
+          <select id={`${uid}-reason`} name="reason" required defaultValue="realocacao" className={inputClass}>
+            {Object.entries(custodyReasonLabel).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <Field label="Observação" htmlFor={`${uid}-note`} hint="Opcional.">
+        <input
+          id={`${uid}-note`}
+          name="note"
+          maxLength={200}
+          className={inputClass}
+          placeholder="Entregue no desligamento do colaborador"
+        />
+      </Field>
+      <SubmitButton variant="secondary" pendingLabel="Registrando…">
+        Registrar custódia
+      </SubmitButton>
+    </ActionForm>
   )
 }

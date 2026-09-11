@@ -152,6 +152,10 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('inventario', 'ativos', 'criar', 'Cadastrar ativo', 'gestor'),
   act('inventario', 'ativos', 'editar', 'Editar ativo', 'gestor'),
   act('inventario', 'ativos', 'mudar_status', 'Mover ciclo de vida', 'gestor'),
+  /* Trocar o responsável por um equipamento é ato patrimonial, e não operação de
+     atendimento — por isso chave própria, separada de `editar`. Quem atende
+     ticket consulta o parque; quem responde por ele é que transfere. */
+  act('inventario', 'ativos', 'custodiar', 'Transferir custódia', 'gestor'),
   act('inventario', 'ativos', 'anexar', 'Anexar nota ou foto', 'gestor'),
   act('inventario', 'ativos', 'remover_anexo', 'Remover anexo do ativo', 'gestor'),
 
@@ -200,6 +204,15 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('clientes', 'filiais', 'criar', 'Cadastrar filial', 'gestor'),
   act('clientes', 'filiais', 'editar', 'Editar filial', 'gestor'),
   act('clientes', 'filiais', 'inativar', 'Ativar/inativar filial', 'gestor'),
+  /* Área é subdivisão da filial, e a tela mora dentro de /clientes — daí o módulo
+     ser `clientes` e não um módulo próprio. A consequência prática é boa: o
+     Gestor de TI recebe as chaves pela regra que já concede o módulo inteiro,
+     sem alterar `app.seed_system_access_profiles()`. */
+  scr('clientes', 'areas', 'Áreas da filial', 'gestor'),
+  act('clientes', 'areas', 'ver', 'Consultar áreas', 'gestor'),
+  act('clientes', 'areas', 'criar', 'Cadastrar área', 'gestor'),
+  act('clientes', 'areas', 'editar', 'Editar área', 'gestor'),
+  act('clientes', 'areas', 'inativar', 'Ativar/inativar área', 'gestor'),
 
   /* --- Fornecedores ------------------------------------------------------ */
   mod('fornecedores', 'gestor'),

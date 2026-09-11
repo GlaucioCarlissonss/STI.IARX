@@ -37,15 +37,15 @@ a **interface** — e, nos casos marcados, a decisão do operador.
 
 | Módulo | Banco | Interface |
 |---|---|---|
-| M1 — SLA e Filas | ✅ `name`, `deleted_at`, `tiebreaker`, `fn_sla_impact_preview`, `fn_bulk_transfer_queue` | ⬜ telas de edição |
-| M2 — Área da Filial | ✅ `branch_areas`, FKs, trigger de coerência, `fn_seed_branch_areas` | ⬜ aba de áreas, filtro, agrupamento |
-| M3 — Anexos de Inventário | ✅ `asset_attachments`, foto principal por índice | ⬜ upload, galeria, Storage |
-| M4 — Custódia | ✅ campos `previous_*`, `reason`, trigger reescrita, view `asset_custody_history` | ⬜ timeline, relatório, exportação |
-| M5 — Anexos em Tickets | ✅ `kind` derivado do MIME, cota no banco, `scan_status` | ⬜ upload, players, galeria |
+| M1 — SLA e Filas | ✅ `name`, `deleted_at`, `tiebreaker`, `fn_sla_impact_preview`, `fn_bulk_transfer_queue` | ✅ CRUD de categorias, prioridades, contratos e definições em `/sla` |
+| M2 — Área da Filial | ✅ `branch_areas`, FKs, trigger de coerência, `fn_seed_branch_areas` | ✅ painel de áreas em `/clientes`, chaves `clientes.areas.*` e botão de áreas padrão (0023) |
+| M3 — Anexos de Inventário | ✅ `asset_attachments`, foto principal por índice | ✅ upload e remoção pelo bucket privado `anexos` (0019) |
+| M4 — Custódia | ✅ campos `previous_*`, `reason`, trigger reescrita, view `asset_custody_history` | ✅ timeline e transferência com motivo em `/inventario` (0023) · ⬜ exportação (LG-11) |
+| M5 — Anexos em Tickets | ✅ `kind` derivado do MIME, cota no banco, `scan_status` | ✅ upload e remoção (0019) · ⬜ player embutido de áudio e vídeo |
 | M6 — Dashboard Telefonia | ✅ `vw_telecom_dashboard`, índices de filtro | ⬜ filtros, gráficos, exportação |
-| M7 — Contrato da Linha | ✅ `telecom_line_attachments`, vigência | ⬜ aba de documentos, alerta |
+| M7 — Contrato da Linha | ✅ `telecom_line_attachments`, vigência | ✅ anexos na ficha da linha (0019) · ⬜ alerta de vigência vencendo (depende de LG-06) |
 | M8 — Links de Internet | ✅ `internet_links`, anexos, `link_availability_events`, dashboards, CRUD em `/conectividade/links`, chaves `conectividade.links.*` (0022) | ⬜ Edge Function do Zabbix — hoje a queda é registrada à mão, pelo mesmo evento que o webhook vai gravar |
-| M9 — Área na Telefonia | ✅ `company_area_id` + trigger | ⬜ campo no formulário, filtro |
+| M9 — Área na Telefonia | ✅ `company_area_id` + trigger | ✅ campo no formulário e coluna na tabela (0023) · ⬜ filtro por área |
 | M10 — Edição de Integrações | ✅ `integration_mapping_versions` + trigger, campos de rotação | ⬜ telas de configuração e dry run |
 | M11 — Mapas | ✅ `latitude`/`longitude`, precisão do geocode, 5 views com semáforo | ✅ Google Maps em `/mapas`, geocodificação e coordenada colada do Maps |
 

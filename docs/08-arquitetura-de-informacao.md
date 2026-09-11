@@ -125,6 +125,8 @@ Quem não alcança bloco nenhum recebe um aviso explícito, em vez de uma tela v
 | Comportamento em navegador: grupos, "em breve", separação de função | `demo/tests/prototipo.spec.mjs` |
 | A projeção de caixa reage ao percentual, e só nas entradas | `demo/tests/prototipo.spec.mjs` §11 |
 | Links some do menu de quem não tem `conectividade`; Operador de TI não cadastra | `demo/tests/prototipo.spec.mjs` §12 |
+| Área com nome repetido é recusada sem diferenciar maiúsculas | `demo/tests/prototipo.spec.mjs` §13 |
+| Operador de TI consulta o parque e não transfere custódia | `demo/tests/prototipo.spec.mjs` §14 |
 
 O teste de navegador não é enfeite: foi ele que achou `ROLE_RANK` invertido no
 protótipo e as regras de perfil paradas antes da migração 0020 — dois defeitos cujo

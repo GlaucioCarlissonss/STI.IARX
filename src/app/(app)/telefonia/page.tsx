@@ -5,7 +5,7 @@ import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
 import { lineStatusLabel, lineTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
-import type { TelecomLine } from '@/lib/types'
+import type { BranchArea, TelecomLine } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
 import { Attachments, type AttachmentRecord } from '@/components/attachments'
@@ -31,12 +31,14 @@ export default async function TelefoniaPage() {
   await requireScreen('telefonia.linhas.ver')
   const supabase = await createClient()
 
-  const [{ data: lines }, { data: costs }, branches, agents, { data: devices }, { data: anexos }] =
-    await Promise.all([
+  const [
+    { data: lines }, { data: costs }, branches, agents,
+    { data: areas }, { data: devices }, { data: anexos },
+  ] = await Promise.all([
     supabase
       .from('telecom_lines')
       .select(
-        'id, phone_number, carrier, plan_name, line_type, status, branch_id, assigned_user_id, device_asset_id, monthly_cost, activated_on, cancelled_on, loyalty_until',
+        'id, phone_number, carrier, plan_name, line_type, status, branch_id, company_area_id, assigned_user_id, device_asset_id, monthly_cost, activated_on, cancelled_on, loyalty_until',
       )
       .is('deleted_at', null)
       .order('phone_number')
@@ -48,6 +50,12 @@ export default async function TelefoniaPage() {
       .returns<CostRow[]>(),
     getBranches(),
     getAgents(),
+    supabase
+      .from('branch_areas')
+      .select('id, branch_id, name, code, kind, is_active, sort_order')
+      .eq('is_active', true)
+      .order('sort_order')
+      .returns<BranchArea[]>(),
     supabase
       .from('it_assets')
       .select('id, asset_tag, brand, model')
@@ -71,6 +79,8 @@ export default async function TelefoniaPage() {
     anexosPorLinha.set(a.line_id, [...(anexosPorLinha.get(a.line_id) ?? []), a])
   }
   const list = lines ?? []
+  const listaAreas = areas ?? []
+  const areaName = new Map(listaAreas.map((a) => [a.id, a.name]))
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const userName = new Map(agents.map((a) => [a.id, a.full_name]))
 
@@ -99,7 +109,12 @@ export default async function TelefoniaPage() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <div className="flex flex-col gap-6">
           {list.length > 0 ? (
-            <Table head={['Número', 'Operadora / plano', 'Tipo', 'Status', 'Filial', 'Responsável', 'Custo', 'Fidelidade']}>
+            <Table
+              head={[
+                'Número', 'Operadora / plano', 'Tipo', 'Status',
+                'Filial / área', 'Responsável', 'Custo', 'Fidelidade',
+              ]}
+            >
               {list.map((l) => (
                 <Fragment key={l.id}>
                 <tr className="hover:bg-[var(--color-surface-2)]">
@@ -118,6 +133,9 @@ export default async function TelefoniaPage() {
                   </Td>
                   <Td className="text-[var(--color-ink-2)]">
                     {l.branch_id ? (branchName.get(l.branch_id) ?? '—') : '—'}
+                    <p className="text-xs text-[var(--color-ink-3)]">
+                      {l.company_area_id ? (areaName.get(l.company_area_id) ?? '—') : 'sem área'}
+                    </p>
                   </Td>
                   <Td className="text-[var(--color-ink-2)]">
                     {l.assigned_user_id ? (userName.get(l.assigned_user_id) ?? '—') : '—'}
@@ -134,6 +152,7 @@ export default async function TelefoniaPage() {
                             <EditLineForm
                               line={l}
                               branches={branches}
+                              areas={listaAreas}
                               agents={agents}
                               devices={devices ?? []}
                             />
@@ -186,6 +205,7 @@ export default async function TelefoniaPage() {
           <Card title="Nova linha">
             <NewLineForm
               branches={branches}
+              areas={listaAreas}
               agents={agents}
               devices={devices ?? []}
             />

@@ -200,6 +200,7 @@ export interface ItAsset {
   model: string | null
   status: string
   branch_id: string | null
+  branch_area_id: string | null
   assigned_user_id: string | null
   supplier_id: string | null
   acquisition_date: string | null
@@ -216,6 +217,7 @@ export interface TelecomLine {
   line_type: 'postpaid' | 'prepaid' | 'control'
   status: 'active' | 'suspended' | 'cancelled'
   branch_id: string | null
+  company_area_id: string | null
   assigned_user_id: string | null
   device_asset_id: string | null
   monthly_cost: number | null
@@ -549,4 +551,52 @@ export interface ConnectivityCostRow {
   links_active: number
   internet_monthly_cost: number
   total_monthly_cost: number
+}
+
+/* --- Áreas da filial e custódia ------------------------------------------- */
+
+export type AreaKind = 'assistencial' | 'administrativa' | 'apoio' | 'tecnica'
+
+export interface BranchArea {
+  id: string
+  branch_id: string
+  name: string
+  code: string | null
+  kind: AreaKind
+  is_active: boolean
+  sort_order: number
+}
+
+export type CustodyReason =
+  | 'realocacao'
+  | 'devolucao'
+  | 'substituicao'
+  | 'baixa'
+  | 'manutencao'
+  | 'aquisicao'
+  | 'perda'
+  | 'outro'
+
+/**
+ * Linha de `vw`… não: de `public.asset_custody_history`.
+ *
+ * A view já resolve os nomes de quem entregou e de quem recebeu. Refazer esse
+ * join na aplicação seria a quarta cópia da mesma regra — a timeline lê daqui.
+ */
+export interface CustodyEvent {
+  id: string
+  asset_id: string
+  event_type: 'assignment' | 'relocation' | 'return' | 'retirement' | 'loss'
+  previous_user_id: string | null
+  previous_user_name: string | null
+  current_user_id: string | null
+  current_user_name: string | null
+  previous_branch_id: string | null
+  branch_id: string | null
+  previous_area_id: string | null
+  branch_area_id: string | null
+  reason: CustodyReason
+  reason_note: string | null
+  performed_by_name: string | null
+  changed_at: string
 }

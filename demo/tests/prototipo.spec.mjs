@@ -239,6 +239,60 @@ const novoLinkOperador = await p.$$eval('#link-new', bs => bs.length)
 console.log('  título:', await p.$eval('h1', h => h.textContent.trim()))
 ok(novoLinkOperador === 0, 'Operador de TI consulta links e NÃO vê o botão de cadastrar')
 
+console.log('\n=== 13. Áreas da filial: cadastro que só existia em SQL ===')
+await trocar('u1')
+await irPara('Inventário')
+const abreAreas = await p.$$eval('#areas-open', bs => bs.length)
+ok(abreAreas === 1, 'o Admin vê o botão de gerenciar áreas')
+await p.evaluate(() => document.getElementById('areas-open')?.click())
+await p.waitForTimeout(250)
+const antesAreas = (await estado()).areas.length
+await p.fill('#am-name', 'Fisioterapia')
+await p.evaluate(() => document.getElementById('am-add')?.click())
+await p.waitForTimeout(250)
+const depoisAreas = (await estado()).areas.length
+ok(depoisAreas === antesAreas + 1, `área criada (${antesAreas} → ${depoisAreas})`)
+
+// Nome duplicado é recusado sem diferenciar maiúsculas — é a unicidade que dá
+// sentido ao agrupamento por área.
+await p.fill('#am-name', 'fisioterapia')
+await p.evaluate(() => document.getElementById('am-add')?.click())
+await p.waitForTimeout(250)
+const msgArea = await p.$eval('#am-msg', el => el.textContent.trim())
+console.log('  mensagem:', msgArea.slice(0, 80))
+ok(/já existe/i.test(msgArea), 'nome repetido é recusado sem diferenciar maiúsculas')
+ok((await estado()).areas.length === depoisAreas, 'e nada foi gravado')
+
+console.log('\n=== 14. Custódia: quem não é gestor não transfere patrimônio ===')
+await fechar()
+// Operador de TI: papel atendente, consulta o parque e não mexe em patrimônio.
+await trocar('u3')
+await irPara('Inventário')
+const areasOperador = await p.$$eval('#areas-open', bs => bs.length)
+ok(areasOperador === 0, 'Operador de TI não vê o botão de gerenciar áreas')
+// O formulário de custódia fica na aba Dados da gaveta, que já abre selecionada.
+await p.evaluate(() => document.querySelector('tbody tr[data-asset]')?.click())
+await p.waitForTimeout(300)
+ok(await p.$$eval('#drawer-root aside', d => d.length === 1), 'a gaveta do ativo abre')
+const salvarOperador = await p.$$eval('#as-save', bs => bs.length)
+ok(salvarOperador === 0, 'e não vê o botão de salvar custódia')
+
+await fechar()
+await trocar('u4')  // Gestor de TI
+await irPara('Inventário')
+await p.evaluate(() => document.querySelector('tbody tr[data-asset]')?.click())
+await p.waitForTimeout(300)
+const salvarGestor = await p.$$eval('#as-save', bs => bs.length)
+ok(salvarGestor === 1, 'Gestor de TI vê o botão — custódia é ato patrimonial, e é dele')
+
+// E a timeline continua visível para os dois: consultar o histórico não é
+// transferir patrimônio, e esconder o registro de quem só consulta tiraria
+// justamente a auditoria que o módulo existe para dar.
+await p.evaluate(() => document.querySelector('[data-assettab="cust"]')?.click())
+await p.waitForTimeout(250)
+const temTimeline = await p.$$eval('#drawer-root .timeline', t => t.length)
+ok(temTimeline === 1, 'a timeline de custódia aparece na aba Custódia')
+
 console.log('\n=== Erros de página ===')
 console.log(erros.length ? erros.join('\n') : '  nenhum')
 await p.screenshot({ path:'/tmp/claude-0/-home-user-STI-IARX/eb021f6b-0a70-55f9-a2c8-13bdbb4bd983/scratchpad/titulos.png' })
