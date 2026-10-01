@@ -146,6 +146,12 @@ export interface Queue {
   description: string | null
   is_system_default: boolean
   is_active: boolean
+  /* Os três pesos do score (RF-FIL-03). Existiam na tabela desde a 0004 e não
+     apareciam em lugar nenhum da interface — eram o que distingue duas filas com
+     a mesma lista de tickets, invisível. */
+  weight_criticality: number
+  weight_deadline: number
+  weight_age: number
 }
 
 export interface Priority {
@@ -624,4 +630,27 @@ export interface QueueRule {
   conditions: QueueRuleConditions
   sort_order: number
   is_active: boolean
+}
+
+/**
+ * Linha de `vw_telecom_dashboard` (0013).
+ *
+ * A view existia desde aquela migração e nunca tinha sido consultada: a tela de
+ * telefonia mostrava custo por filial e operadora lendo `vw_telecom_costs`, e os
+ * dois indicadores que só esta view calcula — linha sem responsável e linha
+ * livre de fidelidade — não apareciam em lugar nenhum.
+ */
+export interface TelecomDashboardRow {
+  branch_id: string | null
+  branch_name: string | null
+  company_area_id: string | null
+  area_name: string | null
+  carrier: string
+  line_type: string
+  status: string
+  lines_count: number
+  monthly_total: number
+  monthly_avg: number | null
+  without_user: number
+  free_to_cancel: number
 }

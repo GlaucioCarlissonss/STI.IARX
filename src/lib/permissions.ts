@@ -119,6 +119,13 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('helpdesk', 'tickets', 'remover_anexo', 'Remover anexo', 'atendente'),
   scr('helpdesk', 'filas', 'Filas', 'visualizador'),
   act('helpdesk', 'filas', 'ver', 'Consultar filas', 'visualizador'),
+  /* Criar fila muda a estrutura de atendimento do cliente — teto `gestor`, como
+     o roteamento. A fila PADRÃO é protegida no banco (`trg_protect_default_queue`,
+     0004): nem com estas chaves é possível renomeá-la, desativá-la ou removê-la,
+     e a tela só traduz o erro que a trigger levanta. */
+  act('helpdesk', 'filas', 'criar', 'Criar fila', 'gestor'),
+  act('helpdesk', 'filas', 'editar', 'Editar fila e pesos do score', 'gestor'),
+  act('helpdesk', 'filas', 'inativar', 'Ativar/inativar fila', 'gestor'),
   /* Criar, editar e inativar regra de roteamento são a MESMA decisão —
      "configurar para onde o ticket vai" —, e três caixas separadas seriam três
      caixas marcadas juntas para sempre. LER a lista continua sob `.ver`: saber

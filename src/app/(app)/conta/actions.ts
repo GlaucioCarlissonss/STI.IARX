@@ -1,27 +1,25 @@
 'use server'
 
-import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requireSession } from '@/lib/session'
+import { newPasswordSchema } from '@/lib/schemas/auth'
 import type { ActionState } from '@/app/(app)/tickets/actions'
-
-const changePasswordSchema = z
-  .object({
-    password: z.string().min(8, 'A senha precisa ter pelo menos 8 caracteres.'),
-    confirm: z.string(),
-  })
-  .refine((v) => v.password === v.confirm, {
-    message: 'As senhas não coincidem.',
-    path: ['confirm'],
-  })
 
 /**
  * Troca a própria senha (RF-USR-03).
  *
  * Sem confirmar a senha atual: a sessão já prova quem a pessoa é, e o Supabase
  * não pede a senha antiga para `updateUser` — pedir aqui só duplicaria uma
- * checagem que o próprio login já fez. É também o único jeito de sair da senha
- * temporária que `createUserAccount` gera, já que não há fluxo de e-mail.
+ * checagem que o próprio login já fez.
+ *
+ * Esta é a troca de quem ESTÁ dentro. Quem esqueceu a senha usa
+ * `/recuperar-senha`, que existe desde que o fluxo por e-mail foi ligado — antes
+ * dele, esta tela era a única saída da senha temporária gerada em
+ * `createUserAccount`, e quem não conseguia entrar dependia de um administrador.
+ *
+ * A regra de senha mora em `src/lib/schemas/auth.ts`: é a MESMA aqui e no fluxo
+ * de recuperação, e duas cópias divergiriam na primeira vez que alguém mexesse
+ * no mínimo de caracteres.
  */
 export async function changePassword(
   _prev: ActionState,
@@ -29,7 +27,7 @@ export async function changePassword(
 ): Promise<ActionState> {
   await requireSession()
 
-  const parsed = changePasswordSchema.safeParse({
+  const parsed = newPasswordSchema.safeParse({
     password: formData.get('password'),
     confirm: formData.get('confirm'),
   })

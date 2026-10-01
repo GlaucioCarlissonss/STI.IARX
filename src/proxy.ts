@@ -8,7 +8,16 @@ import { NextResponse, type NextRequest } from 'next/server'
  * exibição, não por sessão (ADR-006). Se exigíssemos login ali, o painel de
  * parede cairia na primeira expiração e ninguém perceberia por dias.
  */
-const PUBLIC_PREFIXES = ['/login', '/tv', '/api/health', '/auth']
+/*
+ * `/recuperar-senha` entra aqui porque quem esqueceu a senha, por definição, não
+ * tem sessão. `/auth` é o retorno do link do e-mail, que troca o código por
+ * sessão.
+ *
+ * `/nova-senha` NÃO entra: quem chega lá já passou por `/auth/confirmar` e tem a
+ * sessão de recuperação. Deixá-la pública mostraria um formulário de troca de
+ * senha a qualquer visitante — que não trocaria nada, mas convidaria a tentar.
+ */
+const PUBLIC_PREFIXES = ['/login', '/recuperar-senha', '/tv', '/api/health', '/auth']
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })
@@ -48,7 +57,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (user && pathname === '/login') {
+  if (user && (pathname === '/login' || pathname === '/recuperar-senha')) {
     const url = request.nextUrl.clone()
     url.pathname = '/painel'
     url.search = ''

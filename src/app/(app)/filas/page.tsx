@@ -5,7 +5,7 @@ import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireScreen, allowed } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
-import type { EnrichedTicket, QueueRule } from '@/lib/types'
+import type { EnrichedTicket, Queue, QueueRule } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
 import {
@@ -15,6 +15,7 @@ import {
   type PriorityOption,
   type QueueOption,
 } from './rule-forms'
+import { EditQueueForm, NewQueueForm } from './queue-forms'
 
 /**
  * Origens aceitas na condição de roteamento.
@@ -30,7 +31,12 @@ export const metadata: Metadata = { title: 'Filas' }
 
 export default async function FilasPage() {
   await requireScreen('helpdesk.filas.ver')
-  const podeConfigurar = await allowed('helpdesk.filas.configurar_regras')
+  const [podeConfigurar, podeCriarFila, podeEditarFila, podeInativarFila] = await Promise.all([
+    allowed('helpdesk.filas.configurar_regras'),
+    allowed('helpdesk.filas.criar'),
+    allowed('helpdesk.filas.editar'),
+    allowed('helpdesk.filas.inativar'),
+  ])
   const supabase = await createClient()
 
   const [
@@ -39,11 +45,15 @@ export default async function FilasPage() {
   ] = await Promise.all([
     supabase
       .from('queues')
-      .select('id, name, slug, description, is_system_default')
+      .select(
+        'id, name, slug, description, is_system_default, is_active, weight_criticality, weight_deadline, weight_age',
+      )
       .is('deleted_at', null)
-      .eq('is_active', true)
+      /* Inativas continuam na lista, marcadas: some-las esconderia justamente a
+         fila que alguém precisa reativar, e os tickets que ficaram nela. */
       .order('is_system_default', { ascending: false })
-      .order('name'),
+      .order('name')
+      .returns<Queue[]>(),
     // Uma consulta só, agregada em memória: são poucas filas, e assim evitamos
     // N+1 (uma contagem por fila) que o dashboard pagaria a cada refresh.
     supabase
@@ -76,7 +86,9 @@ export default async function FilasPage() {
 
   const tickets = openTickets ?? []
   const listaRegras = rules ?? []
-  const filas: QueueOption[] = (queues ?? []).map((q) => ({ id: q.id, name: q.name }))
+  const listaFilas = queues ?? []
+  const filas: QueueOption[] = listaFilas.map((q) => ({ id: q.id, name: q.name }))
+  const abrePainelFila = podeEditarFila || podeInativarFila
   const lookups = {
     queues: filas,
     categories: categories ?? [],
@@ -113,7 +125,7 @@ export default async function FilasPage() {
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {(queues ?? []).map((q) => {
+        {listaFilas.map((q) => {
           const inQueue = tickets.filter((t) => t.queue_slug === q.slug)
           const breached = inQueue.filter((t) => t.resolution_state === 'breached').length
           const atRisk = inQueue.filter((t) =>
@@ -135,7 +147,10 @@ export default async function FilasPage() {
                     <p className="mt-0.5 text-xs text-[var(--color-ink-3)]">{q.description}</p>
                   )}
                 </div>
-                {q.is_system_default && <Badge tone="info">Padrão</Badge>}
+                <span className="flex flex-none gap-1.5">
+                  {q.is_system_default && <Badge tone="info">Padrão</Badge>}
+                  {!q.is_active && <Badge>Inativa</Badge>}
+                </span>
               </div>
 
               <p className="mt-4 text-3xl font-bold tabular-nums text-[var(--color-ink)]">
@@ -151,10 +166,33 @@ export default async function FilasPage() {
                 {critical > 0 && <Badge tone="crit">{critical} crítico(s)</Badge>}
                 {breached === 0 && atRisk === 0 && <Badge tone="ok">Prazos sob controle</Badge>}
               </div>
+
+              {/* Os pesos ficam à vista: é a única coisa que distingue duas filas
+                  com a mesma lista de tickets, e até aqui só existiam no banco. */}
+              <p className="mt-3 text-xs text-[var(--color-ink-3)]">
+                Score: criticidade {q.weight_criticality} · prazo {q.weight_deadline} · espera{' '}
+                {q.weight_age}
+              </p>
+
+              {abrePainelFila && (
+                <div className="mt-3">
+                  <EditPanel title={`Editar ${q.name}`}>
+                    <EditQueueForm queue={q} podeInativar={podeInativarFila} />
+                  </EditPanel>
+                </div>
+              )}
             </Card>
           )
         })}
       </div>
+
+      {podeCriarFila && (
+        <div className="mt-6 max-w-2xl">
+          <Card title="Nova fila">
+            <NewQueueForm />
+          </Card>
+        </div>
+      )}
 
       <section className="mt-8">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">

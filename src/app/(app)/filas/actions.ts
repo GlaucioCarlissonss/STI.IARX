@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
-import { queueRuleSchema, recordId } from '@/lib/schemas/cadastros'
+import { queueRuleSchema, queueSchema, recordId } from '@/lib/schemas/cadastros'
 
 /**
  * Regras de roteamento automático.
@@ -107,4 +107,102 @@ export async function setQueueRuleActive(
 
   revalidatePath('/filas')
   return { success: isActive ? 'Regra reativada.' : 'Regra desativada.' }
+}
+
+/* --- As filas em si ------------------------------------------------------- */
+
+/**
+ * A fila padrão do sistema é intocável, e isso é decidido no BANCO.
+ *
+ * `trg_protect_default_queue` (0004) recusa renomear, trocar o identificador,
+ * desativar ou remover a fila padrão, "para que nenhuma rota administrativa
+ * consiga burlar". As ações abaixo não repetem essa regra — elas traduzem o erro
+ * que a trigger levanta. Reimplementar a checagem aqui criaria uma segunda
+ * verdade, e seria a daqui que ficaria para trás.
+ */
+function erroDeFila(error: { code?: string; message: string }): string {
+  if (error.code === '23505') return 'Já existe uma fila com este identificador.'
+  // `restrict_violation` é o código que a trigger usa para as quatro proteções.
+  if (error.code === '2BP01' || /fila padrão/i.test(error.message)) return error.message
+  return error.message
+}
+
+export async function createQueue(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const { profile } = await requireSession()
+  const gate = await requirePermission('helpdesk.filas.criar')
+  if ('error' in gate) return gate
+  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+
+  const parsed = queueSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('queues')
+    // `is_system_default` NÃO vem do formulário: já existe um índice parcial
+    // único garantindo uma padrão por tenant, e deixar a tela escolher quem é a
+    // padrão seria oferecer um botão que o banco recusa.
+    .insert({ ...parsed.data, tenant_id: profile.tenant_id })
+
+  if (error) return { error: erroDeFila(error) }
+
+  revalidatePath('/filas')
+  return { success: 'Fila criada.' }
+}
+
+export async function updateQueue(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const { profile } = await requireSession()
+  const gate = await requirePermission('helpdesk.filas.editar')
+  if ('error' in gate) return gate
+  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+
+  const id = recordId.safeParse(formData.get('id'))
+  if (!id.success) return { error: 'Registro inválido.' }
+
+  const parsed = queueSchema.safeParse(Object.fromEntries(formData))
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
+
+  const supabase = await createClient()
+  const { data: updated, error } = await supabase
+    .from('queues')
+    .update(parsed.data)
+    .eq('id', id.data)
+    .select('id')
+
+  if (error) return { error: erroDeFila(error) }
+  if (!updated?.length) return { error: NOT_AFFECTED }
+
+  revalidatePath('/filas')
+  return { success: 'Fila atualizada.' }
+}
+
+export async function setQueueActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const { profile } = await requireSession()
+  const gate = await requirePermission('helpdesk.filas.inativar')
+  if ('error' in gate) return gate
+  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+
+  const parsed = z
+    .object({ id: recordId, is_active: z.enum(['true', 'false']) })
+    .safeParse({ id: formData.get('id'), is_active: formData.get('is_active') })
+  if (!parsed.success) return { error: 'Situação inválida.' }
+
+  const isActive = parsed.data.is_active === 'true'
+
+  const supabase = await createClient()
+  const { data: updated, error } = await supabase
+    .from('queues')
+    .update({ is_active: isActive })
+    .eq('id', parsed.data.id)
+    .select('id')
+
+  if (error) return { error: erroDeFila(error) }
+  if (!updated?.length) return { error: NOT_AFFECTED }
+
+  revalidatePath('/filas')
+  return {
+    success: isActive
+      ? 'Fila reativada.'
+      : 'Fila inativada. Os tickets que já estão nela continuam onde estão.',
+  }
 }

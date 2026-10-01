@@ -94,6 +94,33 @@ export const assetSchema = z.object({
   notes: emptyToNull,
 })
 
+/* --- Fila ---------------------------------------------------------------- */
+
+/**
+ * `slug` vira URL (`/filas/<slug>`) e é único por tenant.
+ *
+ * Validar o formato aqui não é capricho: um slug com espaço ou acento sairia
+ * codificado na barra de endereço e o link que alguém copiou para o colega
+ * chegaria quebrado. A unicidade continua sendo do banco (`uq_queue_slug`) — o
+ * que o formulário faz é traduzir o 23505 para português.
+ */
+export const queueSchema = z.object({
+  name: z.string().trim().min(2, 'Informe o nome da fila.'),
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9-]+$/, 'Use apenas letras minúsculas, números e hífen.')
+    .min(2, 'Informe o identificador da fila.'),
+  description: emptyToNull,
+  /* Os três pesos do score (RF-FIL-03). Não exigimos soma 100: a fórmula é uma
+     combinação linear, então mudar a escala não muda a ORDEM da fila — e cobrar
+     uma soma exata só criaria um erro de validação que não protege nada. */
+  weight_criticality: intInRange(0, 100),
+  weight_deadline: intInRange(0, 100),
+  weight_age: intInRange(0, 100),
+})
+
 /* --- Regra de roteamento de fila ---------------------------------------- */
 
 /**

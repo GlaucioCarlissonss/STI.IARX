@@ -13,6 +13,8 @@ import {
   telecomLineSchema,
   branchAreaSchema,
   assetCustodySchema,
+  queueSchema,
+  queueRuleSchema,
 } from './cadastros'
 
 /**
@@ -399,5 +401,84 @@ describe('assetCustodySchema', () => {
 
   it('exige o ativo', () => {
     expect(assetCustodySchema.safeParse({ ...base, asset_id: 'x' }).success).toBe(false)
+  })
+})
+
+describe('queueSchema', () => {
+  const base = {
+    name: 'Infraestrutura',
+    slug: 'infra',
+    description: '',
+    weight_criticality: '70',
+    weight_deadline: '25',
+    weight_age: '5',
+  }
+
+  it('aceita uma fila completa', () => {
+    const parsed = queueSchema.parse(base)
+    expect(parsed.slug).toBe('infra')
+    expect(parsed.weight_criticality).toBe(70)
+    expect(parsed.description).toBeNull()
+  })
+
+  /*
+   * O slug vira endereço de tela (`/filas/<slug>`). Com espaço ou acento ele
+   * sairia percent-encoded na barra de endereço, e o link que alguém copiou para
+   * o colega chegaria quebrado — por isso o formato é validado antes do banco.
+   */
+  it('recusa identificador com espaço ou acento', () => {
+    expect(queueSchema.safeParse({ ...base, slug: 'infra geral' }).success).toBe(false)
+    expect(queueSchema.safeParse({ ...base, slug: 'infraestrutura-técnica' }).success).toBe(false)
+  })
+
+  it('normaliza o identificador para minúsculas', () => {
+    expect(queueSchema.parse({ ...base, slug: 'INFRA' }).slug).toBe('infra')
+  })
+
+  /*
+   * NÃO exigimos soma 100: o score é uma combinação linear, então mudar a escala
+   * não muda a ordem da fila. Cobrar soma exata criaria um erro de validação que
+   * não protege nada.
+   */
+  it('aceita pesos que não somam 100, e recusa peso fora de 0–100', () => {
+    expect(queueSchema.safeParse({ ...base, weight_criticality: '10', weight_deadline: '10', weight_age: '10' }).success).toBe(true)
+    expect(queueSchema.safeParse({ ...base, weight_criticality: '101' }).success).toBe(false)
+  })
+})
+
+describe('queueRuleSchema', () => {
+  const base = {
+    queue_id: UUID,
+    name: 'Telefonia por categoria',
+    sort_order: '10',
+    category_id: UUID,
+    priority_key: '',
+    branch_id: '',
+    source_system: '',
+  }
+
+  /*
+   * Só as chaves PREENCHIDAS entram em `conditions`. `{"branch_id": null}` não
+   * seria "qualquer filial" para `app.fn_route_ticket`: a chave existe, então
+   * ela restringe, e nenhum ticket casaria. Chave ausente é o que significa
+   * "não restringe".
+   */
+  it('monta conditions só com o que foi preenchido', () => {
+    const parsed = queueRuleSchema.parse(base)
+    expect(parsed.conditions).toEqual({ category_id: UUID })
+    expect(Object.keys(parsed.conditions)).toHaveLength(1)
+  })
+
+  it('aceita várias condições juntas — a semântica é AND', () => {
+    const parsed = queueRuleSchema.parse({ ...base, priority_key: 'critical' })
+    expect(parsed.conditions).toEqual({ category_id: UUID, priority_key: 'critical' })
+  })
+
+  /* Regra sem condição seria ignorada pelo banco (condição vazia não casa).
+     Aceitá-la aqui deixaria alguém cadastrar uma regra que nunca roda. */
+  it('recusa regra sem condição nenhuma', () => {
+    const r = queueRuleSchema.safeParse({ ...base, category_id: '' })
+    expect(r.success).toBe(false)
+    if (!r.success) expect(r.error.issues[0]?.message).toMatch(/ao menos uma condição/i)
   })
 })

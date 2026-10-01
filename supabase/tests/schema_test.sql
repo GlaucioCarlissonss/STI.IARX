@@ -1176,8 +1176,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 148,
-    'catálogo de permissões tem as 148 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 151,
+    'catálogo de permissões tem as 151 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1403,7 +1403,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 148,
+  perform app.assert((select count(*) from public.permission_catalog) = 151,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -3016,6 +3016,146 @@ begin
     'as regras do tenant 1 não alcançam o tenant 2');
 end
 $$;
+
+-- =============================================================================
+\echo '=== 31. Cadastro de fila e painel de telefonia (0025) ==='
+-- =============================================================================
+reset role;
+
+-- A fila padrão é protegida no BANCO desde a 0004, e é por isso que a tela não
+-- repete a regra. Estas asserções são o que autoriza a tela a confiar nela — as
+-- quatro proteções nunca tinham sido exercidas por teste.
+do $$
+declare v_padrao uuid;
+begin
+  select id into v_padrao from public.queues
+   where tenant_id = 'a0000000-0000-4000-8000-000000000001' and is_system_default;
+
+  begin
+    update public.queues set name = 'Outro nome' where id = v_padrao;
+    perform app.assert(false, 'não deveria renomear a fila padrão');
+  exception when others then
+    perform app.assert(true, 'a fila padrão não pode ser renomeada');
+  end;
+
+  begin
+    update public.queues set slug = 'outro' where id = v_padrao;
+    perform app.assert(false, 'não deveria trocar o identificador da fila padrão');
+  exception when others then
+    perform app.assert(true, 'o identificador da fila padrão não pode mudar');
+  end;
+
+  begin
+    update public.queues set is_active = false where id = v_padrao;
+    perform app.assert(false, 'não deveria desativar a fila padrão');
+  exception when others then
+    perform app.assert(true, 'a fila padrão não pode ser desativada');
+  end;
+
+  begin
+    delete from public.queues where id = v_padrao;
+    perform app.assert(false, 'não deveria remover a fila padrão');
+  exception when others then
+    perform app.assert(true, 'a fila padrão não pode ser removida');
+  end;
+
+  -- Uma padrão por tenant: o índice parcial único é o que impede duas.
+  begin
+    insert into public.queues (tenant_id, name, slug, is_system_default)
+    values ('a0000000-0000-4000-8000-000000000001', 'Segunda padrão', 'segunda', true);
+    perform app.assert(false, 'não deveria aceitar uma segunda fila padrão');
+  exception when unique_violation then
+    perform app.assert(true, 'só existe UMA fila padrão por tenant');
+  end;
+end
+$$;
+
+-- Fila comum muda e inativa normalmente — a proteção é só da padrão.
+do $$
+declare v_id uuid;
+begin
+  insert into public.queues (tenant_id, name, slug, description,
+                             weight_criticality, weight_deadline, weight_age)
+  values ('a0000000-0000-4000-8000-000000000001', 'Fila de teste', 'teste-0025',
+          'Criada pelo teste de schema.', 40, 40, 20)
+  returning id into v_id;
+
+  update public.queues set is_active = false, name = 'Fila de teste renomeada' where id = v_id;
+  perform app.assert(
+    (select not is_active and name = 'Fila de teste renomeada' from public.queues where id = v_id),
+    'fila comum é renomeada e inativada sem obstáculo');
+
+  -- Identificador é único por tenant: é ele que vira endereço de tela.
+  begin
+    insert into public.queues (tenant_id, name, slug)
+    values ('a0000000-0000-4000-8000-000000000001', 'Outra', 'teste-0025');
+    perform app.assert(false, 'não deveria aceitar identificador repetido');
+  exception when unique_violation then
+    perform app.assert(true, 'identificador de fila é único por tenant');
+  end;
+
+  delete from public.queues where id = v_id;
+end
+$$;
+
+-- `vw_telecom_dashboard` existia desde a 0013 e NINGUÉM a consultava. Agora ela
+-- é a fonte da tela de telefonia — e os dois números que só ela calcula
+-- (linha sem responsável, linha livre de fidelidade) passam a valer alguma coisa.
+do $$
+declare
+  v_sem_dono bigint;
+  v_livres   bigint;
+  v_total    numeric;
+begin
+  select coalesce(sum(without_user), 0), coalesce(sum(free_to_cancel), 0),
+         coalesce(sum(monthly_total), 0)
+    into v_sem_dono, v_livres, v_total
+    from public.vw_telecom_dashboard
+   where tenant_id = 'a0000000-0000-4000-8000-000000000001';
+
+  perform app.assert(
+    v_sem_dono = (select count(*) from public.telecom_lines
+                   where tenant_id = 'a0000000-0000-4000-8000-000000000001'
+                     and assigned_user_id is null and deleted_at is null),
+    'o painel conta como "sem responsável" exatamente as linhas sem responsável');
+
+  perform app.assert(
+    v_livres = (select count(*) from public.telecom_lines
+                 where tenant_id = 'a0000000-0000-4000-8000-000000000001'
+                   and deleted_at is null
+                   and (loyalty_until is null or loyalty_until < current_date)),
+    'e como "livre de fidelidade" as que não têm fidelidade vigente');
+
+  perform app.assert(
+    v_total = (select coalesce(sum(monthly_cost), 0) from public.telecom_lines
+                where tenant_id = 'a0000000-0000-4000-8000-000000000001'
+                  and deleted_at is null),
+    'o custo somado do painel bate com a soma das linhas');
+end
+$$;
+
+-- As chaves novas e o teto de papel, de novo — é a verificação que a 0022
+-- ensinou a não pular.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('helpdesk.filas.criar'),
+    'Gestor de TI cria fila');
+  perform app.assert(app.has_permission('helpdesk.filas.editar'),
+    'e edita os pesos do score');
+end
+$$;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(not app.has_permission('helpdesk.filas.criar'),
+    'Operador de TI NÃO cria fila — estrutura de atendimento é decisão de gestão');
+  perform app.assert(app.has_permission('helpdesk.filas.ver'),
+    'mas continua vendo as filas que atende');
+end
+$$;
+reset role;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

@@ -24,7 +24,9 @@ export const getQueues = cache(async (): Promise<Queue[]> => {
   const supabase = await createClient()
   const { data } = await supabase
     .from('queues')
-    .select('id, name, slug, description, is_system_default, is_active')
+    .select(
+      'id, name, slug, description, is_system_default, is_active, weight_criticality, weight_deadline, weight_age',
+    )
     .is('deleted_at', null)
     .eq('is_active', true)
     .order('is_system_default', { ascending: false })

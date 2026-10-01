@@ -150,7 +150,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 149 testes: mapeamento, coordenadas, geolocalização, cadastros e herança de permissão
-npm run db:validate   # migrações + seed + 351 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 365 asserções em PostgreSQL real
 ```
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
@@ -213,7 +213,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado nesta entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 203 testes unitários e 351 asserções de banco passando — incluindo
+apontamentos, 210 testes unitários e 365 asserções de banco passando — incluindo
 a aritmética de horário útil conferida contra 8 cenários (almoço, fim de semana,
 feriado, fora de expediente).
 
@@ -224,22 +224,17 @@ feriado, fora de expediente).
   contra PostgreSQL local — mas o Storage é um serviço separado, e serviço separado
   só se prova usando. Depende dos três passos de
   [docs/09](docs/09-conectar-no-supabase.md).
-- Dashboard de telefonia (`vw_telecom_dashboard`, criada na `0013` e ainda não
-  consultada por nenhuma tela): a página já mostra custo por filial e operadora,
-  faltam os filtros e a leitura da view própria.
-  Saíram desta lista, com tela e permissão próprias: **links de internet**
-  (`/conectividade/links`, migração `0022` — falta só a Edge Function do Zabbix,
-  e até ela a queda é registrada à mão pelo mesmo evento que o webhook vai
-  gravar), **áreas da filial** e **custódia de equipamento** (migração `0023`).
-- Recuperação de senha ("esqueci minha senha"): existe troca de senha logado
-  (`/conta`) e criação de usuário com senha temporária (`/usuarios`), mas não
-  um fluxo de redefinição para quem está deslogado.
+- Edge Function do Zabbix para os **links de internet**: a tela existe
+  (`/conectividade/links`, migração `0022`) e a queda é registrada à mão pelo
+  mesmo evento que o webhook vai gravar — falta só o webhook.
+- Gestão dos **membros de fila** (`queue_members`) pela UI. As filas em si já são
+  criadas e editadas em `/filas` (migração `0025`), com os pesos do score à vista.
+- Validação do fluxo de **recuperação de senha** contra o Supabase real. As telas
+  existem (`/recuperar-senha`, `/auth/confirmar`, `/nova-senha`) e o código está
+  conferido, mas quem envia o e-mail é o Supabase Auth: só se prova usando.
+  Depende de `NEXT_PUBLIC_SITE_URL` e da lista de Redirect URLs — ver
+  [docs/09](docs/09-conectar-no-supabase.md).
 - Importação em massa de ativos por CSV (RF-INV-04, prioridade *Should*).
-- Criação e edição das próprias **filas** (`queues`) pela UI — hoje são semeadas,
-  e a fila padrão é protegida por trigger. As **regras de roteamento** saíram
-  desta lista na migração `0024`: elas agora são avaliadas de verdade (até então
-  `queue_rules` era lida por ninguém — ver a nota abaixo) e configuráveis em
-  `/filas`.
 - Fechamento automático de tickets resolvidos: a preferência
   (`tenants.auto_close_after_days`) existe, falta o job agendado.
 - Envio de e-mail em alertas de proximidade de breach — os estados são

@@ -51,6 +51,20 @@ ambiente** — o lugar onde se cadastram variáveis — e **não na conversa**.
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://supabase.iartech.cloud` | sim |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | a chave marcada **anon / public** | sim, é feita para isso |
 | `SUPABASE_SERVICE_ROLE_KEY` | a chave marcada **service_role / secret** | **NUNCA** |
+| `NEXT_PUBLIC_SITE_URL` | o endereço público do sistema, ex. `https://sti.iartech.cloud` | sim |
+
+### Por que o `NEXT_PUBLIC_SITE_URL`
+
+É para onde o link de **recuperação de senha** leva a pessoa. Ele é uma variável,
+e não algo que o sistema descobre sozinho, por um motivo de segurança: se o
+endereço fosse lido do cabeçalho da requisição, quem controlasse esse cabeçalho
+controlaria o destino do link — e o e-mail legítimo levaria a pessoa para o site
+de quem atacou. Sem a variável configurada, a recuperação de senha recusa em vez
+de adivinhar.
+
+Além disso, no Studio: **Authentication → URL Configuration**, acrescente
+`https://seu-endereco/auth/confirmar` à lista de **Redirect URLs**. É a trava
+final — o Supabase só envia o link se o destino estiver nessa lista.
 
 ### As duas regras que não podem ser quebradas
 

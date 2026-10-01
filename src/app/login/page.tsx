@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { LoginForm } from './login-form'
 
 export const metadata: Metadata = { title: 'Entrar' }
@@ -26,6 +27,15 @@ export default async function LoginPage({
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
           <LoginForm proxima={proxima} />
         </div>
+
+        <p className="mt-4 text-center text-sm">
+          <Link
+            href="/recuperar-senha"
+            className="font-medium text-[var(--color-brand-ink)] hover:underline"
+          >
+            Esqueci minha senha
+          </Link>
+        </p>
 
         <p className="mt-6 text-center text-xs text-[var(--color-ink-3)]">
           Painéis de TV não usam esta tela — eles são acessados por token de exibição.
