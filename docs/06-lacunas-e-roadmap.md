@@ -37,7 +37,7 @@ a **interface** — e, nos casos marcados, a decisão do operador.
 
 | Módulo | Banco | Interface |
 |---|---|---|
-| M1 — SLA e Filas | ✅ `name`, `deleted_at`, `tiebreaker`, `fn_sla_impact_preview`, `fn_bulk_transfer_queue` | ✅ CRUD de categorias, prioridades, contratos e definições em `/sla` |
+| M1 — SLA e Filas | ✅ `name`, `deleted_at`, `tiebreaker`, `fn_sla_impact_preview`, `fn_bulk_transfer_queue`, **`fn_route_ticket` (0024)** | ✅ CRUD de categorias, prioridades, contratos e definições em `/sla`; regras de roteamento em `/filas` · ⬜ CRUD das próprias filas (hoje semeadas) |
 | M2 — Área da Filial | ✅ `branch_areas`, FKs, trigger de coerência, `fn_seed_branch_areas` | ✅ painel de áreas em `/clientes`, chaves `clientes.areas.*` e botão de áreas padrão (0023) |
 | M3 — Anexos de Inventário | ✅ `asset_attachments`, foto principal por índice | ✅ upload e remoção pelo bucket privado `anexos` (0019) |
 | M4 — Custódia | ✅ campos `previous_*`, `reason`, trigger reescrita, view `asset_custody_history` | ✅ timeline e transferência com motivo em `/inventario` (0023) · ⬜ exportação (LG-11) |
@@ -49,7 +49,7 @@ a **interface** — e, nos casos marcados, a decisão do operador.
 | M10 — Edição de Integrações | ✅ `integration_mapping_versions` + trigger, campos de rotação | ⬜ telas de configuração e dry run |
 | M11 — Mapas | ✅ `latitude`/`longitude`, precisão do geocode, 5 views com semáforo | ✅ Google Maps em `/mapas`, geocodificação e coordenada colada do Maps |
 
-**Dois achados que só apareceram ao implementar**, ambos corrigidos:
+**Três achados que só apareceram ao implementar**, todos corrigidos:
 
 1. **Ordenação da timeline de custódia.** `started_at` usava `now()`, que é o horário da
    *transação* — duas mudanças de custódia no mesmo commit recebiam timestamp idêntico e a
@@ -60,6 +60,21 @@ a **interface** — e, nos casos marcados, a decisão do operador.
    ainda não tinha (`NULL → valor`) disparava um evento `relocation`. Na migração dos
    ativos legados (LG-02) isso criaria um evento espúrio para **cada ativo da base**. O
    trigger passou a exigir que a área anterior fosse não-nula.
+3. **O roteamento automático nunca existiu.** `queue_rules` estava na 0004 com RLS,
+   auditoria, índice de avaliação e duas regras no seed, e o comentário da migração dizia
+   que "a avaliação é feita por `fn_route_ticket`". Essa função **nunca foi escrita**: todo
+   ticket sem fila caía na fila padrão e as regras não eram lidas por ninguém. O roadmap
+   registrava isso como "falta a edição pela UI", o que subestimava o problema — não
+   faltava o editor, faltava o motor. A 0024 escreveu os dois.
+
+   Dentro dela, dois detalhes que só aparecem ao escrever o motor:
+   - As regras do seed apontam para categorias **pai** e os tickets usam categorias
+     **filhas**. Com casamento exato nenhuma das duas dispararia, e o seed demonstraria um
+     recurso quebrado. A função casa categoria própria **ou** filha, como
+     `fn_resolve_sla` já fazia.
+   - A trigger da 0005 resolvia a fila **antes** de derivar a filial do solicitante, então
+     uma regra por filial enxergaria `NULL` e nunca casaria. A ordem foi corrigida:
+     numerar, derivar filial, derivar cliente, rotear, e só então cair no padrão.
 
 **Nota sobre "Endpoints de API".** A aplicação não expõe REST próprio: leitura acontece
 em Server Components e escrita em Server Actions ([ADR-011](03-arquitetura.md#adr-011)),

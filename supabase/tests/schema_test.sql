@@ -1176,8 +1176,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 147,
-    'catálogo de permissões tem as 147 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 148,
+    'catálogo de permissões tem as 148 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1403,7 +1403,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 147,
+  perform app.assert((select count(*) from public.permission_catalog) = 148,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -2816,6 +2816,206 @@ begin
 end
 $$;
 reset role;
+
+-- =============================================================================
+\echo '=== 30. Roteamento automático de fila (0024) ==='
+-- =============================================================================
+-- Até a 0024 `queue_rules` existia, estava semeada, auditada e com índice de
+-- avaliação — e NINGUÉM a lia: `fn_route_ticket`, prometida no comentário da
+-- 0004, nunca tinha sido escrita. Estas asserções são o que separa "a tabela
+-- existe" de "o roteamento funciona".
+reset role;
+
+-- As duas regras do seed apontam para categorias PAI e os tickets usam categorias
+-- FILHAS. Com casamento exato, nenhuma delas dispararia nunca — o seed
+-- demonstraria um recurso que não funciona.
+do $$
+declare
+  v_t     uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_fila  uuid;
+begin
+  -- Linha móvel é filha de Telefonia; a regra aponta para Telefonia.
+  select app.fn_route_ticket(v_t, 'd0000000-0000-4000-8000-000000000014',
+                             'c0000000-0000-4000-8000-000000000003', null, null)
+    into v_fila;
+  perform app.assert(v_fila = 'e0000000-0000-4000-8000-000000000003',
+    'categoria FILHA casa com a regra da categoria pai');
+
+  -- E a própria categoria da regra continua casando.
+  select app.fn_route_ticket(v_t, 'd0000000-0000-4000-8000-000000000001',
+                             'c0000000-0000-4000-8000-000000000003', null, null)
+    into v_fila;
+  perform app.assert(v_fila = 'e0000000-0000-4000-8000-000000000002',
+    'a própria categoria da regra também casa');
+
+  -- Categoria sem regra: ninguém casa, e a trigger é quem decide o padrão.
+  select app.fn_route_ticket(v_t, 'd0000000-0000-4000-8000-000000000013',
+                             'c0000000-0000-4000-8000-000000000003', null, null)
+    into v_fila;
+  perform app.assert(v_fila is null,
+    'categoria sem regra devolve NULL — a função não inventa destino');
+end
+$$;
+
+-- O caminho de verdade: ticket criado sem fila. É esta asserção que teria
+-- falhado antes da 0024.
+do $$
+declare v_qid uuid;
+begin
+  insert into public.tickets (tenant_id, title, priority_id, category_id, queue_id, requester_id)
+  values ('a0000000-0000-4000-8000-000000000001', 'Celular sem sinal de dados',
+          'c0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000014',
+          null, '22220000-0000-4000-8000-000000000005')
+  returning queue_id into v_qid;
+  perform app.assert(v_qid = 'e0000000-0000-4000-8000-000000000003',
+    'ticket sem fila é roteado pela regra, e não mais jogado na fila padrão');
+
+  -- Fila escolhida na tela manda: quem escolheu sabe mais que a regra genérica.
+  insert into public.tickets (tenant_id, title, priority_id, category_id, queue_id, requester_id)
+  values ('a0000000-0000-4000-8000-000000000001', 'Celular, mas eu quero na Geral',
+          'c0000000-0000-4000-8000-000000000003', 'd0000000-0000-4000-8000-000000000014',
+          'e0000000-0000-4000-8000-000000000001', '22220000-0000-4000-8000-000000000005')
+  returning queue_id into v_qid;
+  perform app.assert(v_qid = 'e0000000-0000-4000-8000-000000000001',
+    'fila escolhida explicitamente NÃO é sobrescrita pela regra');
+end
+$$;
+
+-- Falhar fechado. Uma regra com chave errada de digitação viraria, na prática,
+-- `{}` se as chaves desconhecidas fossem ignoradas — e mandaria TODO ticket para
+-- aquela fila. Esta é a asserção que impede o erro de digitação de virar desastre.
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_id  uuid;
+  v_fila uuid;
+begin
+  insert into public.queue_rules (tenant_id, queue_id, name, conditions, sort_order)
+  values (v_t, 'e0000000-0000-4000-8000-000000000002', 'Com erro de digitação',
+          '{"categoy_id":"d0000000-0000-4000-8000-000000000013"}'::jsonb, 1)
+  returning id into v_id;
+
+  select app.fn_route_ticket(v_t, 'd0000000-0000-4000-8000-000000000013',
+                             'c0000000-0000-4000-8000-000000000003', null, null)
+    into v_fila;
+  perform app.assert(v_fila is null,
+    'chave desconhecida faz a regra NÃO casar — erro de digitação não pega todo ticket');
+  delete from public.queue_rules where id = v_id;
+
+  -- Condição vazia é regra inacabada, não curinga.
+  insert into public.queue_rules (tenant_id, queue_id, name, conditions, sort_order)
+  values (v_t, 'e0000000-0000-4000-8000-000000000002', 'Sem condição', '{}'::jsonb, 1)
+  returning id into v_id;
+  select app.fn_route_ticket(v_t, 'd0000000-0000-4000-8000-000000000013',
+                             'c0000000-0000-4000-8000-000000000003', null, null)
+    into v_fila;
+  perform app.assert(v_fila is null,
+    'condição vazia não casa com tudo — quem quer curinga usa a fila padrão');
+  delete from public.queue_rules where id = v_id;
+end
+$$;
+
+-- AND entre as chaves, ordem por sort_order, e regra desativada fora da conta.
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_id   uuid;
+  v_id2  uuid;
+  v_fila uuid;
+begin
+  insert into public.queue_rules (tenant_id, queue_id, name, conditions, sort_order)
+  values (v_t, 'e0000000-0000-4000-8000-000000000002', 'ERP crítico',
+          '{"category_id":"d0000000-0000-4000-8000-000000000013","priority_key":"critical"}'::jsonb, 5)
+  returning id into v_id;
+
+  select app.fn_route_ticket(v_t, 'd0000000-0000-4000-8000-000000000013',
+                             'c0000000-0000-4000-8000-000000000001', null, null) into v_fila;
+  perform app.assert(v_fila = 'e0000000-0000-4000-8000-000000000002',
+    'as duas condições juntas casam');
+
+  select app.fn_route_ticket(v_t, 'd0000000-0000-4000-8000-000000000013',
+                             'c0000000-0000-4000-8000-000000000003', null, null) into v_fila;
+  perform app.assert(v_fila is null,
+    'uma das duas sozinha NÃO casa — a semântica é AND, não OR');
+
+  -- Regra mais específica com sort_order menor ganha da genérica.
+  insert into public.queue_rules (tenant_id, queue_id, name, conditions, sort_order)
+  values (v_t, 'e0000000-0000-4000-8000-000000000003', 'ERP em geral',
+          '{"category_id":"d0000000-0000-4000-8000-000000000013"}'::jsonb, 50)
+  returning id into v_id2;
+  select app.fn_route_ticket(v_t, 'd0000000-0000-4000-8000-000000000013',
+                             'c0000000-0000-4000-8000-000000000001', null, null) into v_fila;
+  perform app.assert(v_fila = 'e0000000-0000-4000-8000-000000000002',
+    'a regra de sort_order menor decide primeiro');
+
+  -- Desativar a primeira passa a vez para a seguinte.
+  update public.queue_rules set is_active = false where id = v_id;
+  select app.fn_route_ticket(v_t, 'd0000000-0000-4000-8000-000000000013',
+                             'c0000000-0000-4000-8000-000000000001', null, null) into v_fila;
+  perform app.assert(v_fila = 'e0000000-0000-4000-8000-000000000003',
+    'regra desativada sai da avaliação e a próxima assume');
+
+  delete from public.queue_rules where id in (v_id, v_id2);
+end
+$$;
+
+-- A ordem dentro da trigger. A versão da 0005 resolvia a fila ANTES de derivar a
+-- filial do solicitante: uma regra por filial enxergaria NULL e nunca casaria.
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_id   uuid;
+  v_qid  uuid;
+begin
+  insert into public.queue_rules (tenant_id, queue_id, name, conditions, sort_order)
+  values (v_t, 'e0000000-0000-4000-8000-000000000002', 'Tudo da Matriz SP',
+          '{"branch_id":"11110000-0000-4000-8000-000000000001"}'::jsonb, 1)
+  returning id into v_id;
+
+  -- O ticket NÃO informa filial: ela vem da filial primária do solicitante.
+  insert into public.tickets (tenant_id, title, priority_id, queue_id, requester_id)
+  values (v_t, 'Sem filial informada, mas o solicitante tem',
+          'c0000000-0000-4000-8000-000000000003', null, '22220000-0000-4000-8000-000000000005')
+  returning queue_id into v_qid;
+
+  perform app.assert(v_qid = 'e0000000-0000-4000-8000-000000000002',
+    'a regra por filial enxerga a filial DERIVADA do solicitante');
+
+  delete from public.queue_rules where id = v_id;
+end
+$$;
+
+-- A chave nova e o teto de papel. O Operador de TI recebe o módulo `helpdesk`
+-- inteiro pela regra do perfil; é o teto `gestor` da chave que o mantém fora.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('helpdesk.filas.configurar_regras'),
+    'Gestor de TI configura regra de roteamento');
+end
+$$;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(not app.has_permission('helpdesk.filas.configurar_regras'),
+    'Operador de TI NÃO configura — o teto da chave vence a regra do perfil');
+  perform app.assert(app.has_permission('helpdesk.filas.ver'),
+    'mas continua vendo as filas e as regras que explicam o destino do ticket');
+end
+$$;
+reset role;
+
+-- Isolamento: regra de um tenant não roteia ticket do outro.
+do $$
+begin
+  perform app.assert(
+    app.fn_route_ticket('a0000000-0000-4000-8000-000000000002',
+      'd0000000-0000-4000-8000-000000000014', 'c0000000-0000-4000-8000-000000000003',
+      null, null) is null,
+    'as regras do tenant 1 não alcançam o tenant 2');
+end
+$$;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

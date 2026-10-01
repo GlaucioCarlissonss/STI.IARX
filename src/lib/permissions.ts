@@ -119,6 +119,15 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('helpdesk', 'tickets', 'remover_anexo', 'Remover anexo', 'atendente'),
   scr('helpdesk', 'filas', 'Filas', 'visualizador'),
   act('helpdesk', 'filas', 'ver', 'Consultar filas', 'visualizador'),
+  /* Criar, editar e inativar regra de roteamento são a MESMA decisão —
+     "configurar para onde o ticket vai" —, e três caixas separadas seriam três
+     caixas marcadas juntas para sempre. LER a lista continua sob `.ver`: saber
+     por que o seu ticket caiu naquela fila é informação de trabalho.
+
+     O teto `gestor` é o que mantém o Operador de TI fora, apesar de a regra do
+     perfil dele conceder o módulo `helpdesk` inteiro — o papel efetivo dele é
+     `atendente`, e o teto da chave é maior. */
+  act('helpdesk', 'filas', 'configurar_regras', 'Configurar regras de roteamento', 'gestor'),
 
   /* --- SLA e filas (configuração) ---------------------------------------- */
   mod('sla', 'gestor'),

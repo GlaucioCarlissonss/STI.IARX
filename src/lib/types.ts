@@ -600,3 +600,28 @@ export interface CustodyEvent {
   performed_by_name: string | null
   changed_at: string
 }
+
+/* --- Roteamento de fila --------------------------------------------------- */
+
+/**
+ * As quatro chaves que `app.fn_route_ticket` reconhece (migração 0024).
+ *
+ * A lista é fechada nos dois lados: chave fora dela faz a regra NÃO casar no
+ * banco, e o formulário não oferece nenhuma outra. Um conjunto aberto
+ * transformaria erro de digitação em regra que pega todo ticket.
+ */
+export interface QueueRuleConditions {
+  category_id?: string
+  priority_key?: string
+  branch_id?: string
+  source_system?: string
+}
+
+export interface QueueRule {
+  id: string
+  queue_id: string
+  name: string
+  conditions: QueueRuleConditions
+  sort_order: number
+  is_active: boolean
+}

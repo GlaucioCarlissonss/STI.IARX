@@ -533,6 +533,16 @@
     warranty:'Garantia', amendment:'Adendo', loyalty_term:'Termo de fidelidade',
     cancellation:'Cancelamento', installation_report:'Laudo de instalação', other:'Outro' };
   const ME = 'Ana Souza';
+  /* Roteamento, aqui, é uma SIMPLIFICAÇÃO assumida — e é a única divergência
+     deliberada entre protótipo e aplicação.
+
+     Na aplicação o destino sai de `app.fn_route_ticket` (migração 0024), que lê
+     `queue_rules`: regras configuráveis na tela de Filas, com AND entre as
+     condições, categoria pai valendo para as filhas, ordem por `sort_order` e
+     chave desconhecida falhando fechado. Aqui ficam as duas regras equivalentes
+     às do seed, em código, porque reproduzir o motor inteiro no protótipo
+     acrescentaria 150 linhas sem mostrar nenhuma decisão nova — o que a tela de
+     Filas da aplicação demonstra, esta linha não precisa demonstrar de novo. */
   const routeQueue = c => c.startsWith('Telefonia') ? 'telefonia'
     : c.startsWith('Infraestrutura') ? 'infra' : 'geral';
 
@@ -564,6 +574,7 @@
     ['helpdesk.tickets.remover_anexo','helpdesk','tickets','remover_anexo','Remover anexo','atendente'],
     ['helpdesk.filas','helpdesk','filas',null,'Filas','visualizador'],
     ['helpdesk.filas.ver','helpdesk','filas','ver','Consultar filas','visualizador'],
+    ['helpdesk.filas.configurar_regras','helpdesk','filas','configurar_regras','Configurar regras de roteamento','gestor'],
     ['sla','sla',null,null,'SLA e filas','gestor'],
     ['sla.compliance','sla','compliance',null,'Compliance de SLA','gestor'],
     ['sla.compliance.ver','sla','compliance','ver','Ver compliance','gestor'],

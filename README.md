@@ -150,7 +150,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 149 testes: mapeamento, coordenadas, geolocalização, cadastros e herança de permissão
-npm run db:validate   # migrações + seed + 335 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 351 asserções em PostgreSQL real
 ```
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
@@ -213,7 +213,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado nesta entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 203 testes unitários e 335 asserções de banco passando — incluindo
+apontamentos, 203 testes unitários e 351 asserções de banco passando — incluindo
 a aritmética de horário útil conferida contra 8 cenários (almoço, fim de semana,
 feriado, fora de expediente).
 
@@ -235,7 +235,11 @@ feriado, fora de expediente).
   (`/conta`) e criação de usuário com senha temporária (`/usuarios`), mas não
   um fluxo de redefinição para quem está deslogado.
 - Importação em massa de ativos por CSV (RF-INV-04, prioridade *Should*).
-- Edição de regras de fila (`queue_rules`) pela UI — hoje cadastradas por SQL.
+- Criação e edição das próprias **filas** (`queues`) pela UI — hoje são semeadas,
+  e a fila padrão é protegida por trigger. As **regras de roteamento** saíram
+  desta lista na migração `0024`: elas agora são avaliadas de verdade (até então
+  `queue_rules` era lida por ninguém — ver a nota abaixo) e configuráveis em
+  `/filas`.
 - Fechamento automático de tickets resolvidos: a preferência
   (`tenants.auto_close_after_days`) existe, falta o job agendado.
 - Envio de e-mail em alertas de proximidade de breach — os estados são

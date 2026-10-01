@@ -94,6 +94,50 @@ export const assetSchema = z.object({
   notes: emptyToNull,
 })
 
+/* --- Regra de roteamento de fila ---------------------------------------- */
+
+/**
+ * As condições viram `jsonb` com SÓ as chaves preenchidas.
+ *
+ * O `.transform` monta o objeto em vez de gravar os quatro campos com `null`:
+ * `{"branch_id": null}` não é "qualquer filial" para
+ * `app.fn_route_ticket` — a chave existe, então ela restringe, e nenhum ticket
+ * casaria. Chave ausente é o que significa "não restringe".
+ *
+ * E o `.refine` final recusa a regra sem condição nenhuma: no banco ela seria
+ * ignorada (condição vazia não casa), então aceitá-la aqui seria deixar alguém
+ * cadastrar uma regra que nunca roda e não dizer nada.
+ */
+export const queueRuleSchema = z
+  .object({
+    queue_id: z.string().uuid('Selecione a fila de destino.'),
+    name: z.string().trim().min(3, 'Dê um nome à regra.'),
+    sort_order: intInRange(0, 32767),
+    is_active: z.enum(['true', 'false']).optional(),
+    category_id: optionalUuid,
+    priority_key: emptyToNull,
+    branch_id: optionalUuid,
+    source_system: emptyToNull,
+  })
+  .transform((v) => {
+    const conditions: Record<string, string> = {}
+    if (v.category_id) conditions.category_id = v.category_id
+    if (v.priority_key) conditions.priority_key = v.priority_key
+    if (v.branch_id) conditions.branch_id = v.branch_id
+    if (v.source_system) conditions.source_system = v.source_system
+    return {
+      queue_id: v.queue_id,
+      name: v.name,
+      sort_order: v.sort_order,
+      is_active: v.is_active === undefined ? true : v.is_active === 'true',
+      conditions,
+    }
+  })
+  .refine((v) => Object.keys(v.conditions).length > 0, {
+    message: 'Informe ao menos uma condição — regra sem condição não roteia nada.',
+    path: ['category_id'],
+  })
+
 /* --- Área da filial ----------------------------------------------------- */
 
 export const areaKindSchema = z.enum(['assistencial', 'administrativa', 'apoio', 'tecnica'])
