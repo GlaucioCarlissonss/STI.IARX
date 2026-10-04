@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requireScreen } from '@/lib/session'
 import { getPriorities, getQueues } from '@/lib/data/lookups'
+import { escopoDeCliente, porClienteOuGeral } from '@/lib/data/escopo'
 import { ticketStatusLabel } from '@/lib/i18n'
 import type { EnrichedTicket, TicketStatus } from '@/lib/types'
 import { TicketList } from '@/components/ticket-list'
@@ -28,13 +29,20 @@ export default async function TicketsPage({
   await requireScreen('helpdesk.tickets.ver')
 
   const supabase = await createClient()
-  const [queues, priorities] = await Promise.all([getQueues(), getPriorities()])
+  const [queues, priorities, escopo] = await Promise.all([
+    getQueues(),
+    getPriorities(),
+    escopoDeCliente(),
+  ])
 
-  let query = supabase
-    .from('vw_tickets_enriched')
-    .select('*')
-    .order('queue_score', { ascending: false })
-    .limit(200)
+  let query = porClienteOuGeral(
+    supabase
+      .from('vw_tickets_enriched')
+      .select('*')
+      .order('queue_score', { ascending: false })
+      .limit(200),
+    escopo,
+  )
 
   // "abertos" é o padrão: quem abre a tela quer trabalhar, não navegar histórico.
   if (!params.status || params.status === 'abertos') {

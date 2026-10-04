@@ -3,6 +3,7 @@ import Link from 'next/link'
 import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { agruparPor } from '@/lib/data/agrupar'
+import { escopoDeCliente, porCliente, porFilial, porFilialOuGeral } from '@/lib/data/escopo'
 import { requireScreen, allowed } from '@/lib/session'
 import { isPreciseEnough, type GeocodePrecision } from '@/lib/maps'
 import { Badge, PageHeader, StatTile } from '@/components/ui'
@@ -97,20 +98,31 @@ export default async function MapasPage({
 
   const domain = DOMAINS.find((d) => d.key === dominio) ?? DOMAINS[0]
   const supabase = await createClient()
+  const escopo = await escopoDeCliente()
 
   const [{ data: rows }, { data: areas }, { data: addresses }, { data: candidates }, { data: logs }] =
     await Promise.all([
-      supabase.from(domain.view).select('*').returns<MapRow[]>(),
-      supabase
-        .from('vw_map_area_breakdown')
-        .select('branch_id, area_name, assets_total, lines_active, links_active')
-        .returns<AreaRow[]>(),
-      supabase.from('vw_branch_addresses').select('*').order('branch_name').returns<AddressViewRow[]>(),
-      supabase
-        .from('geocode_candidates')
-        .select('id, branch_id, ordinal, latitude, longitude, formatted_address, precision')
-        .order('ordinal')
-        .returns<CandidateRow[]>(),
+      /* As quatro views de domínio trazem `branch_id`, e nas de ativo, linha e
+         ticket ele pode ser nulo — daí a variante que inclui registros sem
+         filial, pela mesma regra do resto do sistema. */
+      porFilialOuGeral(supabase.from(domain.view).select('*'), escopo).returns<MapRow[]>(),
+      porFilial(
+        supabase
+          .from('vw_map_area_breakdown')
+          .select('branch_id, area_name, assets_total, lines_active, links_active'),
+        escopo,
+      ).returns<AreaRow[]>(),
+      porCliente(
+        supabase.from('vw_branch_addresses').select('*').order('branch_name'),
+        escopo,
+      ).returns<AddressViewRow[]>(),
+      porFilial(
+        supabase
+          .from('geocode_candidates')
+          .select('id, branch_id, ordinal, latitude, longitude, formatted_address, precision')
+          .order('ordinal'),
+        escopo,
+      ).returns<CandidateRow[]>(),
       // Último bloco técnico por filial, um por vez via `distinct on` no banco
       // (vw_branch_last_geocode_log) — não "os N logs mais recentes do
       // tenant": com muitas filiais, o log de uma pouco geocodificada caía
@@ -118,10 +130,10 @@ export default async function MapasPage({
       // histórico existente, só mais antigo. `report_text` é o texto que o
       // operador leu na hora — não é recalculado, para o registro não mudar
       // com o código.
-      supabase
-        .from('vw_branch_last_geocode_log')
-        .select('branch_id, report_text')
-        .returns<LogRow[]>(),
+      porFilial(
+        supabase.from('vw_branch_last_geocode_log').select('branch_id, report_text'),
+        escopo,
+      ).returns<LogRow[]>(),
     ])
 
   const all = rows ?? []

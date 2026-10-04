@@ -25,6 +25,18 @@ export interface MapPoint {
   breakdown: { label: string; value: number }[]
 }
 
+/**
+ * Preenchimento do pino, por cor do semáforo.
+ *
+ * **Por que é hexadecimal literal e não `var(--color-marker-*)`:** o SVG abaixo
+ * vira uma `data:` URI, e um documento de data URI não herda as custom
+ * properties da página — o `var()` resolveria para nada e o pino sairia preto.
+ * É a única exceção da base, e ela é obrigatória, não preguiça.
+ *
+ * O preço disso é um valor que pode divergir da paleta sem ninguém notar, e o
+ * preço está pago: `map-marker.test.ts` lê `globals.css` e exige que estes três
+ * valores sejam exatamente `--color-marker-green/amber/red`.
+ */
 const MARKER_FILL: Record<MapPoint['state_color'], string> = {
   green: '#15803d',
   amber: '#a16207',
@@ -87,7 +99,9 @@ export function popupHtml(p: MapPoint): string {
     s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
   const precision = p.precision
-    ? `<div style="font-size:11px;color:${isPreciseEnough(p.precision) ? '#15803d' : '#a16207'}">
+    ? `<div style="font-size:11px;color:${
+        isPreciseEnough(p.precision) ? 'var(--color-ok-ink)' : 'var(--color-warn-ink)'
+      }">
          ${esc(PRECISION_LABEL[p.precision])}</div>`
     : ''
 
@@ -99,14 +113,18 @@ export function popupHtml(p: MapPoint): string {
                <span>${esc(b.label)}</span><strong>${b.value}</strong></div>`,
         )
         .join('')
-    : '<div style="color:#6b7482">Nada nesta filial para este domínio.</div>'
+    : '<div style="color:var(--color-ink-3)">Nada nesta filial para este domínio.</div>'
 
-  return `<div style="font:13px system-ui,sans-serif;min-width:210px;color:#14181f">
+  /* O popup é HTML comum, inserido no documento da página: aqui `var()` resolve,
+     e por isso ele usa os tokens em vez de repetir a paleta em texto. Era onde
+     moravam seis valores soltos, um deles (`#e5e7eb`) de uma escala que esta
+     aplicação nem adota. */
+  return `<div style="font:13px var(--font-sans);min-width:210px;color:var(--color-ink)">
     <strong style="font-size:13.5px">${esc(p.name)}</strong>
-    <div style="color:#6b7482;font-size:11.5px">${esc([p.city, p.state].filter(Boolean).join(' / '))}</div>
-    ${p.address ? `<div style="color:#6b7482;font-size:11px;margin-top:2px">${esc(p.address)}</div>` : ''}
+    <div style="color:var(--color-ink-3);font-size:11.5px">${esc([p.city, p.state].filter(Boolean).join(' / '))}</div>
+    ${p.address ? `<div style="color:var(--color-ink-3);font-size:11px;margin-top:2px">${esc(p.address)}</div>` : ''}
     ${precision}
-    <div style="margin-top:8px;border-top:1px solid #e5e7eb;padding-top:6px">${rows}</div>
+    <div style="margin-top:8px;border-top:1px solid var(--color-border);padding-top:6px">${rows}</div>
     <div style="margin-top:8px;display:flex;gap:10px;font-size:11.5px">
       <a href="${googleMapsUrl(p.lat, p.lng, p.name)}" target="_blank" rel="noopener">Ver no Maps</a>
       <a href="${googleDirectionsUrl(p.lat, p.lng)}" target="_blank" rel="noopener">Rota</a>

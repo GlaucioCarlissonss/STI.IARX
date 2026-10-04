@@ -207,6 +207,28 @@ Alguns CHECKs que carregam regra de negócio, e não só tipo:
 resolvido e não prova nada), `payables_rejected_has_reason` (rejeição exige motivo)
 e `receivables_received_has_evidence`.
 
+### Escopo por cliente e cor da empresa (0027)
+Duas colunas, e uma distinção que precisa vir antes delas.
+
+| Coluna | Papel |
+|---|---|
+| `profiles.focused_client_id` | Empresa-cliente em foco, por pessoa. Nulo = todas. FK **composta** `(focused_client_id, tenant_id)`, pelo mesmo padrão do ADR-001: é o que impede apontar para o cliente de outro tenant. `on delete set null` — apagar um cliente não pode travar o login de quem o tinha em foco. |
+| `clients.color` | Cor de identificação da empresa, `#rrggbb` com CHECK, mesmo formato de `ticket_priorities.color`. Cor como **dado** é o que permite um cliente novo nascer com identidade sem ninguém editar um arquivo. |
+
+**O foco não é fronteira de segurança.** O isolamento entre tenants continua
+sendo `tenant_id` no JWT, aplicado pelas policies. O foco só ESTREITA o que a
+sessão já enxergava, e por isso vive na camada de dados da aplicação
+(`src/lib/data/escopo.ts`) e não em policy: o Gestor de TI atende vários clientes
+de propósito, e uma policy por cliente transformaria preferência de visualização
+em perda de acesso.
+
+`cash_flow_projection()` ganhou um quinto parâmetro, `p_client_id`, pelo mesmo
+motivo — a projeção soma títulos, saldo de abertura e movimentos futuros numa
+consulta só, e filtrar o resultado depois não teria como descontar o que já
+entrou no saldo. A migração faz `drop` antes do `create`: em Postgres a lista de
+argumentos faz parte da identidade da função, e um `create or replace` com um
+parâmetro a mais deixaria **duas** funções, tornando a chamada antiga ambígua.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -335,7 +357,7 @@ entre tenants.
 
 `supabase/tests/schema_test.sql` roda contra um banco semeado, com um papel
 **sem `BYPASSRLS`** — como superusuário, todo teste de isolamento passaria
-trivialmente e não provaria nada. São 203 asserções cobrindo cobertura de RLS,
+trivialmente e não provaria nada. São 377 asserções cobrindo cobertura de RLS,
 isolamento entre tenants, visibilidade por filial, comentário interno oculto do
 solicitante, escalonamento de privilégio, máquina de estados, fila padrão,
 precedência de SLA, pausa/retomada, idempotência, numeração, views, tokens de TV,

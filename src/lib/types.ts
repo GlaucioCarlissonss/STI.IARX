@@ -39,6 +39,13 @@ export interface Profile {
   last_seen_at: string | null
   /** Perfil de acesso; nulo cai no papel puro (ver `permissionsFromRole`). */
   access_profile_id: string | null
+  /**
+   * Cliente em foco. `null` = todos.
+   *
+   * É VISUALIZAÇÃO, não autorização: a fronteira continua sendo `tenant_id` com
+   * RLS. Ver `src/lib/data/escopo.ts`.
+   */
+  focused_client_id: string | null
 }
 
 /** Perfil de acesso — teto de RLS mais a matriz de permissões. */
@@ -193,6 +200,8 @@ export interface Client {
   cnpj: string | null
   contract_ref: string | null
   status: string
+  /** Cor de identificação da empresa, `#rrggbb` (CHECK no banco). */
+  color?: string
 }
 
 export interface ItAsset {

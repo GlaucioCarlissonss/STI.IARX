@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { agruparPor } from '@/lib/data/agrupar'
+import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
 import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
 import { assetStatusLabel, assetStatusTone, assetTypeLabel, custodyEventLabel, custodyReasonLabel } from '@/lib/i18n'
@@ -17,19 +18,24 @@ export const metadata: Metadata = { title: 'Inventário de TI' }
 export default async function InventarioPage() {
   await requireScreen('inventario.ativos.ver')
   const supabase = await createClient()
+  const escopo = await escopoDeCliente()
 
   const [
     { data: assets }, branches, agents, { data: suppliers },
     { data: areas }, { data: custodia }, { data: anexos },
   ] = await Promise.all([
-    supabase
-      .from('it_assets')
-      .select(
-        'id, asset_tag, serial_number, asset_type, brand, model, status, branch_id, branch_area_id, assigned_user_id, supplier_id, acquisition_date, warranty_until, acquisition_cost, notes',
-      )
-      .is('deleted_at', null)
-      .order('asset_tag')
-      .returns<ItAsset[]>(),
+    /* Ativo sem filial é do tenant inteiro e entra em qualquer foco — ver a
+       regra das colunas nulas em `src/lib/data/escopo.ts`. */
+    porFilialOuGeral(
+      supabase
+        .from('it_assets')
+        .select(
+          'id, asset_tag, serial_number, asset_type, brand, model, status, branch_id, branch_area_id, assigned_user_id, supplier_id, acquisition_date, warranty_until, acquisition_cost, notes',
+        )
+        .is('deleted_at', null)
+        .order('asset_tag'),
+      escopo,
+    ).returns<ItAsset[]>(),
     getBranches(),
     getAgents(),
     supabase.from('suppliers').select('id, name').is('deleted_at', null).order('name'),

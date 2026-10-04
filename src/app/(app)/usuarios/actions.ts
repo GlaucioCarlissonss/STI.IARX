@@ -6,15 +6,15 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireSession, canManageConfig, requirePermission } from '@/lib/session'
-import type { ActionState } from '@/app/(app)/tickets/actions'
-import { emptyToNull } from '@/lib/form-schemas'
+import type { ActionState } from '@/lib/actions/estado'
+import { emptyToNull, uuid } from '@/lib/schemas/campos'
 
 const ROLES = ['admin', 'gestor', 'atendente', 'solicitante', 'visualizador'] as const
 
 const updateSchema = z.object({
-  user_id: z.string().uuid('Seleção inválida.'),
+  user_id: uuid,
   role: z.enum(ROLES),
-  branch_ids: z.array(z.string().uuid('Seleção inválida.')).default([]),
+  branch_ids: z.array(uuid).default([]),
   is_active: z.boolean(),
 })
 
@@ -93,7 +93,7 @@ const createUserSchema = z.object({
   email: z.string().trim().email('Informe um e-mail válido.'),
   phone: emptyToNull,
   role: z.enum(ROLES),
-  branch_ids: z.array(z.string().uuid('Seleção inválida.')).default([]),
+  branch_ids: z.array(uuid).default([]),
 })
 
 /** 20 caracteres hexadecimais — entropia de sobra para uma senha de uso único. */

@@ -15,8 +15,22 @@ export const emptyToNull = z
   .trim()
   .transform((v) => (v === '' ? null : v))
 
+/**
+ * Um UUID obrigatório vindo de `<select>` ou de campo oculto.
+ *
+ * A mensagem é a mesma em toda a aplicação de propósito. Ela estava escrita à
+ * mão em **onze lugares**, e já divergia: "Seleção inválida." em umas,
+ * nada em outras, que faz o Zod devolver a mensagem padrão em inglês —
+ * `Invalid uuid` na cara de quem só errou o formulário.
+ *
+ * O texto não diz "UUID" porque quem lê não escolheu um UUID: escolheu um item
+ * numa lista. Um identificador malformado chegando aqui é defeito de formulário
+ * ou de adulteração, e nos dois casos a frase útil é a mesma.
+ */
+export const uuid = z.string().uuid('Seleção inválida.')
+
 /** `""` → `null`; caso contrário exige UUID válido. */
-export const optionalUuid = emptyToNull.pipe(z.union([z.string().uuid('Seleção inválida.'), z.null()]))
+export const optionalUuid = emptyToNull.pipe(z.union([uuid, z.null()]))
 
 /**
  * `""` → `null`; caso contrário número não negativo.

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { escopoDeCliente, porClienteOuGeral } from '@/lib/data/escopo'
 import { requireScreen } from '@/lib/session'
 import type { EnrichedTicket } from '@/lib/types'
 import { EmptyState, PageHeader } from '@/components/ui'
@@ -30,13 +31,15 @@ export default async function FilaPage({ params }: { params: Promise<{ slug: str
 
   if (!queue) notFound()
 
-  const { data: tickets } = await supabase
-    .from('vw_tickets_enriched')
-    .select('*')
-    .eq('queue_id', queue.id)
-    .not('status', 'in', '("resolved","closed")')
-    .order('queue_score', { ascending: false })
-    .returns<EnrichedTicket[]>()
+  const { data: tickets } = await porClienteOuGeral(
+    supabase
+      .from('vw_tickets_enriched')
+      .select('*')
+      .eq('queue_id', queue.id)
+      .not('status', 'in', '("resolved","closed")')
+      .order('queue_score', { ascending: false }),
+    await escopoDeCliente(),
+  ).returns<EnrichedTicket[]>()
 
   return (
     <>

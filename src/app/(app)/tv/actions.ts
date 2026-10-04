@@ -3,18 +3,15 @@
 import { randomBytes, createHash } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import { optionalUuid, uuid } from '@/lib/schemas/campos'
 import { createClient } from '@/lib/supabase/server'
 import { permitirEscrita } from '@/lib/actions/guarda'
-import type { ActionState } from '@/app/(app)/tickets/actions'
+import type { ActionState } from '@/lib/actions/estado'
 
 const createTokenSchema = z.object({
   name: z.string().trim().min(3, 'Dê um nome ao painel (ex.: TV Recepção Matriz).'),
-  layout_id: z
-    .string()
-    .trim()
-    .transform((v) => (v === '' ? null : v))
-    .pipe(z.union([z.string().uuid('Seleção inválida.'), z.null()])),
-  branch_ids: z.array(z.string().uuid('Seleção inválida.')).default([]),
+  layout_id: optionalUuid,
+  branch_ids: z.array(uuid).default([]),
 })
 
 export interface TokenActionState extends ActionState {

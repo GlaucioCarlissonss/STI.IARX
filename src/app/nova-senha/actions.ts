@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { newPasswordSchema } from '@/lib/schemas/auth'
-import type { ActionState } from '@/app/(app)/tickets/actions'
+import type { ActionState } from '@/lib/actions/estado'
 
 /**
  * Grava a senha nova de quem chegou pelo link de recuperação.

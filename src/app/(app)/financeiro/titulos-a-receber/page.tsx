@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { escopoDeCliente, porClienteOuGeral } from '@/lib/data/escopo'
 import { requireScreen, allowed } from '@/lib/session'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { BankAccount, Client, CostCenter, Receivable } from '@/lib/types'
@@ -22,11 +23,18 @@ export default async function TitulosAReceberPage() {
   ])
 
   const supabase = await createClient()
+  const escopo = await escopoDeCliente()
   const [{ data: titulos }, { data: contas }, { data: clientes }, { data: contratos }, { data: centros }] =
     await Promise.all([
-      supabase.from('receivables')
-        .select('id, description, document_ref, client_id, sla_contract_id, cost_center_id, branch_id, amount, issued_on, due_on, installment_number, installment_total, status, received_on, received_amount, bank_account_id, notes')
-        .is('deleted_at', null).order('due_on').returns<Receivable[]>(),
+      /* Só a LISTA entra no escopo. Os quatro lookups abaixo alimentam o
+         formulário e continuam completos de propósito: um seletor que perde a
+         opção já gravada no título faria o campo voltar vazio ao salvar. */
+      porClienteOuGeral(
+        supabase.from('receivables')
+          .select('id, description, document_ref, client_id, sla_contract_id, cost_center_id, branch_id, amount, issued_on, due_on, installment_number, installment_total, status, received_on, received_amount, bank_account_id, notes')
+          .is('deleted_at', null).order('due_on'),
+        escopo,
+      ).returns<Receivable[]>(),
       supabase.from('bank_accounts')
         .select('id, name, bank_name, bank_code, agency, account_number, account_type, holder_name, holder_document, opening_balance, credit_limit, status, notes')
         .eq('status', 'active').is('deleted_at', null).order('name').returns<BankAccount[]>(),

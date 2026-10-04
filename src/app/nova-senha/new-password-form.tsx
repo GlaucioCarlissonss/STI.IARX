@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
-import type { ActionState } from '@/app/(app)/tickets/actions'
+import type { ActionState } from '@/lib/actions/estado'
 import { ErrorNote, Field, inputClass } from '@/components/ui'
 import { setNewPassword } from './actions'
 

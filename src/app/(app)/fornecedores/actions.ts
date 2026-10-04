@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
 import { permitirEscrita } from '@/lib/actions/guarda'
-import type { ActionState } from '@/app/(app)/tickets/actions'
+import type { ActionState } from '@/lib/actions/estado'
 import { recordId, supplierContractSchema, supplierSchema } from '@/lib/schemas/cadastros'
 
 const DUPLICATE = 'Já existe um fornecedor com este CNPJ.'

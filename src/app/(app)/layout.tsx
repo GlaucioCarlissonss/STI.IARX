@@ -5,6 +5,8 @@ import { CompactNav, SidebarNav } from '@/components/sidebar-nav'
 import { roleLabel } from '@/lib/i18n'
 import { initials } from '@/lib/format'
 import { signOut } from '@/app/login/actions'
+import { ClientFocus } from '@/components/client-focus'
+import { getClients } from '@/lib/data/lookups'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile, tenant, permissions } = await requireSession()
@@ -20,6 +22,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    */
   const grupos = visibleNavGroups(permissions)
   const planos = visibleNav(permissions)
+
+  /*
+   * O seletor de foco só aparece para quem tem MAIS DE UMA empresa: com uma só,
+   * "Todas as empresas" e o nome dela apontam para o mesmo conjunto, e o
+   * controle vira decoração que ainda ocupa uma parada de tabulação.
+   */
+  const empresas = await getClients()
+  const foco =
+    empresas.length > 1
+      ? empresas.map((c) => ({
+          id: c.id,
+          nome: c.trade_name ?? c.legal_name,
+          cor: c.color ?? '#64748b',
+        }))
+      : []
 
   return (
     <div className="min-h-screen">
@@ -37,6 +54,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           )}
 
           <div className="ml-auto flex items-center gap-3">
+            {foco.length > 0 && (
+              <ClientFocus opcoes={foco} selecionado={profile.focused_client_id} />
+            )}
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium leading-tight text-[var(--color-ink)]">
                 {profile.full_name}

@@ -60,7 +60,7 @@ export const getClients = cache(async (): Promise<Client[]> => {
   const supabase = await createClient()
   const { data } = await supabase
     .from('clients')
-    .select('id, legal_name, trade_name, cnpj, contract_ref, status')
+    .select('id, legal_name, trade_name, cnpj, contract_ref, status, color')
     .is('deleted_at', null)
     .order('legal_name')
   return data ?? []
@@ -84,7 +84,7 @@ export const getAgents = cache(async (): Promise<Profile[]> => {
   const { data } = await supabase
     .from('profiles')
     .select(
-      'id, tenant_id, role, full_name, email, phone, is_active, last_seen_at, access_profile_id',
+      'id, tenant_id, role, full_name, email, phone, is_active, last_seen_at, access_profile_id, focused_client_id',
     )
     .eq('is_active', true)
     .in('role', ['atendente', 'gestor', 'admin'])

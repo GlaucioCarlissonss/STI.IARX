@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireSession } from '@/lib/session'
 import { newPasswordSchema } from '@/lib/schemas/auth'
-import type { ActionState } from '@/app/(app)/tickets/actions'
+import type { ActionState } from '@/lib/actions/estado'
 
 /**
  * Troca a própria senha (RF-USR-03).

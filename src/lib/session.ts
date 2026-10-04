@@ -37,7 +37,7 @@ export const getSessionContext = cache(async (): Promise<SessionContext | null> 
   const { data: profile } = await supabase
     .from('profiles')
     .select(
-      'id, tenant_id, role, full_name, email, phone, is_active, last_seen_at, access_profile_id',
+      'id, tenant_id, role, full_name, email, phone, is_active, last_seen_at, access_profile_id, focused_client_id',
     )
     .eq('id', user.id)
     .maybeSingle<Profile>()

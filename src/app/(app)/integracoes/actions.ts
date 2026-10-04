@@ -3,12 +3,13 @@
 import { createHash } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import { uuid } from '@/lib/schemas/campos'
 import { createClient } from '@/lib/supabase/server'
 import { requireSession, canManageConfig, requirePermission } from '@/lib/session'
-import type { ActionState } from '@/app/(app)/tickets/actions'
+import type { ActionState } from '@/lib/actions/estado'
 
 const toggleSchema = z.object({
-  integration_id: z.string().uuid('Seleção inválida.'),
+  integration_id: uuid,
   status: z.enum(['active', 'paused']),
 })
 
@@ -40,7 +41,7 @@ export async function setIntegrationStatus(
 }
 
 const reverseSyncSchema = z.object({
-  integration_id: z.string().uuid('Seleção inválida.'),
+  integration_id: uuid,
   enabled: z.enum(['true', 'false']),
 })
 
@@ -82,7 +83,7 @@ export async function setReverseSync(
 }
 
 const tokenSchema = z.object({
-  integration_id: z.string().uuid('Seleção inválida.'),
+  integration_id: uuid,
   token: z.string().trim().min(8, 'O token precisa ter ao menos 8 caracteres.'),
 })
 

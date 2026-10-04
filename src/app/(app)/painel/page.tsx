@@ -1,6 +1,12 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import {
+  escopoDeCliente,
+  porClienteOuGeral,
+  porFilial,
+  porFilialOuGeral,
+} from '@/lib/data/escopo'
 import { requireSession, allowed } from '@/lib/session'
 import { formatCurrency, formatMinutes } from '@/lib/format'
 import type {
@@ -49,10 +55,18 @@ export default async function VisaoGeralPage() {
     ])
 
   const supabase = await createClient()
+  const escopo = await escopoDeCliente()
   const hoje = new Date().toISOString().slice(0, 10)
 
   const [metrics, online, atRisk, mine, saldos, aPagar, aReceber, ativos, linhas, links] =
     await Promise.all([
+      /* `[LACUNA]` Estes dois blocos NÃO entram no foco por cliente, e isso é
+         visível: `vw_dashboard_metrics` agrega por tenant e devolve uma linha
+         só, então respeitar o foco exigiria agrupá-la também por cliente —
+         mudança de view que quebraria o `maybeSingle()` de quem não tem foco.
+         Fica registrado aqui e em docs/10 em vez de virar um número que diverge
+         do resto da tela sem ninguém saber por quê. `vw_agents_online` conta
+         PESSOAS, que são do tenant e não do cliente: essa é correta como está. */
       verHelpdesk
         ? supabase.from('vw_dashboard_metrics').select('*').maybeSingle<DashboardMetrics>()
         : null,
@@ -60,24 +74,28 @@ export default async function VisaoGeralPage() {
         ? supabase.from('vw_agents_online').select('agents_online, agents_total').maybeSingle()
         : null,
       verHelpdesk
-        ? supabase
-            .from('vw_tickets_enriched')
-            .select('*')
-            .in('resolution_state', ['breached', 'critical', 'warning'])
-            .not('status', 'in', '("resolved","closed")')
-            .order('minutes_to_resolution_due', { ascending: true })
-            .limit(8)
-            .returns<EnrichedTicket[]>()
+        ? porClienteOuGeral(
+            supabase
+              .from('vw_tickets_enriched')
+              .select('*')
+              .in('resolution_state', ['breached', 'critical', 'warning'])
+              .not('status', 'in', '("resolved","closed")')
+              .order('minutes_to_resolution_due', { ascending: true })
+              .limit(8),
+            escopo,
+          ).returns<EnrichedTicket[]>()
         : null,
       verHelpdesk
-        ? supabase
-            .from('vw_tickets_enriched')
-            .select('*')
-            .eq('assignee_id', profile.id)
-            .not('status', 'in', '("resolved","closed")')
-            .order('queue_score', { ascending: false })
-            .limit(8)
-            .returns<EnrichedTicket[]>()
+        ? porClienteOuGeral(
+            supabase
+              .from('vw_tickets_enriched')
+              .select('*')
+              .eq('assignee_id', profile.id)
+              .not('status', 'in', '("resolved","closed")')
+              .order('queue_score', { ascending: false })
+              .limit(8),
+            escopo,
+          ).returns<EnrichedTicket[]>()
         : null,
       verContas
         ? supabase
@@ -87,42 +105,48 @@ export default async function VisaoGeralPage() {
             .returns<BankAccountBalance[]>()
         : null,
       verPagar
-        ? supabase
-            .from('payables')
-            .select('id, amount, due_on, status')
-            .is('deleted_at', null)
-            .not('status', 'in', '("paid","cancelled")')
-            .returns<Pick<Payable, 'id' | 'amount' | 'due_on' | 'status'>[]>()
+        ? porFilialOuGeral(
+            supabase
+              .from('payables')
+              .select('id, amount, due_on, status')
+              .is('deleted_at', null)
+              .not('status', 'in', '("paid","cancelled")'),
+            escopo,
+          ).returns<Pick<Payable, 'id' | 'amount' | 'due_on' | 'status'>[]>()
         : null,
       verReceber
-        ? supabase
-            .from('receivables')
-            .select('id, amount, due_on, status')
-            .is('deleted_at', null)
-            .eq('status', 'open')
-            .returns<Pick<Receivable, 'id' | 'amount' | 'due_on' | 'status'>[]>()
+        ? porClienteOuGeral(
+            supabase
+              .from('receivables')
+              .select('id, amount, due_on, status')
+              .is('deleted_at', null)
+              .eq('status', 'open'),
+            escopo,
+          ).returns<Pick<Receivable, 'id' | 'amount' | 'due_on' | 'status'>[]>()
         : null,
       verInventario
-        ? supabase
-            .from('it_assets')
-            .select('id', { count: 'exact', head: true })
-            .is('deleted_at', null)
+        ? porFilialOuGeral(
+            supabase.from('it_assets').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+            escopo,
+          )
         : null,
       verTelefonia
-        ? supabase
-            .from('telecom_lines')
-            .select('id', { count: 'exact', head: true })
-            .is('deleted_at', null)
-            .eq('status', 'active')
+        ? porFilialOuGeral(
+            supabase
+              .from('telecom_lines')
+              .select('id', { count: 'exact', head: true })
+              .is('deleted_at', null)
+              .eq('status', 'active'),
+            escopo,
+          )
         : null,
       // Contagem e estado dos links vêm da mesma consulta: "quantos" sem "quantos
       // fora do ar" seria o número menos útil dos dois.
       verLinks
-        ? supabase
-            .from('internet_links')
-            .select('id, status, last_state')
-            .is('deleted_at', null)
-            .returns<{ id: string; status: string; last_state: string }[]>()
+        ? porFilial(
+            supabase.from('internet_links').select('id, status, last_state').is('deleted_at', null),
+            escopo,
+          ).returns<{ id: string; status: string; last_state: string }[]>()
         : null,
     ])
 

@@ -2,7 +2,7 @@
 
 import { useActionState, type ReactNode } from 'react'
 import { useFormStatus } from 'react-dom'
-import type { ActionState } from '@/app/(app)/tickets/actions'
+import type { ActionState } from '@/lib/actions/estado'
 import { ErrorNote } from './ui'
 
 /**

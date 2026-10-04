@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { requireScreen, allowed } from '@/lib/session'
 import { createClient } from '@/lib/supabase/server'
 import { agruparPor } from '@/lib/data/agrupar'
+import { escopoDeCliente } from '@/lib/data/escopo'
 import { getBranches, getBusinessHours, getClients } from '@/lib/data/lookups'
 import { formatCnpj } from '@/lib/format'
 import { areaKindLabel } from '@/lib/i18n'
@@ -45,7 +46,8 @@ export default async function ClientesPage() {
   ])
 
   const supabase = await createClient()
-  const [clients, branches, businessHours, { data: areas }] = await Promise.all([
+  const escopo = await escopoDeCliente()
+  const [todosClientes, todasFiliais, businessHours, { data: areas }] = await Promise.all([
     getClients(),
     getBranches(),
     getBusinessHours(),
@@ -59,6 +61,19 @@ export default async function ClientesPage() {
           .returns<BranchArea[]>()
       : { data: null },
   ])
+
+  /* Aqui o escopo é aplicado EM MEMÓRIA, não na consulta — é a única tela onde
+     isso acontece, e por um motivo: `getClients()` é a mesma consulta que
+     alimenta o seletor de foco no cabeçalho. Filtrá-la no banco deixaria o
+     seletor com uma opção só e trancaria a pessoa dentro do cliente escolhido,
+     sem caminho de volta. São poucas dezenas de linhas, já em cache de
+     requisição; filtrar depois custa menos que uma segunda viagem ao banco. */
+  const clients = escopo.clientId
+    ? todosClientes.filter((c) => c.id === escopo.clientId)
+    : todosClientes
+  const branches = escopo.branchIds
+    ? todasFiliais.filter((b) => escopo.branchIds!.includes(b.id))
+    : todasFiliais
 
   const areasPorFilial = agruparPor(areas, 'branch_id')
 

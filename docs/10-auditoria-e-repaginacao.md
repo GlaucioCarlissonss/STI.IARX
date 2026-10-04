@@ -378,7 +378,168 @@ Na mesma passada, `docs/04` dizia 18 views.
 Nenhum teste foi alterado para acomodar a refatoração — é essa a prova de que o
 comportamento não mudou.
 
+---
+
+# Entrega 3 — Organização e padronização (executada)
+
+As quatro perguntas de §8 foram respondidas: `client_id` é **escopo de dados e
+filtro de visualização**, a cor de identificação é **por empresa-cliente**, e a
+repaginada pode mudar a paleta. Esta entrega implementa a primeira resposta e
+prepara o terreno das outras duas; tipografia e dark mode são da Entrega 4,
+porque mudam valores e não estrutura.
+
+## 1. Escopo por cliente — o que foi construído
+
+### A distinção que governa tudo o que vem abaixo
+
+**O foco por cliente não é fronteira de segurança.** O isolamento entre tenants
+continua sendo `tenant_id` no JWT, aplicado por 162 policies de RLS (ADR-002).
+Se o escopo tiver um defeito, a pessoa vê dados do **próprio** tenant fora do
+foco que escolheu — nunca de outro cliente da plataforma.
+
+É por isso que ele **não virou policy de RLS**: o Gestor de TI atende vários
+clientes de propósito, e uma policy por cliente transformaria uma preferência de
+visualização em perda de acesso ao parque que ele administra.
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| `profiles.focused_client_id` | migração 0027 | a escolha, por pessoa. FK composta `(focused_client_id, tenant_id)` |
+| `clients.color` | migração 0027 | identidade visual da empresa, como **dado** e não mapa de nomes no código |
+| `escopoDeCliente()` | `src/lib/data/escopo.ts` | o foco da sessão, com as filiais resolvidas, em `cache()` de requisição |
+| `porCliente` · `porClienteOuGeral` · `porFilial` · `porFilialOuGeral` | idem | aplicam o foco a uma consulta |
+| `definirFocoDeCliente` | `src/app/(app)/actions.ts` | troca o foco; `revalidatePath('/', 'layout')` |
+| `<ClientFocus>` | `src/components/client-focus.tsx` | o seletor no cabeçalho |
+
+### A regra única das colunas nulas
+
+**O foco exclui o que é de outro cliente; nunca exclui o que não é de cliente
+nenhum.** Coluna nula significa "do tenant inteiro": uma licença comprada para
+todo mundo, um chamado interno, um título que não se aloca a nenhuma unidade.
+Escondê-los faria o total da tela ficar errado **para menos** — o erro que
+ninguém percebe.
+
+Daí existirem quatro funções e não duas: qual usar não é estilo, é a
+nulabilidade da coluna no banco.
+
+| Forma | Função | Entidades |
+|---|---|---|
+| `client_id` obrigatório | `porCliente` | `branches`, `sla_contracts` |
+| `client_id` nulável | `porClienteOuGeral` | `tickets`, `receivables` |
+| `branch_id` obrigatório | `porFilial` | `internet_links`, `branch_areas` |
+| `branch_id` nulável | `porFilialOuGeral` | `it_assets`, `telecom_lines`, `payables`, `cost_centers` |
+| **sem relação com cliente** | — | `bank_accounts`, `suppliers`, `queues`, `profiles`, `integrations` |
+
+A última linha é a que mais importa: aplicar o escopo onde ele não existe
+esvaziaria a tela inteira. Conta bancária é do tenant, não do cliente.
+
+### Onde o escopo foi aplicado
+
+Onze telas: `/tickets`, `/filas`, `/filas/[slug]`, `/painel`, `/inventario`,
+`/telefonia`, `/conectividade/links`, `/clientes`, `/sla`, `/mapas`,
+`/financeiro/titulos-a-pagar`, `/financeiro/titulos-a-receber` e
+`/financeiro/fluxo-de-caixa`.
+
+Três decisões que valem registro, porque em cada uma a escolha óbvia estava
+errada:
+
+1. **Lookup de formulário NÃO entra no escopo.** Só a lista entra. Um `<select>`
+   que perde a opção já gravada no registro faria o campo voltar vazio ao salvar
+   — o escopo apagaria dado em vez de filtrar vista.
+2. **`/clientes` filtra em memória**, e é a única tela assim. `getClients()` é a
+   mesma consulta que alimenta o seletor do cabeçalho; filtrá-la no banco
+   deixaria o seletor com uma opção só e trancaria a pessoa dentro do cliente
+   escolhido, sem caminho de volta.
+3. **A projeção de caixa recebeu um parâmetro, não um filtro.**
+   `cash_flow_projection` soma títulos, saldo de abertura e movimentos futuros
+   numa consulta só; filtrar o resultado depois não teria como descontar o que já
+   entrou no saldo. O foco virou `p_client_id` dentro da função (0027), o que
+   exigiu `drop` antes do `create`: em Postgres a lista de argumentos faz parte da
+   identidade da função, e um `create or replace` com um parâmetro a mais criaria
+   uma **segunda** função, tornando a chamada de quatro argumentos ambígua.
+
+**Centros de custo ficaram de fora, de propósito.** São uma hierarquia de até
+três níveis renderizada por `parent_id`; filtrar por filial esconderia um
+ancestral e os filhos sumiriam da árvore sem aviso — o escopo quebraria a tela em
+vez de estreitá-la.
+
+### `[LACUNA]` O bloco de métricas do painel não respeita o foco
+
+`vw_dashboard_metrics` agrega por tenant e devolve **uma linha**. Respeitar o
+foco exigiria agrupá-la também por cliente, o que quebraria o `maybeSingle()` de
+quem não tem foco nenhum. Está registrado no código, onde alguém vai ler, em vez
+de virar um número que diverge do resto da tela sem explicação.
+
+`vw_agents_online` fica fora para sempre: conta **pessoas**, que são do tenant e
+não do cliente.
+
+## 2. Padronização da camada de dados
+
+| O que estava espalhado | Quantas cópias | Onde ficou |
+|---|---|---|
+| `interface ActionState` dentro de `tickets/actions.ts` | importada por **18 módulos**, incluindo um componente de cliente | `src/lib/actions/estado.ts` |
+| `z.string().uuid('Seleção inválida.')` | **11 cópias**, em 5 arquivos | `uuid`, em `src/lib/schemas/campos.ts` |
+| coerção `'' → null` + UUID | 3 cópias além da compartilhada | `optionalUuid`, idem |
+| `src/lib/form-schemas.ts` | pasta `schemas/` existia ao lado | `src/lib/schemas/campos.ts` |
+
+O `ActionState` é o caso que mais importava: um arquivo `'use server'` é o pior
+lugar possível para um tipo compartilhado. O import só sobrevivia por ser `import
+type` e sumir na compilação; esquecer o `type` uma única vez arrastaria o módulo
+inteiro de ações de ticket para dentro do bundle do navegador.
+
+## 3. Tokens de design
+
+Os tokens de **cor** já existiam (29). Faltavam os de forma, e o que havia de
+valor solto não estava em CSS, e sim em TypeScript.
+
+- **Raio de borda** virou token: `--radius-md/lg/xl`, declarados nos **mesmos
+  valores** que o Tailwind já aplicava. `rounded-lg` aparece em 51 lugares e
+  `rounded-xl` em 22 — eram dois números espalhados por 73 usos, sem nome. Não há
+  mudança visual aqui de propósito: mexer na forma junto com a mudança de
+  estrutura tornaria impossível saber qual das duas causou uma diferença na tela.
+- **`map-marker.tsx` perdeu seis cores literais.** O popup é HTML comum no
+  documento da página, então usa `var()`.
+- **As três cores do pino continuam em hexadecimal, e isso é obrigatório:** o SVG
+  vira uma `data:` URI, e documento de data URI não enxerga as custom properties
+  da página — `var()` resolveria para nada e o pino sairia preto. O que tinha
+  conserto era a **divergência**: `src/components/map-marker.test.ts` lê
+  `globals.css` e exige que os três valores sejam exatamente
+  `--color-marker-green/amber/red`. A Entrega 4 troca a paleta; sem esse teste, os
+  pinos ficariam com a cor antiga e o sintoma seria um verde levemente diferente
+  num mapa, não um erro.
+
+**Elevação e escala tipográfica não entraram.** A aplicação não usa `shadow-*` em
+lugar nenhum hoje, e inventar uma escala de sombra agora seria decidir a
+repaginada por antecipação, na entrega errada. Vão com a Entrega 4.
+
+Um efeito colateral útil: `vitest.config.ts` ganhou o alias `@/` do
+`tsconfig.json`. Sem ele, um teste que importasse de `src/components` falhava com
+"Cannot find package '@/lib/maps'" — o caminho resolvia no editor e no build e só
+não resolvia no teste, que é o tipo de atrito que faz alguém não escrever o teste.
+
+## Verificação — antes × depois
+
+| | Entrega 2 | Entrega 3 |
+|---|---|---|
+| `tsc` | limpo | limpo |
+| `eslint` | limpo | limpo |
+| Testes unitários | 210 | **216** (+6, cor do pino e escape do popup) |
+| Asserções de banco | 365 | **377** (+12, seção 32) |
+| Asserções em navegador | 44, zero erro | **44, zero erro** |
+| Build | 30 rotas | **30 rotas** |
+| Catálogo de permissões | 151 chaves | **151 chaves** (o foco não é permissão) |
+
+As doze asserções novas cobrem o que a aplicação sozinha não provaria: a FK
+composta recusa o cliente de outro tenant; `on delete set null` não trava a
+exclusão do cliente; a cor recusa formato inválido e aceita maiúscula; a projeção
+sob foco soma o título da filial do cliente **e** o que não tem filial; e existe
+**uma só** `cash_flow_projection` — a prova de que o `drop` funcionou e a chamada
+de quatro argumentos não ficou ambígua.
+
+Nenhum teste existente foi alterado.
+
 ## Próximo passo
 
-Entrega 3 (organização e padronização). Para a Entrega 4 eu preciso das respostas
-sobre `client_id`, identidade visual e tipografia (§8).
+Entrega 4 (design system e repaginada visual): fontes display + corpo via
+`next/font`, paleta, **dark mode** (a aplicação não tem nenhum hoje; o protótipo
+tem), aplicação da cor por empresa, e movimento. A `clients.color` e os tokens de
+raio já estão no lugar esperando.

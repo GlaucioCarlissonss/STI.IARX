@@ -38,7 +38,7 @@ export default async function UsuariosPage() {
     supabase
       .from('profiles')
       .select(
-        'id, tenant_id, role, full_name, email, phone, is_active, last_seen_at, access_profile_id',
+        'id, tenant_id, role, full_name, email, phone, is_active, last_seen_at, access_profile_id, focused_client_id',
       )
       .order('full_name')
       .returns<Profile[]>(),

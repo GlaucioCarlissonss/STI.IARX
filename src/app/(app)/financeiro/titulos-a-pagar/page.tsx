@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
 import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { formatCurrency, formatDate } from '@/lib/format'
@@ -31,14 +32,21 @@ export default async function TitulosAPagarPage() {
     ])
 
   const supabase = await createClient()
+  const escopo = await escopoDeCliente()
   const [
     { data: titulos }, { data: contas }, { data: categorias }, { data: centros },
     { data: fornecedores }, { data: filiais }, { data: faixas }, { data: perfis },
     { data: tenant }, { data: anexos },
   ] = await Promise.all([
-    supabase.from('payables')
-      .select('id, description, document_ref, supplier_id, supplier_contract_id, expense_category_id, cost_center_id, branch_id, amount, issued_on, due_on, parent_payable_id, installment_number, installment_total, status, approved_at, approved_by, rejection_reason, paid_on, bank_account_id, notes')
-      .is('deleted_at', null).order('due_on').returns<Payable[]>(),
+    /* Só a LISTA entra no escopo; os lookups seguem completos. Título sem filial
+       é do tenant inteiro e aparece em qualquer foco — tirá-lo encolheria o
+       total a pagar sem nenhum sinal na tela. */
+    porFilialOuGeral(
+      supabase.from('payables')
+        .select('id, description, document_ref, supplier_id, supplier_contract_id, expense_category_id, cost_center_id, branch_id, amount, issued_on, due_on, parent_payable_id, installment_number, installment_total, status, approved_at, approved_by, rejection_reason, paid_on, bank_account_id, notes')
+        .is('deleted_at', null).order('due_on'),
+      escopo,
+    ).returns<Payable[]>(),
     supabase.from('bank_accounts')
       .select('id, name, bank_name, bank_code, agency, account_number, account_type, holder_name, holder_document, opening_balance, credit_limit, status, notes')
       .eq('status', 'active').is('deleted_at', null).order('name').returns<BankAccount[]>(),

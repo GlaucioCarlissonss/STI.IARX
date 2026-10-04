@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
 import { requireScreen } from '@/lib/session'
 import { formatCurrency, formatDate, formatMonth } from '@/lib/format'
 import type { CashFlowBucket, CostCenter } from '@/lib/types'
@@ -44,6 +45,7 @@ export default async function FluxoDeCaixaPage({
   const centro = params.centro || null
 
   const supabase = await createClient()
+  const escopo = await escopoDeCliente()
   const hoje = new Date().toISOString().slice(0, 10)
 
   const [{ data: projecao, error }, { data: filiais }, { data: centros }, { data: rascunhos }] =
@@ -51,11 +53,16 @@ export default async function FluxoDeCaixaPage({
       /* Sem `.returns<CashFlowBucket[]>()`: para `rpc()` o cliente gerado infere um
          objeto único e recusa o molde de array. O tipo é aplicado logo abaixo, na
          desestruturação — mesma garantia, sem lutar com o inferidor. */
+      /* O foco vai para DENTRO da função (parâmetro `p_client_id`, migração
+         0027) em vez de ser aplicado aqui: a projeção soma títulos, saldo de
+         abertura e movimentos futuros numa consulta só, e filtrar o resultado
+         depois não teria como descontar o que já entrou no saldo. */
       supabase.rpc('cash_flow_projection', {
         p_months: meses,
         p_delinquency_rate: inadimplencia,
         p_branch_id: filial,
         p_cost_center_id: centro,
+        p_client_id: escopo.clientId,
       }),
       supabase.from('branches').select('id, name').eq('is_active', true).order('name'),
       supabase
@@ -67,12 +74,14 @@ export default async function FluxoDeCaixaPage({
       // Títulos comprometidos que vencem DEPOIS do horizonte. Não entram na
       // projeção, e por isso mesmo precisam aparecer: some da tabela e vira
       // dinheiro que ninguém viu.
-      supabase
-        .from('payables')
-        .select('amount, due_on')
-        .is('deleted_at', null)
-        .in('status', ['pending_approval', 'approved', 'scheduled'])
-        .returns<{ amount: number; due_on: string }[]>(),
+      porFilialOuGeral(
+        supabase
+          .from('payables')
+          .select('amount, due_on')
+          .is('deleted_at', null)
+          .in('status', ['pending_approval', 'approved', 'scheduled']),
+        escopo,
+      ).returns<{ amount: number; due_on: string }[]>(),
     ])
 
   const baldes = (projecao ?? []) as CashFlowBucket[]

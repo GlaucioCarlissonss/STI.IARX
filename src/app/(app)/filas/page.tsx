@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { escopoDeCliente, porClienteOuGeral } from '@/lib/data/escopo'
 import { requireScreen, allowed } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
 import type { EnrichedTicket, Queue, QueueRule } from '@/lib/types'
@@ -38,6 +39,7 @@ export default async function FilasPage() {
     allowed('helpdesk.filas.inativar'),
   ])
   const supabase = await createClient()
+  const escopo = await escopoDeCliente()
 
   const [
     { data: queues }, { data: openTickets }, { data: rules },
@@ -56,11 +58,17 @@ export default async function FilasPage() {
       .returns<Queue[]>(),
     // Uma consulta só, agregada em memória: são poucas filas, e assim evitamos
     // N+1 (uma contagem por fila) que o dashboard pagaria a cada refresh.
-    supabase
-      .from('vw_tickets_enriched')
-      .select('queue_slug, resolution_state, priority_weight')
-      .not('status', 'in', '("resolved","closed")')
-      .returns<Pick<EnrichedTicket, 'queue_slug' | 'resolution_state' | 'priority_weight'>[]>(),
+    /* A FILA em si não é do cliente — é estrutura de atendimento do tenant, e
+       por isso `queues` e `queue_rules` ficam de fora do foco. O que entra é a
+       contagem de tickets, para que o número ao lado do nome da fila conte a
+       mesma história que a lista de /tickets. */
+    porClienteOuGeral(
+      supabase
+        .from('vw_tickets_enriched')
+        .select('queue_slug, resolution_state, priority_weight')
+        .not('status', 'in', '("resolved","closed")'),
+      escopo,
+    ).returns<Pick<EnrichedTicket, 'queue_slug' | 'resolution_state' | 'priority_weight'>[]>(),
     /* A lista de regras aparece para quem tem `helpdesk.filas.ver`: saber por que
        o seu ticket caiu nesta fila é informação de trabalho, não configuração.
        Só os controles de escrita exigem `configurar_regras`. */

@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { NAO_AFETADO } from '@/lib/actions/erros'
 import { permitirEscrita } from '@/lib/actions/guarda'
-import type { ActionState } from '@/app/(app)/tickets/actions'
+import type { ActionState } from '@/lib/actions/estado'
 import { queueRuleSchema, queueSchema, recordId } from '@/lib/schemas/cadastros'
 
 

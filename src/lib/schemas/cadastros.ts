@@ -6,7 +6,7 @@ import {
   optionalNumberInRange,
   optionalPositiveInt,
   intInRange,
-} from '../form-schemas'
+} from './campos'
 
 /**
  * Schemas dos cadastros administrativos — cliente, filial, ativo, linha e

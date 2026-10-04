@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
+import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
 import { contractStatusTone, lineStatusLabel, lineTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { BranchArea, TelecomDashboardRow, TelecomLine } from '@/lib/types'
@@ -24,30 +25,35 @@ export default async function TelefoniaPage({
   const filtros = await searchParams
   await requireScreen('telefonia.linhas.ver')
   const supabase = await createClient()
+  const escopo = await escopoDeCliente()
 
   const [
     { data: lines }, { data: painel }, branches, agents,
     { data: areas }, { data: devices }, { data: anexos },
   ] = await Promise.all([
-    supabase
-      .from('telecom_lines')
-      .select(
-        'id, phone_number, carrier, plan_name, line_type, status, branch_id, company_area_id, assigned_user_id, device_asset_id, monthly_cost, activated_on, cancelled_on, loyalty_until',
-      )
-      .is('deleted_at', null)
-      .order('phone_number')
-      .returns<TelecomLine[]>(),
+    porFilialOuGeral(
+      supabase
+        .from('telecom_lines')
+        .select(
+          'id, phone_number, carrier, plan_name, line_type, status, branch_id, company_area_id, assigned_user_id, device_asset_id, monthly_cost, activated_on, cancelled_on, loyalty_until',
+        )
+        .is('deleted_at', null)
+        .order('phone_number'),
+      escopo,
+    ).returns<TelecomLine[]>(),
     /* `vw_telecom_dashboard` (0013) no lugar de `vw_telecom_costs`: ela traz os
        mesmos números e mais dois que não apareciam em lugar nenhum — linha sem
        responsável e linha livre de fidelidade. A view existia desde aquela
        migração e nunca tinha sido consultada. */
-    supabase
-      .from('vw_telecom_dashboard')
-      .select(
-        'branch_id, branch_name, company_area_id, area_name, carrier, line_type, status, lines_count, monthly_total, monthly_avg, without_user, free_to_cancel',
-      )
-      .order('monthly_total', { ascending: false })
-      .returns<TelecomDashboardRow[]>(),
+    porFilialOuGeral(
+      supabase
+        .from('vw_telecom_dashboard')
+        .select(
+          'branch_id, branch_name, company_area_id, area_name, carrier, line_type, status, lines_count, monthly_total, monthly_avg, without_user, free_to_cancel',
+        )
+        .order('monthly_total', { ascending: false }),
+      escopo,
+    ).returns<TelecomDashboardRow[]>(),
     getBranches(),
     getAgents(),
     supabase

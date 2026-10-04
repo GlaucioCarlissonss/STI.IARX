@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
+import { escopoDeCliente, porFilial } from '@/lib/data/escopo'
 import { contractStatusTone, linkStateLabel, linkStateTone, linkStatusLabel, linkTechnologyLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate, formatMinutes } from '@/lib/format'
 import type { ConnectivityCostRow, InternetLink, LinkAvailabilityEvent } from '@/lib/types'
@@ -53,6 +54,7 @@ export default async function LinksDeInternetPage() {
   ])
 
   const supabase = await createClient()
+  const escopo = await escopoDeCliente()
 
   const [
     { data: links },
@@ -63,21 +65,27 @@ export default async function LinksDeInternetPage() {
     { data: anexos },
     { data: eventos },
   ] = await Promise.all([
-    supabase
-      .from('internet_links')
-      .select(
-        'id, branch_id, branch_area_id, contract_number, supplier_id, carrier_name, technology, download_mbps, upload_mbps, guaranteed_mbps, has_static_ip, static_ip, cpe_brand, cpe_model, cpe_serial, status, monthly_cost, activated_on, cancelled_on, contract_start, contract_end, monitoring_host, last_state, last_state_at, notes',
-      )
-      .is('deleted_at', null)
-      .order('contract_number', { nullsFirst: false })
-      .returns<InternetLink[]>(),
-    supabase
-      .from('vw_connectivity_cost')
-      .select(
-        'branch_id, branch_name, lines_active, telecom_monthly_cost, links_active, internet_monthly_cost, total_monthly_cost',
-      )
-      .order('total_monthly_cost', { ascending: false })
-      .returns<ConnectivityCostRow[]>(),
+    /* `internet_links.branch_id` é NOT NULL: link sempre pertence a uma filial,
+       então aqui é `porFilial` e não a variante que inclui nulos. */
+    porFilial(
+      supabase
+        .from('internet_links')
+        .select(
+          'id, branch_id, branch_area_id, contract_number, supplier_id, carrier_name, technology, download_mbps, upload_mbps, guaranteed_mbps, has_static_ip, static_ip, cpe_brand, cpe_model, cpe_serial, status, monthly_cost, activated_on, cancelled_on, contract_start, contract_end, monitoring_host, last_state, last_state_at, notes',
+        )
+        .is('deleted_at', null)
+        .order('contract_number', { nullsFirst: false }),
+      escopo,
+    ).returns<InternetLink[]>(),
+    porFilial(
+      supabase
+        .from('vw_connectivity_cost')
+        .select(
+          'branch_id, branch_name, lines_active, telecom_monthly_cost, links_active, internet_monthly_cost, total_monthly_cost',
+        )
+        .order('total_monthly_cost', { ascending: false }),
+      escopo,
+    ).returns<ConnectivityCostRow[]>(),
     getBranches(),
     supabase
       .from('branch_areas')

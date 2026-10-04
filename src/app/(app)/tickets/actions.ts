@@ -3,8 +3,10 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { optionalUuid, uuid } from '@/lib/schemas/campos'
 import { createClient } from '@/lib/supabase/server'
 import { requireSession, requirePermission } from '@/lib/session'
+import type { ActionState } from '@/lib/actions/estado'
 
 /**
  * Server Actions de ticket — o ÚNICO caminho de escrita a partir da UI (ADR-011).
@@ -14,18 +16,6 @@ import { requireSession, requirePermission } from '@/lib/session'
  * `change_source = 'ui'`, que é o sinal usado pela sincronização reversa para
  * distinguir uma mudança nossa de um eco da integração (ADR-008).
  */
-
-export interface ActionState {
-  error?: string
-  success?: string
-}
-
-const uuid = z.string().uuid('Seleção inválida.')
-const optionalUuid = z
-  .string()
-  .trim()
-  .transform((v) => (v === '' ? null : v))
-  .pipe(z.union([uuid, z.null()]))
 
 const createTicketSchema = z.object({
   title: z

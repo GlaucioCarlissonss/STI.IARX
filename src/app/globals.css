@@ -45,6 +45,32 @@
   --color-tv-crit: #fb923c;
   --color-tv-breach: #f87171;
 
+  /* Pino do mapa — ver `src/components/map-marker.tsx`.
+     O SVG do pino vira uma `data:` URI, e documento de data URI NÃO enxerga as
+     custom properties desta página: lá o hexadecimal tem de ser literal. Os três
+     tokens existem assim mesmo, porque o popup (que é HTML comum, no mesmo
+     documento) os consome com `var()`, e porque `map-marker.marker.test.ts`
+     compara este arquivo com a constante do TypeScript — trocar a paleta sem
+     trocar o pino quebra o teste em vez de passar despercebido. */
+  --color-marker-green: #15803d;
+  --color-marker-amber: #a16207;
+  --color-marker-red: #b91c1c;
+
+  /* ------------------------------------------------------------------------
+     Raio de borda
+     ------------------------------------------------------------------------
+     Declarados nos MESMOS valores que o Tailwind já aplicava. Não há mudança
+     visual aqui de propósito: a entrega 3 é organização, e mexer no raio junto
+     com a mudança de estrutura tornaria impossível saber qual das duas causou
+     uma diferença na tela. O ajuste de forma é da entrega 4, e agora tem um
+     lugar só para acontecer.
+
+     `rounded-lg` aparece em 51 lugares e `rounded-xl` em 22: eram dois números
+     espalhados por 73 arquivos sem nome. */
+  --radius-md: 0.5rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 

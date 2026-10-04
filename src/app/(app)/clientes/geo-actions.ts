@@ -2,9 +2,10 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import { uuid } from '@/lib/schemas/campos'
 import { createClient } from '@/lib/supabase/server'
 import { permitirEscrita } from '@/lib/actions/guarda'
-import type { ActionState } from '@/app/(app)/tickets/actions'
+import type { ActionState } from '@/lib/actions/estado'
 import { PRECISION_LABEL, formatCoordinates, parseCoordinates, roundCoordinates } from '@/lib/maps'
 import {
   STATUS_TAG,
@@ -27,7 +28,7 @@ import { runGeocodePipeline } from '@/lib/geocode.server'
  */
 
 const coordsSchema = z.object({
-  branch_id: z.string().uuid('Seleção inválida.'),
+  branch_id: uuid,
   input: z.string().trim().min(1, 'Cole a URL do Google Maps ou o par de coordenadas.'),
 })
 
@@ -319,8 +320,8 @@ export async function geocodeBranch(_prev: ActionState, formData: FormData): Pro
    ========================================================================== */
 
 const confirmSchema = z.object({
-  branch_id: z.string().uuid('Seleção inválida.'),
-  candidate_id: z.string().uuid('Seleção inválida.'),
+  branch_id: uuid,
+  candidate_id: uuid,
 })
 
 /**

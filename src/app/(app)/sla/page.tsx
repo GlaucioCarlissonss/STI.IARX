@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { escopoDeCliente, porCliente, porClienteOuGeral } from '@/lib/data/escopo'
 import { requireScreen, allowed } from '@/lib/session'
 import { getBranches, getBusinessHours, getCategories, getClients, getPriorities } from '@/lib/data/lookups'
 import { formatDate, formatMinutes } from '@/lib/format'
@@ -82,6 +83,7 @@ export default async function SlaPage() {
     verCategorias || verPrioridades || verContratos || verDefinicoes
 
   const supabase = await createClient()
+  const escopo = await escopoDeCliente()
 
   const [
     { data: compliance },
@@ -96,14 +98,18 @@ export default async function SlaPage() {
     activeCategories,
     activePriorities,
   ] = await Promise.all([
-    supabase
-      .from('vw_sla_compliance')
-      .select(
-        'period, queue_name, tickets_total, tickets_with_sla, response_breaches, resolution_breaches, resolution_compliance_pct, response_compliance_pct',
-      )
-      .order('period', { ascending: false })
-      .limit(40)
-      .returns<ComplianceRow[]>(),
+    /* A view já agrupa por `client_id` (0011:304), então filtrar por cliente
+       não altera a granularidade das linhas — só escolhe quais voltam. */
+    porClienteOuGeral(
+      supabase
+        .from('vw_sla_compliance')
+        .select(
+          'period, queue_name, tickets_total, tickets_with_sla, response_breaches, resolution_breaches, resolution_compliance_pct, response_compliance_pct',
+        )
+        .order('period', { ascending: false })
+        .limit(40),
+      escopo,
+    ).returns<ComplianceRow[]>(),
     supabase
       .from('sla_definitions')
       .select(
@@ -127,11 +133,15 @@ export default async function SlaPage() {
       .select('id, key, label, weight, color, sort_order, is_active')
       .order('sort_order')
       .returns<Priority[]>(),
-    supabase
-      .from('sla_contracts')
-      .select('id, client_id, branch_id, name, business_hours_id, valid_from, valid_to, is_active, notes')
-      .order('name')
-      .returns<SlaContract[]>(),
+    /* `sla_contracts.client_id` é NOT NULL: todo contrato tem dono, então aqui
+       é `porCliente` e não a variante que inclui nulos. */
+    porCliente(
+      supabase
+        .from('sla_contracts')
+        .select('id, client_id, branch_id, name, business_hours_id, valid_from, valid_to, is_active, notes')
+        .order('name'),
+      escopo,
+    ).returns<SlaContract[]>(),
     getClients(),
     getBranches(),
     getBusinessHours(),

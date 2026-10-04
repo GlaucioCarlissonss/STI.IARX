@@ -3160,5 +3160,145 @@ end
 $$;
 reset role;
 
+-- =============================================================================
+\echo '=== 32. Escopo por cliente e cor da empresa (0027) ==='
+-- =============================================================================
+reset role;
+
+-- A FK composta é a única coisa aqui que protege alguma coisa: o foco é
+-- VISUALIZAÇÃO, não autorização, mas apontar para o cliente de outro tenant
+-- transformaria uma preferência em vazamento. Tem de ser impossível no banco,
+-- não apenas improvável na aplicação.
+do $$
+declare
+  v_outro uuid := 'f0000000-0000-4000-8000-0000000000ff';
+begin
+  insert into public.clients (id, tenant_id, legal_name)
+  values (v_outro, 'a0000000-0000-4000-8000-000000000002', 'Cliente do outro tenant');
+
+  begin
+    update public.profiles set focused_client_id = v_outro
+      where id = '22220000-0000-4000-8000-000000000001';
+    perform app.assert(false, 'NÃO DEVERIA: foco apontou para cliente de outro tenant');
+  exception when foreign_key_violation then
+    perform app.assert(true, 'o foco não alcança cliente de outro tenant');
+  end;
+
+  -- E o do próprio tenant entra sem obstáculo.
+  update public.profiles set focused_client_id = 'f0000000-0000-4000-8000-000000000001'
+    where id = '22220000-0000-4000-8000-000000000001';
+  perform app.assert(
+    (select focused_client_id from public.profiles
+      where id = '22220000-0000-4000-8000-000000000001')
+      = 'f0000000-0000-4000-8000-000000000001',
+    'e alcança o cliente do próprio tenant');
+end
+$$;
+
+-- `on delete set null`: apagar o cliente não pode travar o login de quem estava
+-- com ele em foco. O sintoma de um `restrict` aqui seria "não consigo excluir o
+-- cliente" sem dizer que o motivo é a preferência de visualização de alguém.
+do $$
+begin
+  delete from public.clients where id = 'f0000000-0000-4000-8000-0000000000ff';
+  update public.profiles set focused_client_id = null
+    where id = '22220000-0000-4000-8000-000000000001';
+  perform app.assert(true, 'cliente de outro tenant removido sem resíduo');
+end
+$$;
+
+-- A cor é dado com formato, não texto livre: sem o CHECK, um `style` com valor
+-- inválido simplesmente não pinta, e ninguém descobre onde foi digitado errado.
+do $$
+declare
+  v_c uuid := 'f0000000-0000-4000-8000-000000000001';
+begin
+  perform app.assert(
+    (select color from public.clients where id = v_c) = '#64748b',
+    'cliente nasce com a cor neutra do sistema, não com uma cor inventada');
+
+  begin
+    update public.clients set color = 'azul' where id = v_c;
+    perform app.assert(false, 'NÃO DEVERIA: cor fora do formato foi aceita');
+  exception when check_violation then
+    perform app.assert(true, 'cor fora de #rrggbb é recusada');
+  end;
+
+  begin
+    update public.clients set color = '#12345' where id = v_c;
+    perform app.assert(false, 'NÃO DEVERIA: cor curta foi aceita');
+  exception when check_violation then
+    perform app.assert(true, 'e cor com menos de seis dígitos também');
+  end;
+
+  update public.clients set color = '#A1B2C3' where id = v_c;
+  perform app.assert(
+    (select color from public.clients where id = v_c) = '#A1B2C3',
+    'maiúscula é cor válida — o hexadecimal não distingue caixa');
+  update public.clients set color = '#64748b' where id = v_c;
+end
+$$;
+
+-- A projeção de caixa sob foco. Esta é a asserção que importa: se o parâmetro
+-- novo não chegasse aos predicados, a tela continuaria somando o título de
+-- outro cliente e o total pareceria certo.
+do $$
+declare
+  v_t         uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_meridiano uuid := 'f0000000-0000-4000-8000-000000000001';
+  v_vertex    uuid := 'f0000000-0000-4000-8000-000000000002';
+  v_fil_mer   uuid := '11110000-0000-4000-8000-000000000001';
+  v_fil_vtx   uuid := '11110000-0000-4000-8000-000000000004';
+  v_todos     numeric;
+  v_focado    numeric;
+begin
+  delete from public.payables;
+  delete from public.receivables;
+
+  insert into public.payables (tenant_id, branch_id, description, amount, due_on, status) values
+    (v_t, v_fil_mer, 'Meridiano',          100.00, current_date + 10, 'approved'),
+    (v_t, v_fil_vtx, 'Vertex',             200.00, current_date + 10, 'approved'),
+    (v_t, null,      'Do tenant inteiro',  400.00, current_date + 10, 'approved');
+
+  select sum(outflow) into v_todos from public.cash_flow_projection(12, 0);
+  perform app.assert(v_todos = 700.00, 'sem foco, a projeção soma os três títulos');
+
+  select sum(outflow) into v_focado
+    from public.cash_flow_projection(12, 0, null, null, v_meridiano);
+  perform app.assert(v_focado = 500.00,
+    'sob foco, entra o título da filial do cliente E o que não tem filial nenhuma');
+
+  select sum(outflow) into v_focado
+    from public.cash_flow_projection(12, 0, null, null, v_vertex);
+  perform app.assert(v_focado = 600.00, 'e o foco do outro cliente troca só a parcela dele');
+
+  -- Recebível tem `client_id` próprio, nulável: mesma regra, caminho diferente.
+  insert into public.receivables (tenant_id, client_id, description, amount, due_on, status) values
+    (v_t, v_meridiano, 'Mensalidade Meridiano', 90.00, current_date + 10, 'open'),
+    (v_t, v_vertex,    'Mensalidade Vertex',    50.00, current_date + 10, 'open'),
+    (v_t, null,        'Sem cliente',           30.00, current_date + 10, 'open');
+
+  select sum(inflow) into v_focado
+    from public.cash_flow_projection(12, 0, null, null, v_meridiano);
+  perform app.assert(v_focado = 120.00,
+    'o recebível sem cliente entra em qualquer foco, pela mesma regra');
+
+  delete from public.payables;
+  delete from public.receivables;
+end
+$$;
+
+-- O `drop` antes do `create` não é zelo: sem ele existiriam DUAS funções com o
+-- mesmo nome, e a chamada de quatro argumentos passaria a ser ambígua — erro em
+-- execução, numa tela que hoje funciona.
+do $$
+begin
+  perform app.assert(
+    (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'cash_flow_projection') = 1,
+    'existe UMA só cash_flow_projection — a assinatura antiga foi removida');
+end
+$$;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'
