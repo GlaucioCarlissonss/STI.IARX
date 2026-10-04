@@ -28,8 +28,6 @@ export type UserRole =
 /** Semáforo de SLA calculado por `app.sla_state()`. */
 export type SlaState = 'no_sla' | 'ok' | 'warning' | 'critical' | 'breached' | 'met'
 
-export type ChangeSource = 'ui' | 'api' | 'integration' | 'system'
-
 export interface Profile {
   id: string
   tenant_id: string | null
@@ -452,25 +450,6 @@ export interface ApprovalRule {
   is_active: boolean
 }
 
-export interface PayableApproval {
-  id: string
-  payable_id: string
-  level: number
-  decision: 'approved' | 'rejected'
-  decided_by: string | null
-  decided_at: string
-  note: string | null
-}
-
-/** Uma linha por situação, de `vw_payables_summary`. */
-export interface PayableSummaryRow {
-  status: PayableStatus
-  titulos: number
-  total: number
-  vencidos: number
-  total_vencido: number | null
-  vence_em_7_dias: number
-}
 
 /**
  * Uma linha por mês de `public.cash_flow_projection()`.

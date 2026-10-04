@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type {
@@ -69,10 +70,7 @@ export default async function TitulosAPagarPage() {
     costCenters: centros ?? [],
     branches: filiais ?? [],
   }
-  const anexosPorTitulo = new Map<string, AttachmentRecord[]>()
-  for (const a of anexos ?? []) {
-    anexosPorTitulo.set(a.payable_id, [...(anexosPorTitulo.get(a.payable_id) ?? []), a])
-  }
+  const anexosPorTitulo = agruparPor(anexos, 'payable_id')
 
   const aberto = lista.filter((t) => !['paid', 'cancelled'].includes(t.status))
   const aguardando = lista.filter((t) => t.status === 'pending_approval')

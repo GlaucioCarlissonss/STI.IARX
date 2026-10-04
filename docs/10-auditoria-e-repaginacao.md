@@ -17,7 +17,7 @@ hoje está correto.
 ### 0.1 "Escopo por `client_id` obrigatório"
 
 Neste sistema o isolamento **não é por `client_id`**. É por `tenant_id`, que vem
-do JWT (`app_metadata`) e é aplicado por **165 policies de RLS** no banco
+do JWT (`app_metadata`) e é aplicado por **162 policies de RLS** em `public` (mais 3 no bucket de anexos)
 (ADR-002). `src/lib/supabase/server.ts` diz, literalmente:
 
 > *"Nenhum código de aplicação deve filtrar `tenant_id` manualmente: se a policy
@@ -286,3 +286,99 @@ mudou.
 4. **Ordem**: aceita o plano da §7, ou prefere a sequência literal do briefing?
 
 Com isso respondido, sigo para a Entrega 2.
+
+---
+---
+
+# Entrega 2 — Limpeza e consolidação (executada)
+
+Aprovada com "pode seguir". As três perguntas de identidade visual e `client_id`
+**continuam abertas** — nenhuma delas afeta esta entrega, e as duas primeiras são
+pré-requisito da Entrega 4.
+
+## O que foi removido
+
+| Item | Onde |
+|---|---|
+| `requireRole()` | `src/lib/session.ts` — função exportada, zero chamadas |
+| `ChangeSource`, `PayableApproval`, `PayableSummaryRow` | `src/lib/types.ts` |
+| `RequiredAddressField` | `src/lib/address.ts` |
+| `@eslint/eslintrc` | `package.json` — sobrou do `FlatCompat` abandonado |
+| `vw_telecom_costs` | migração **0026** — ver abaixo |
+
+## O que foi consolidado
+
+| Antes | Depois | Alcance |
+|---|---|---|
+| Guarda de escrita copiada no topo de cada ação | `permitirEscrita()` em `src/lib/actions/guarda.ts` | **52 ações**, 9 arquivos |
+| `const NOT_AFFECTED = …` declarado em cada arquivo | `NAO_AFETADO` em `src/lib/actions/erros.ts` | **11 arquivos, 41 usos** |
+| `if (error.code === '23505') …` reimplementado | `mensagemDeErro(error, duplicado?)` | **12 pontos** |
+| Laço `new Map` + `for…of` para agrupar filhos | `agruparPor(linhas, 'chave')` em `src/lib/data/agrupar.ts` | **9 páginas** |
+| Mapas `statusTone` locais | `assetStatusTone`, `contractStatusTone`, `integrationStatusTone` em `src/lib/i18n.ts` | 4 páginas — dois eram byte a byte idênticos |
+
+`mensagemDeErro` passou a tratar `23503` (registro em uso), `23502` (campo
+obrigatório) e `42501` — que antes vazavam para a tela **em inglês, com nome de
+constraint**. É a única mudança de comportamento da entrega, e ela atende à regra
+final do briefing: *"mensagens de erro claras e acionáveis, sem expor detalhes
+técnicos internos"*.
+
+A mensagem específica de duplicidade **não** foi unificada. "Já existe um ativo
+com este patrimônio" e "Já existe uma área com este nome nesta filial" dizem onde
+está o conflito; trocá-las por um genérico seria perder informação para ter menos
+linhas.
+
+## Três coisas que eu decidi NÃO fazer, e por quê
+
+**1. Não unifiquei as outras ~35 guardas.** Existem duas formas de guarda no
+código: 52 ações checam permissão **e** papel; cerca de 35 checam só a permissão.
+Isso não é descuido de estilo — é diferença real. As que não checam o papel
+dependem do RLS para barrar (e ele barra: a policy de escrita exige
+`app.can_manage_records()`). Convertê-las acrescentaria uma checagem que hoje não
+existe, mudando a mensagem que a pessoa vê de "não encontrado ou sem permissão"
+para "sem permissão".
+
+É provavelmente o certo a fazer — mas é **mudança de comportamento**, e esta
+entrega não faz isso. Fica como decisão para a Entrega 3.
+
+**2. Não removi `vw_payables_summary` nem `vw_internet_dashboard`.** Também não
+têm leitor, mas o critério da remoção foi *duplicação*, não *falta de leitor*:
+nenhuma das duas repete outra view, as duas encodam agregação própria, e view não
+consultada não custa nada em execução — não entra em bundle nem pesa em consulta
+que não a usa. Só `vw_telecom_costs` saiu, por ser **subconjunto estrito** de
+`vw_telecom_dashboard`, que a tela passou a ler na 0025.
+
+**3. Não criei um componente genérico de filtro.** O briefing pede "um único
+componente de filtro de período". Não há filtro de período repetido: as três telas
+com filtro (`/tickets`, `/telefonia`, `/financeiro/fluxo-de-caixa`) filtram coisas
+diferentes, e os três invólucros são diferentes — um dentro de `Card`, um em barra
+solta, um sem link de limpar. Um componente que aceitasse as três formas teria
+mais código do que remove.
+
+## Um defeito encontrado durante a limpeza
+
+`scripts/gerar-instalador.py` calculava as views contando `create view` nas
+migrações. Assim que a 0026 derrubou uma, o cabeçalho do instalador passou a
+anunciar **18 views onde o banco tem 17**. Número calculado também envelhece
+quando se calcula a coisa errada — agora o script percorre `create` e `drop` **na
+ordem de execução**. Confere com o banco: 58 tabelas, 17 views.
+
+Na mesma passada, `docs/04` dizia 18 views.
+
+## Verificação — antes × depois
+
+| | Antes | Depois |
+|---|---|---|
+| `tsc` | limpo | limpo |
+| `eslint` | limpo | limpo |
+| Testes unitários | 210 | **210** |
+| Asserções de banco | 365 | **365** |
+| Asserções em navegador | 44, zero erro | **44, zero erro** |
+| Build | 30 rotas | **30 rotas** |
+
+Nenhum teste foi alterado para acomodar a refatoração — é essa a prova de que o
+comportamento não mudou.
+
+## Próximo passo
+
+Entrega 3 (organização e padronização). Para a Entrega 4 eu preciso das respostas
+sobre `client_id`, identidade visual e tipografia (§8).

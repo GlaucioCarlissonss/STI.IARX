@@ -3,31 +3,19 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
+import { NAO_AFETADO } from '@/lib/actions/erros'
+import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import { queueRuleSchema, queueSchema, recordId } from '@/lib/schemas/cadastros'
 
-/**
- * Regras de roteamento automático.
- *
- * Até a migração 0024 esta tabela era lida por ninguém: existia desde a 0004,
- * semeada e auditada, e o motor que a 0004 prometeu (`fn_route_ticket`) nunca
- * tinha sido escrito. O editor sem o motor teria sido uma tela que configura o
- * nada; o motor sem o editor, uma regra que só muda por SQL. Vieram juntos.
- *
- * As três ações usam uma única chave — `helpdesk.filas.configurar_regras` —
- * porque criar, editar e inativar regra são a mesma decisão.
- */
-const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem permissão.'
 
 export async function createQueueRule(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('helpdesk.filas.configurar_regras')
+  const gate = await permitirEscrita('helpdesk.filas.configurar_regras')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = queueRuleSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -47,10 +35,8 @@ export async function updateQueueRule(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('helpdesk.filas.configurar_regras')
+  const gate = await permitirEscrita('helpdesk.filas.configurar_regras')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -66,7 +52,7 @@ export async function updateQueueRule(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/filas')
   return { success: 'Regra atualizada.' }
@@ -83,10 +69,8 @@ export async function setQueueRuleActive(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('helpdesk.filas.configurar_regras')
+  const gate = await permitirEscrita('helpdesk.filas.configurar_regras')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, is_active: z.enum(['true', 'false']) })
@@ -103,7 +87,7 @@ export async function setQueueRuleActive(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/filas')
   return { success: isActive ? 'Regra reativada.' : 'Regra desativada.' }
@@ -128,10 +112,9 @@ function erroDeFila(error: { code?: string; message: string }): string {
 }
 
 export async function createQueue(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('helpdesk.filas.criar')
+  const gate = await permitirEscrita('helpdesk.filas.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = queueSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -151,10 +134,8 @@ export async function createQueue(_prev: ActionState, formData: FormData): Promi
 }
 
 export async function updateQueue(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('helpdesk.filas.editar')
+  const gate = await permitirEscrita('helpdesk.filas.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -170,17 +151,15 @@ export async function updateQueue(_prev: ActionState, formData: FormData): Promi
     .select('id')
 
   if (error) return { error: erroDeFila(error) }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/filas')
   return { success: 'Fila atualizada.' }
 }
 
 export async function setQueueActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('helpdesk.filas.inativar')
+  const gate = await permitirEscrita('helpdesk.filas.inativar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, is_active: z.enum(['true', 'false']) })
@@ -197,7 +176,7 @@ export async function setQueueActive(_prev: ActionState, formData: FormData): Pr
     .select('id')
 
   if (error) return { error: erroDeFila(error) }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/filas')
   return {

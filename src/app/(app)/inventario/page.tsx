@@ -1,9 +1,10 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
-import { assetStatusLabel, assetTypeLabel, custodyEventLabel, custodyReasonLabel } from '@/lib/i18n'
+import { assetStatusLabel, assetStatusTone, assetTypeLabel, custodyEventLabel, custodyReasonLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { Branch, BranchArea, CustodyEvent, ItAsset, Profile } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
@@ -12,14 +13,6 @@ import { Attachments, type AttachmentRecord } from '@/components/attachments'
 import { CustodyForm, EditAssetForm, NewAssetForm } from './asset-forms'
 
 export const metadata: Metadata = { title: 'Inventário de TI' }
-
-const statusTone: Record<string, 'ok' | 'warn' | 'neutral' | 'breach'> = {
-  active: 'ok',
-  in_stock: 'neutral',
-  maintenance: 'warn',
-  retired: 'neutral',
-  lost: 'breach',
-}
 
 export default async function InventarioPage() {
   await requireScreen('inventario.ativos.ver')
@@ -74,14 +67,8 @@ export default async function InventarioPage() {
   ])
   // Anexo por ativo. Quem pode anexar mas não editar também precisa do painel,
   // então a linha aparece para qualquer uma das duas permissões.
-  const anexosPorAtivo = new Map<string, AttachmentRecord[]>()
-  for (const a of anexos ?? []) {
-    anexosPorAtivo.set(a.asset_id, [...(anexosPorAtivo.get(a.asset_id) ?? []), a])
-  }
-  const custodiaPorAtivo = new Map<string, CustodyEvent[]>()
-  for (const e of custodia ?? []) {
-    custodiaPorAtivo.set(e.asset_id, [...(custodiaPorAtivo.get(e.asset_id) ?? []), e])
-  }
+  const anexosPorAtivo = agruparPor(anexos, 'asset_id')
+  const custodiaPorAtivo = agruparPor(custodia, 'asset_id')
   const listaAreas = areas ?? []
   const areaName = new Map(listaAreas.map((a) => [a.id, a.name]))
   const list = assets ?? []
@@ -156,7 +143,7 @@ export default async function InventarioPage() {
                       {a.serial_number ?? '—'}
                     </Td>
                     <Td>
-                      <Badge tone={statusTone[a.status] ?? 'neutral'}>
+                      <Badge tone={assetStatusTone[a.status] ?? 'neutral'}>
                         {assetStatusLabel[a.status] ?? a.status}
                       </Badge>
                     </Td>

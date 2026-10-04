@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
+import { NAO_AFETADO } from '@/lib/actions/erros'
 import { requireSession, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import {
@@ -14,7 +15,6 @@ import {
   recordId,
 } from '@/lib/schemas/cadastros'
 
-const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem permissão.'
 const DEPTH = 'Centros de custo suportam no máximo 3 níveis.'
 
 /* --- Centros de custo ------------------------------------------------------ */
@@ -76,7 +76,7 @@ export async function updateCostCenter(
     if (error.code === '23514') return { error: `${DEPTH} A hierarquia também não pode formar ciclo.` }
     return { error: error.message }
   }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/financeiro/centros-de-custo')
   return { success: 'Centro de custo atualizado.' }
@@ -105,7 +105,7 @@ export async function setCostCenterActive(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/financeiro/centros-de-custo')
   return { success: isActive ? 'Centro de custo reativado.' : 'Centro de custo inativado.' }
@@ -167,7 +167,7 @@ export async function updateBankAccount(
     }
     return { error: error.message }
   }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/financeiro/contas-bancarias')
   return { success: 'Conta bancária atualizada.' }
@@ -194,7 +194,7 @@ export async function setBankAccountStatus(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/financeiro/contas-bancarias')
   return { success: 'Situação da conta atualizada.' }
@@ -303,7 +303,7 @@ export async function toggleMovementReconciled(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/financeiro/contas-bancarias')
   return {

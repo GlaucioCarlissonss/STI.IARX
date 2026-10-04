@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, requirePermission, canManageRecords } from '@/lib/session'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
+import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import {
   recordId,
@@ -25,17 +26,15 @@ import {
  * diria "salvo" para uma escrita que não aconteceu.
  */
 
-const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem permissão.'
 const ROTA = '/conectividade/links'
 
 export async function createInternetLink(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('conectividade.links.criar')
+  const gate = await permitirEscrita('conectividade.links.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = internetLinkSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -45,10 +44,7 @@ export async function createInternetLink(
     .from('internet_links')
     .insert({ ...parsed.data, tenant_id: profile.tenant_id })
 
-  if (error) {
-    if (error.code === '23505') return { error: 'Já existe um link com este número de contrato.' }
-    return { error: error.message }
-  }
+  if (error) return { error: mensagemDeErro(error, 'Já existe um link com este número de contrato.') }
 
   revalidatePath(ROTA)
   return { success: 'Link cadastrado.' }
@@ -58,10 +54,8 @@ export async function updateInternetLink(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('conectividade.links.editar')
+  const gate = await permitirEscrita('conectividade.links.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -76,11 +70,8 @@ export async function updateInternetLink(
     .eq('id', id.data)
     .select('id')
 
-  if (error) {
-    if (error.code === '23505') return { error: 'Já existe um link com este número de contrato.' }
-    return { error: error.message }
-  }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (error) return { error: mensagemDeErro(error, 'Já existe um link com este número de contrato.') }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath(ROTA)
   return { success: 'Link atualizado.' }
@@ -97,10 +88,8 @@ export async function setInternetLinkStatus(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('conectividade.links.mudar_status')
+  const gate = await permitirEscrita('conectividade.links.mudar_status')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -116,7 +105,7 @@ export async function setInternetLinkStatus(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath(ROTA)
   return { success: status.data === 'active' ? 'Link reativado.' : 'Link suspenso.' }
@@ -135,10 +124,9 @@ export async function setInternetLinkStatus(
  * mão divergiriam no primeiro evento vindo de fora da tela.
  */
 export async function openLinkOutage(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('conectividade.links.registrar_evento')
+  const gate = await permitirEscrita('conectividade.links.registrar_evento')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = linkOutageSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -152,10 +140,7 @@ export async function openLinkOutage(_prev: ActionState, formData: FormData): Pr
     note: parsed.data.note,
   })
 
-  if (error) {
-    if (error.code === '23505') return { error: 'Já existe uma queda aberta para este link.' }
-    return { error: error.message }
-  }
+  if (error) return { error: mensagemDeErro(error, 'Já existe uma queda aberta para este link.') }
 
   revalidatePath(ROTA)
   return { success: 'Queda registrada.' }
@@ -163,10 +148,8 @@ export async function openLinkOutage(_prev: ActionState, formData: FormData): Pr
 
 /** Fecha a queda aberta. Sem queda aberta não há o que fechar, e a tela diz isso. */
 export async function closeLinkOutage(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('conectividade.links.registrar_evento')
+  const gate = await permitirEscrita('conectividade.links.registrar_evento')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('link_id'))
   if (!id.success) return { error: 'Registro inválido.' }

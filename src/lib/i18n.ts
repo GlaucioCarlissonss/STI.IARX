@@ -133,6 +133,34 @@ export const linkTechnologyLabel: Record<string, string> = {
   other: 'Outra',
 }
 
+/**
+ * Tom de cor da situação.
+ *
+ * Mora aqui, ao lado dos rótulos, porque é a mesma informação: o rótulo diz o
+ * nome e o tom diz a gravidade. Estavam declarados dentro de quatro páginas — e
+ * dois deles eram byte a byte idênticos, porque linha telefônica e link de
+ * internet compartilham as três situações.
+ */
+export const assetStatusTone: Record<string, 'ok' | 'warn' | 'neutral' | 'breach'> = {
+  active: 'ok',
+  in_stock: 'neutral',
+  maintenance: 'warn',
+  retired: 'neutral',
+  lost: 'breach',
+}
+
+export const contractStatusTone: Record<string, 'ok' | 'warn' | 'neutral'> = {
+  active: 'ok',
+  suspended: 'warn',
+  cancelled: 'neutral',
+}
+
+export const integrationStatusTone: Record<string, 'ok' | 'neutral' | 'breach'> = {
+  active: 'ok',
+  paused: 'neutral',
+  error: 'breach',
+}
+
 export const linkStatusLabel: Record<string, string> = {
   active: 'Ativo',
   suspended: 'Suspenso',

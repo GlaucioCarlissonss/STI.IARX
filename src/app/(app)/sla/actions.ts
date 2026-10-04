@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
+import { NAO_AFETADO } from '@/lib/actions/erros'
+import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import {
   categorySchema,
@@ -13,15 +14,13 @@ import {
   slaDefinitionSchema,
 } from '@/lib/schemas/cadastros'
 
-const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem permissão.'
 
 /* --- Categorias ----------------------------------------------------------- */
 
 export async function createCategory(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.categorias.criar')
+  const gate = await permitirEscrita('sla.categorias.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = categorySchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -46,10 +45,8 @@ export async function createCategory(_prev: ActionState, formData: FormData): Pr
 }
 
 export async function updateCategory(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.categorias.editar')
+  const gate = await permitirEscrita('sla.categorias.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -71,17 +68,15 @@ export async function updateCategory(_prev: ActionState, formData: FormData): Pr
     }
     return { error: error.message }
   }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
   return { success: 'Categoria atualizada.' }
 }
 
 export async function setCategoryActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.categorias.inativar')
+  const gate = await permitirEscrita('sla.categorias.inativar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, is_active: z.enum(['true', 'false']) })
@@ -98,7 +93,7 @@ export async function setCategoryActive(_prev: ActionState, formData: FormData):
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
   return { success: isActive ? 'Categoria reativada.' : 'Categoria inativada.' }
@@ -120,10 +115,9 @@ function slugifyKey(label: string): string {
 }
 
 export async function createPriority(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.prioridades.criar')
+  const gate = await permitirEscrita('sla.prioridades.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = prioritySchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -148,10 +142,8 @@ export async function createPriority(_prev: ActionState, formData: FormData): Pr
 }
 
 export async function updatePriority(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.prioridades.editar')
+  const gate = await permitirEscrita('sla.prioridades.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -168,17 +160,15 @@ export async function updatePriority(_prev: ActionState, formData: FormData): Pr
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
   return { success: 'Prioridade atualizada.' }
 }
 
 export async function setPriorityActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.prioridades.inativar')
+  const gate = await permitirEscrita('sla.prioridades.inativar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, is_active: z.enum(['true', 'false']) })
@@ -195,7 +185,7 @@ export async function setPriorityActive(_prev: ActionState, formData: FormData):
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
   return { success: isActive ? 'Prioridade reativada.' : 'Prioridade inativada.' }
@@ -204,10 +194,9 @@ export async function setPriorityActive(_prev: ActionState, formData: FormData):
 /* --- Contratos de SLA -------------------------------------------------------- */
 
 export async function createSlaContract(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.contratos.criar')
+  const gate = await permitirEscrita('sla.contratos.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = slaContractSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -224,10 +213,8 @@ export async function createSlaContract(_prev: ActionState, formData: FormData):
 }
 
 export async function updateSlaContract(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.contratos.editar')
+  const gate = await permitirEscrita('sla.contratos.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -243,7 +230,7 @@ export async function updateSlaContract(_prev: ActionState, formData: FormData):
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
   return { success: 'Contrato de SLA atualizado.' }
@@ -253,10 +240,8 @@ export async function setSlaContractActive(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.contratos.inativar')
+  const gate = await permitirEscrita('sla.contratos.inativar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, is_active: z.enum(['true', 'false']) })
@@ -273,7 +258,7 @@ export async function setSlaContractActive(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
   return { success: isActive ? 'Contrato de SLA reativado.' : 'Contrato de SLA inativado.' }
@@ -285,10 +270,9 @@ export async function createSlaDefinition(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.definicoes.criar')
+  const gate = await permitirEscrita('sla.definicoes.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = slaDefinitionSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -315,10 +299,8 @@ export async function updateSlaDefinition(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.definicoes.editar')
+  const gate = await permitirEscrita('sla.definicoes.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -341,7 +323,7 @@ export async function updateSlaDefinition(
     }
     return { error: error.message }
   }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
   return { success: 'Definição de SLA atualizada.' }
@@ -351,10 +333,8 @@ export async function setSlaDefinitionActive(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('sla.definicoes.inativar')
+  const gate = await permitirEscrita('sla.definicoes.inativar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, is_active: z.enum(['true', 'false']) })
@@ -371,7 +351,7 @@ export async function setSlaDefinitionActive(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
   return { success: isActive ? 'Definição de SLA reativada.' : 'Definição de SLA inativada.' }

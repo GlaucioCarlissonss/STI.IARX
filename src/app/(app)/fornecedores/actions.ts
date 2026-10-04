@@ -3,18 +3,17 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
+import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import { recordId, supplierContractSchema, supplierSchema } from '@/lib/schemas/cadastros'
 
-const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem permissão.'
 const DUPLICATE = 'Já existe um fornecedor com este CNPJ.'
 
 export async function createSupplier(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('fornecedores.cadastro.criar')
+  const gate = await permitirEscrita('fornecedores.cadastro.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = supplierSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) {
@@ -26,20 +25,15 @@ export async function createSupplier(_prev: ActionState, formData: FormData): Pr
     .from('suppliers')
     .insert({ ...parsed.data, tenant_id: profile.tenant_id })
 
-  if (error) {
-    if (error.code === '23505') return { error: DUPLICATE }
-    return { error: error.message }
-  }
+  if (error) return { error: mensagemDeErro(error, DUPLICATE) }
 
   revalidatePath('/fornecedores')
   return { success: 'Fornecedor cadastrado.' }
 }
 
 export async function updateSupplier(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('fornecedores.cadastro.editar')
+  const gate = await permitirEscrita('fornecedores.cadastro.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -56,11 +50,8 @@ export async function updateSupplier(_prev: ActionState, formData: FormData): Pr
     .eq('id', id.data)
     .select('id')
 
-  if (error) {
-    if (error.code === '23505') return { error: DUPLICATE }
-    return { error: error.message }
-  }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (error) return { error: mensagemDeErro(error, DUPLICATE) }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/fornecedores')
   // Ativos e linhas mostram o fornecedor nos seletores.
@@ -77,10 +68,8 @@ export async function setSupplierActive(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('fornecedores.cadastro.inativar')
+  const gate = await permitirEscrita('fornecedores.cadastro.inativar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, is_active: z.enum(['true', 'false']) })
@@ -97,7 +86,7 @@ export async function setSupplierActive(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/fornecedores')
   revalidatePath('/inventario')
@@ -110,10 +99,9 @@ export async function createSupplierContract(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('fornecedores.contratos.criar')
+  const gate = await permitirEscrita('fornecedores.contratos.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = supplierContractSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -133,10 +121,8 @@ export async function updateSupplierContract(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('fornecedores.contratos.editar')
+  const gate = await permitirEscrita('fornecedores.contratos.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -152,7 +138,7 @@ export async function updateSupplierContract(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/fornecedores')
   return { success: 'Contrato atualizado.' }
@@ -162,10 +148,8 @@ export async function setSupplierContractActive(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('fornecedores.contratos.inativar')
+  const gate = await permitirEscrita('fornecedores.contratos.inativar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, is_active: z.enum(['true', 'false']) })
@@ -182,7 +166,7 @@ export async function setSupplierContractActive(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/fornecedores')
   return { success: isActive ? 'Contrato reativado.' : 'Contrato inativado.' }

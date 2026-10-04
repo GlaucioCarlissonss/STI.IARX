@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { NAO_AFETADO } from '@/lib/actions/erros'
 import { requireSession, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import {
@@ -26,12 +27,11 @@ import {
  * tela diria "salvo" com o dado intacto. É o padrão de todo o projeto.
  */
 
-const NOT_AFFECTED = 'Não foi possível concluir: registro não encontrado ou sem permissão.'
 const PAGAR = '/financeiro/titulos-a-pagar'
 const RECEBER = '/financeiro/titulos-a-receber'
 
 function falha(m?: string): ActionState {
-  return { error: m ?? NOT_AFFECTED }
+  return { error: m ?? NAO_AFETADO }
 }
 
 /** Erro do Postgres em linguagem de quem usa a tela. */

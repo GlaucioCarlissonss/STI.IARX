@@ -3,15 +3,13 @@ import Link from 'next/link'
 import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireScreen } from '@/lib/session'
-import { integrationStatusLabel } from '@/lib/i18n'
+import { integrationStatusLabel, integrationStatusTone } from '@/lib/i18n'
 import { formatDateTime, formatNumber } from '@/lib/format'
 import type { Integration } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, StatTile } from '@/components/ui'
 import { IntegrationControls } from './integration-controls'
 
 export const metadata: Metadata = { title: 'Integrações' }
-
-const statusTone = { active: 'ok', paused: 'neutral', error: 'breach' } as const
 
 export default async function IntegracoesPage() {
   await requireScreen('integracoes.hub.ver')
@@ -91,7 +89,7 @@ export default async function IntegracoesPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     {failed > 0 && <Badge tone="breach">{failed} falha(s)</Badge>}
                     {pendingCount > 0 && <Badge tone="neutral">{pendingCount} pendente(s)</Badge>}
-                    <Badge tone={statusTone[i.status]}>{integrationStatusLabel[i.status]}</Badge>
+                    <Badge tone={integrationStatusTone[i.status]}>{integrationStatusLabel[i.status]}</Badge>
                   </div>
                 </div>
 

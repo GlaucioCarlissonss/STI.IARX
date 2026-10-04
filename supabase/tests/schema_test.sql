@@ -482,11 +482,14 @@ begin
     (select count(*) from public.vw_tickets_enriched where queue_score is not null) > 0,
     'vw_tickets_enriched calcula o score de fila');
 
+  -- A view `vw_telecom_costs` foi removida na 0026 por ser subconjunto estrito
+  -- de `vw_telecom_dashboard`. A asserção migrou para a view que ficou, com o
+  -- mesmo número e o mesmo recorte.
   perform app.assert(
-    (select monthly_total from public.vw_telecom_costs
+    (select sum(monthly_total) from public.vw_telecom_dashboard
       where carrier = 'TIM' and status = 'active'
         and tenant_id = 'a0000000-0000-4000-8000-000000000001') = 189.90,
-    'vw_telecom_costs soma custo por operadora');
+    'o painel de telefonia soma o custo por operadora');
 end
 $$;
 

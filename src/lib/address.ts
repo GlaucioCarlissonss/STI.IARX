@@ -35,8 +35,6 @@ export const REQUIRED_ADDRESS_FIELDS = [
   { key: 'postalCode', label: 'CEP' },
 ] as const
 
-export type RequiredAddressField = (typeof REQUIRED_ADDRESS_FIELDS)[number]['key']
-
 const blank = (v: string | null | undefined) => (v ?? '').trim() === ''
 
 /** Rótulos dos campos obrigatórios que estão em branco no cadastro. */

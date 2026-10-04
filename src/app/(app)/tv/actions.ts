@@ -4,7 +4,7 @@ import { randomBytes, createHash } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
+import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 
 const createTokenSchema = z.object({
@@ -33,10 +33,9 @@ export async function createDashboardToken(
   _prev: TokenActionState,
   formData: FormData,
 ): Promise<TokenActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('tv.tokens.criar')
+  const gate = await permitirEscrita('tv.tokens.criar', { mensagem: 'Sem permissão para emitir tokens.' })
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão para emitir tokens.' }
+  const { profile } = gate
 
   const parsed = createTokenSchema.safeParse({
     name: formData.get('name'),
@@ -72,10 +71,8 @@ export async function revokeDashboardToken(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('tv.tokens.revogar')
+  const gate = await permitirEscrita('tv.tokens.revogar', { mensagem: 'Sem permissão para revogar tokens.' })
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão para revogar tokens.' }
 
   const id = formData.get('token_id')
   if (typeof id !== 'string') return { error: 'Token inválido.' }

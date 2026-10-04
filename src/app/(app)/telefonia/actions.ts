@@ -3,20 +3,19 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
+import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import { recordId, telecomLineSchema, telecomStatusSchema } from '@/lib/schemas/cadastros'
 
-const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem permissão.'
 
 export async function createTelecomLine(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('telefonia.linhas.criar')
+  const gate = await permitirEscrita('telefonia.linhas.criar', { mensagem: 'Sem permissão para cadastrar linhas.' })
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão para cadastrar linhas.' }
+  const { profile } = gate
 
   const parsed = telecomLineSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) {
@@ -28,10 +27,7 @@ export async function createTelecomLine(
     .from('telecom_lines')
     .insert({ ...parsed.data, tenant_id: profile.tenant_id })
 
-  if (error) {
-    if (error.code === '23505') return { error: 'Este número já está cadastrado.' }
-    return { error: error.message }
-  }
+  if (error) return { error: mensagemDeErro(error, 'Este número já está cadastrado.') }
 
   revalidatePath('/telefonia')
   return { success: 'Linha cadastrada.' }
@@ -41,10 +37,8 @@ export async function updateTelecomLine(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('telefonia.linhas.editar')
+  const gate = await permitirEscrita('telefonia.linhas.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -61,11 +55,8 @@ export async function updateTelecomLine(
     .eq('id', id.data)
     .select('id')
 
-  if (error) {
-    if (error.code === '23505') return { error: 'Este número já está cadastrado.' }
-    return { error: error.message }
-  }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (error) return { error: mensagemDeErro(error, 'Este número já está cadastrado.') }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/telefonia')
   return { success: 'Linha atualizada.' }
@@ -83,10 +74,8 @@ export async function setTelecomLineStatus(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('telefonia.linhas.mudar_status')
+  const gate = await permitirEscrita('telefonia.linhas.mudar_status')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, status: telecomStatusSchema.exclude(['cancelled']) })
@@ -103,7 +92,7 @@ export async function setTelecomLineStatus(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/telefonia')
   return { success: parsed.data.status === 'active' ? 'Linha reativada.' : 'Linha suspensa.' }

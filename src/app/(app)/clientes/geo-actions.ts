@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
+import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import { PRECISION_LABEL, formatCoordinates, parseCoordinates, roundCoordinates } from '@/lib/maps'
 import {
@@ -35,10 +35,8 @@ export async function setBranchCoordinates(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('mapas.geolocalizacao.editar_endereco')
+  const gate = await permitirEscrita('mapas.geolocalizacao.editar_endereco', { mensagem: 'Sem permissão para alterar a localização.' })
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão para alterar a localização.' }
 
   const parsed = coordsSchema.safeParse({
     branch_id: formData.get('branch_id'),
@@ -122,10 +120,8 @@ export async function saveBranchAddress(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('mapas.geolocalizacao.editar_endereco')
+  const gate = await permitirEscrita('mapas.geolocalizacao.editar_endereco', { mensagem: 'Sem permissão para alterar o cadastro.' })
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão para alterar o cadastro.' }
 
   const parsed = addressSchema.safeParse(Object.fromEntries(formData.entries()))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -206,10 +202,9 @@ interface BranchAddressRow {
  * exporia uma chave irrestrita, que é o erro clássico dessa integração.
  */
 export async function geocodeBranch(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('mapas.geolocalizacao.geocodificar')
+  const gate = await permitirEscrita('mapas.geolocalizacao.geocodificar', { mensagem: 'Sem permissão para alterar a localização.' })
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão para alterar a localização.' }
+  const { profile } = gate
 
   const branchId = formData.get('branch_id')
   if (typeof branchId !== 'string') return { error: 'Filial inválida.' }
@@ -338,10 +333,8 @@ export async function confirmGeocodeCandidate(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('mapas.geolocalizacao.geocodificar')
+  const gate = await permitirEscrita('mapas.geolocalizacao.geocodificar', { mensagem: 'Sem permissão para alterar a localização.' })
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão para alterar a localização.' }
 
   const parsed = confirmSchema.safeParse(Object.fromEntries(formData.entries()))
   if (!parsed.success) return { error: 'Seleção inválida.' }

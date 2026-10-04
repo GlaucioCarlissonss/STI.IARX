@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { NAO_AFETADO } from '@/lib/actions/erros'
 import { requireSession, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import {
@@ -25,11 +26,10 @@ import {
  * Storage ter a mesma fronteira de tenant do resto do banco.
  */
 
-const NOT_AFFECTED = 'Não foi possível concluir: registro não encontrado ou sem permissão.'
 
 /** Mensagem única para os dois motivos, de propósito — ver `requirePermission`. */
 function falha(mensagem?: string): ActionState {
-  return { error: mensagem ?? NOT_AFFECTED }
+  return { error: mensagem ?? NAO_AFETADO }
 }
 
 export async function attachFile(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -192,6 +192,6 @@ export async function signAttachmentUrl(
     .from(BUCKET)
     .createSignedUrl(storagePath, SIGNED_URL_TTL)
 
-  if (error || !data) return { error: NOT_AFFECTED }
+  if (error || !data) return { error: NAO_AFETADO }
   return { url: data.signedUrl }
 }

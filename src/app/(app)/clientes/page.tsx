@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { requireScreen, allowed } from '@/lib/session'
 import { createClient } from '@/lib/supabase/server'
+import { agruparPor } from '@/lib/data/agrupar'
 import { getBranches, getBusinessHours, getClients } from '@/lib/data/lookups'
 import { formatCnpj } from '@/lib/format'
 import { areaKindLabel } from '@/lib/i18n'
@@ -59,10 +60,7 @@ export default async function ClientesPage() {
       : { data: null },
   ])
 
-  const areasPorFilial = new Map<string, BranchArea[]>()
-  for (const a of areas ?? []) {
-    areasPorFilial.set(a.branch_id, [...(areasPorFilial.get(a.branch_id) ?? []), a])
-  }
+  const areasPorFilial = agruparPor(areas, 'branch_id')
 
   /* A linha do painel aparece para quem edita a filial OU alcança as áreas: são
      dois assuntos distintos, e exigir a permissão de filial para ver a área

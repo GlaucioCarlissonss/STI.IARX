@@ -94,19 +94,6 @@ export async function requireSession(): Promise<SessionContext> {
 }
 
 /**
- * Exige um dos papéis informados.
- *
- * Esta checagem é de UX — evita mostrar uma tela que o usuário não pode usar.
- * A barreira de verdade é o RLS: mesmo que alguém chegue à rota, o banco não
- * devolve linha nenhuma fora do seu escopo.
- */
-export async function requireRole(roles: UserRole[]): Promise<SessionContext> {
-  const ctx = await requireSession()
-  if (!roles.includes(ctx.profile.role)) redirect('/painel')
-  return ctx
-}
-
-/**
  * Gate de TELA: exige a permissão de consulta e devolve o contexto.
  *
  * Redireciona em vez de mostrar 403 porque a pessoa chegou aqui pelo menu ou por

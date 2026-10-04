@@ -1,9 +1,10 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
-import { linkStateLabel, linkStateTone, linkStatusLabel, linkTechnologyLabel } from '@/lib/i18n'
+import { contractStatusTone, linkStateLabel, linkStateTone, linkStatusLabel, linkTechnologyLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate, formatMinutes } from '@/lib/format'
 import type { ConnectivityCostRow, InternetLink, LinkAvailabilityEvent } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
@@ -39,12 +40,6 @@ export const metadata: Metadata = { title: 'Links de internet' }
  * número por um caminho mais longo, e um número de cabeçalho que discorda da
  * tabela logo abaixo é pior que nenhum número.
  */
-
-const statusTone: Record<string, 'ok' | 'warn' | 'neutral'> = {
-  active: 'ok',
-  suspended: 'warn',
-  cancelled: 'neutral',
-}
 
 export default async function LinksDeInternetPage() {
   await requireScreen('conectividade.links.ver')
@@ -116,14 +111,8 @@ export default async function LinksDeInternetPage() {
   const areaName = new Map((areas ?? []).map((a) => [a.id, a.name]))
   const fornecedorName = new Map((fornecedores ?? []).map((f) => [f.id, f.name]))
 
-  const anexosPorLink = new Map<string, AttachmentRecord[]>()
-  for (const a of anexos ?? []) {
-    anexosPorLink.set(a.link_id, [...(anexosPorLink.get(a.link_id) ?? []), a])
-  }
-  const eventosPorLink = new Map<string, LinkAvailabilityEvent[]>()
-  for (const e of eventos ?? []) {
-    eventosPorLink.set(e.link_id, [...(eventosPorLink.get(e.link_id) ?? []), e])
-  }
+  const anexosPorLink = agruparPor(anexos, 'link_id')
+  const eventosPorLink = agruparPor(eventos, 'link_id')
 
   const temContrato = (id: string) =>
     (anexosPorLink.get(id) ?? []).some((a) => a.kind === 'contract')
@@ -228,7 +217,7 @@ export default async function LinksDeInternetPage() {
                       </p>
                     </Td>
                     <Td>
-                      <Badge tone={statusTone[k.status] ?? 'neutral'}>
+                      <Badge tone={contractStatusTone[k.status] ?? 'neutral'}>
                         {linkStatusLabel[k.status] ?? k.status}
                       </Badge>
                     </Td>

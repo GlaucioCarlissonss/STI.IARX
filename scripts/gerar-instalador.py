@@ -32,11 +32,30 @@ def sem_transacao_propria(txt: str) -> str:
 
 
 def conta_objetos(migracoes):
-    """Conta o que o instalador cria, lendo o próprio SQL — número na mão erra."""
+    """Conta o que o instalador DEIXA no banco, lendo o próprio SQL.
+
+    Contar só os `create` erra assim que uma migração derruba um objeto: foi o
+    que aconteceu com `vw_telecom_costs` na 0026, e o cabeçalho passou a anunciar
+    18 views onde o banco tem 17. Número calculado também envelhece, quando se
+    calcula a coisa errada.
+    """
     todo = '\n'.join(io.open(f, encoding='utf-8').read() for f in migracoes)
+
+    # As views são contadas percorrendo os eventos NA ORDEM em que o instalador
+    # os executa. Somar os `create` e subtrair os `drop` daria errado nos dois
+    # sentidos: migração que recria uma view faz `drop` seguido de `create`.
+    vivas = set()
+    for m in re.finditer(
+        r'(?im)^(create (?:or replace )?view|drop view if exists) public\.(\w+)', todo
+    ):
+        if m.group(1).lower().startswith('create'):
+            vivas.add(m.group(2))
+        else:
+            vivas.discard(m.group(2))
+
     return {
         'tabelas': len(re.findall(r'(?im)^create table (?:if not exists )?public\.', todo)),
-        'views': len(set(re.findall(r'(?im)^create (?:or replace )?view public\.(\w+)', todo))),
+        'views': len(vivas),
     }
 
 

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { isPreciseEnough, type GeocodePrecision } from '@/lib/maps'
 import { Badge, PageHeader, StatTile } from '@/components/ui'
@@ -124,10 +125,7 @@ export default async function MapasPage({
     ])
 
   const all = rows ?? []
-  const areaByBranch = new Map<string, AreaRow[]>()
-  for (const a of areas ?? []) {
-    areaByBranch.set(a.branch_id, [...(areaByBranch.get(a.branch_id) ?? []), a])
-  }
+  const areaByBranch = agruparPor(areas, 'branch_id')
 
   /** A quebra por área muda conforme o domínio; tickets não têm área (LG-13). */
   const breakdownFor = (branchId: string) => {

@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { formatCnpj, formatCurrency, formatDate, formatMinutes } from '@/lib/format'
 import type { Supplier, SupplierContract } from '@/lib/types'
@@ -47,10 +48,7 @@ export default async function FornecedoresPage() {
   ])
 
   const list = suppliers ?? []
-  const bySupplier = new Map<string, SupplierContract[]>()
-  for (const c of contracts ?? []) {
-    bySupplier.set(c.supplier_id, [...(bySupplier.get(c.supplier_id) ?? []), c])
-  }
+  const bySupplier = agruparPor(contracts, 'supplier_id')
 
   return (
     <>

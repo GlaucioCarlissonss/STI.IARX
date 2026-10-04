@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
+import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import {
   branchAreaSchema,
@@ -13,23 +14,14 @@ import {
   recordId,
 } from '@/lib/schemas/cadastros'
 
-/**
- * Mensagem única para o caso em que a escrita não atingiu linha nenhuma.
- *
- * Um `update` barrado pelo RLS não devolve erro — devolve zero linhas. Sem esta
- * checagem a tela diria "salvo" e o dado continuaria como estava, que é a pior
- * das falhas possíveis num cadastro: silenciosa e convincente.
- */
-const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem permissão.'
 
 export async function createClientRecord(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('clientes.grupos.criar')
+  const gate = await permitirEscrita('clientes.grupos.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = clientSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -39,10 +31,7 @@ export async function createClientRecord(
     .from('clients')
     .insert({ ...parsed.data, tenant_id: profile.tenant_id })
 
-  if (error) {
-    if (error.code === '23505') return { error: 'Já existe um cliente com este CNPJ.' }
-    return { error: error.message }
-  }
+  if (error) return { error: mensagemDeErro(error, 'Já existe um cliente com este CNPJ.') }
 
   revalidatePath('/clientes')
   return { success: 'Cliente cadastrado.' }
@@ -52,10 +41,8 @@ export async function updateClientRecord(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('clientes.grupos.editar')
+  const gate = await permitirEscrita('clientes.grupos.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -70,11 +57,8 @@ export async function updateClientRecord(
     .eq('id', id.data)
     .select('id')
 
-  if (error) {
-    if (error.code === '23505') return { error: 'Já existe um cliente com este CNPJ.' }
-    return { error: error.message }
-  }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (error) return { error: mensagemDeErro(error, 'Já existe um cliente com este CNPJ.') }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/clientes')
   return { success: 'Cliente atualizado.' }
@@ -88,10 +72,8 @@ export async function updateClientRecord(
  * preserva a história — por isso não existe exclusão aqui.
  */
 export async function setClientStatus(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('clientes.grupos.inativar')
+  const gate = await permitirEscrita('clientes.grupos.inativar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, status: clientStatusSchema })
@@ -106,7 +88,7 @@ export async function setClientStatus(_prev: ActionState, formData: FormData): P
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/clientes')
   return {
@@ -115,10 +97,9 @@ export async function setClientStatus(_prev: ActionState, formData: FormData): P
 }
 
 export async function createBranch(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('clientes.filiais.criar')
+  const gate = await permitirEscrita('clientes.filiais.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = branchSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -135,10 +116,8 @@ export async function createBranch(_prev: ActionState, formData: FormData): Prom
 }
 
 export async function updateBranch(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('clientes.filiais.editar')
+  const gate = await permitirEscrita('clientes.filiais.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -154,7 +133,7 @@ export async function updateBranch(_prev: ActionState, formData: FormData): Prom
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   // O endereço da filial mora em /mapas e alimenta a geolocalização: alterar
   // cidade ou UF aqui muda o que aquela tela mostra.
@@ -164,10 +143,8 @@ export async function updateBranch(_prev: ActionState, formData: FormData): Prom
 }
 
 export async function setBranchActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('clientes.filiais.inativar')
+  const gate = await permitirEscrita('clientes.filiais.inativar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, is_active: z.enum(['true', 'false']) })
@@ -184,7 +161,7 @@ export async function setBranchActive(_prev: ActionState, formData: FormData): P
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/clientes')
   revalidatePath('/mapas')
@@ -206,10 +183,9 @@ export async function createBranchArea(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('clientes.areas.criar')
+  const gate = await permitirEscrita('clientes.areas.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
+  const { profile } = gate
 
   const parsed = branchAreaSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -234,10 +210,8 @@ export async function updateBranchArea(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('clientes.areas.editar')
+  const gate = await permitirEscrita('clientes.areas.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -252,11 +226,8 @@ export async function updateBranchArea(
     .eq('id', id.data)
     .select('id')
 
-  if (error) {
-    if (error.code === '23505') return { error: 'Já existe uma área com este nome nesta filial.' }
-    return { error: error.message }
-  }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (error) return { error: mensagemDeErro(error, 'Já existe uma área com este nome nesta filial.') }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/clientes')
   return { success: 'Área atualizada.' }
@@ -266,10 +237,8 @@ export async function setBranchAreaActive(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('clientes.areas.inativar')
+  const gate = await permitirEscrita('clientes.areas.inativar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ id: recordId, is_active: z.enum(['true', 'false']) })
@@ -286,7 +255,7 @@ export async function setBranchAreaActive(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/clientes')
   return { success: isActive ? 'Área reativada.' : 'Área inativada.' }
@@ -306,10 +275,8 @@ export async function seedBranchAreas(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('clientes.areas.criar')
+  const gate = await permitirEscrita('clientes.areas.criar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('branch_id'))
   if (!id.success) return { error: 'Filial inválida.' }

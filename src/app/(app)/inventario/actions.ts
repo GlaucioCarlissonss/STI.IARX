@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { requireSession, canManageRecords, requirePermission } from '@/lib/session'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
+import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import {
   assetCustodySchema,
@@ -12,14 +13,12 @@ import {
   recordId,
 } from '@/lib/schemas/cadastros'
 
-const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem permissão.'
 const DUPLICATE = 'Já existe um ativo com este patrimônio ou número de série.'
 
 export async function createAsset(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('inventario.ativos.criar')
+  const gate = await permitirEscrita('inventario.ativos.criar', { mensagem: 'Sem permissão para cadastrar ativos.' })
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão para cadastrar ativos.' }
+  const { profile } = gate
 
   const parsed = assetSchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) {
@@ -50,10 +49,8 @@ export async function createAsset(_prev: ActionState, formData: FormData): Promi
  * importação ou SQL direto também entra no histórico de custódia.
  */
 export async function updateAsset(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('inventario.ativos.editar')
+  const gate = await permitirEscrita('inventario.ativos.editar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const id = recordId.safeParse(formData.get('id'))
   if (!id.success) return { error: 'Registro inválido.' }
@@ -70,11 +67,8 @@ export async function updateAsset(_prev: ActionState, formData: FormData): Promi
     .eq('id', id.data)
     .select('id')
 
-  if (error) {
-    if (error.code === '23505') return { error: DUPLICATE }
-    return { error: error.message }
-  }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (error) return { error: mensagemDeErro(error, DUPLICATE) }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/inventario')
   return { success: 'Ativo atualizado.' }
@@ -89,10 +83,8 @@ export async function changeAssetStatus(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('inventario.ativos.mudar_status')
+  const gate = await permitirEscrita('inventario.ativos.mudar_status')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = z
     .object({ asset_id: recordId, status: assetStatusSchema })
@@ -107,7 +99,7 @@ export async function changeAssetStatus(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/inventario')
   return { success: 'Status do ativo atualizado.' }
@@ -132,10 +124,8 @@ export async function changeAssetCustody(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
-  const gate = await requirePermission('inventario.ativos.custodiar')
+  const gate = await permitirEscrita('inventario.ativos.custodiar')
   if ('error' in gate) return gate
-  if (!canManageRecords(profile.role)) return { error: 'Sem permissão.' }
 
   const parsed = assetCustodySchema.safeParse(Object.fromEntries(formData))
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
@@ -158,7 +148,7 @@ export async function changeAssetCustody(
     }
     return { error: error.message }
   }
-  if (!data) return { error: NOT_AFFECTED }
+  if (!data) return { error: NAO_AFETADO }
 
   revalidatePath('/inventario')
   return { success: 'Custódia registrada.' }

@@ -1,9 +1,10 @@
 import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
-import { lineStatusLabel, lineTypeLabel } from '@/lib/i18n'
+import { contractStatusTone, lineStatusLabel, lineTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { BranchArea, TelecomDashboardRow, TelecomLine } from '@/lib/types'
 import {
@@ -14,12 +15,6 @@ import { Attachments, type AttachmentRecord } from '@/components/attachments'
 import { EditLineForm, NewLineForm } from './line-forms'
 
 export const metadata: Metadata = { title: 'Telefonia' }
-
-const statusTone: Record<string, 'ok' | 'warn' | 'neutral'> = {
-  active: 'ok',
-  suspended: 'warn',
-  cancelled: 'neutral',
-}
 
 export default async function TelefoniaPage({
   searchParams,
@@ -79,10 +74,7 @@ export default async function TelefoniaPage({
     allowed('telefonia.linhas.criar'),
     allowed('telefonia.linhas.anexar'),
   ])
-  const anexosPorLinha = new Map<string, AttachmentRecord[]>()
-  for (const a of anexos ?? []) {
-    anexosPorLinha.set(a.line_id, [...(anexosPorLinha.get(a.line_id) ?? []), a])
-  }
+  const anexosPorLinha = agruparPor(anexos, 'line_id')
   /* Filtros no servidor, em memória: são poucas linhas por tenant e a consulta
      já trouxe todas para a tabela. Refazer a ida ao banco por filtro custaria
      mais do que economizaria. */
@@ -215,7 +207,7 @@ export default async function TelefoniaPage({
                     {lineTypeLabel[l.line_type] ?? l.line_type}
                   </Td>
                   <Td>
-                    <Badge tone={statusTone[l.status] ?? 'neutral'}>
+                    <Badge tone={contractStatusTone[l.status] ?? 'neutral'}>
                       {lineStatusLabel[l.status] ?? l.status}
                     </Badge>
                   </Td>
@@ -287,7 +279,7 @@ export default async function TelefoniaPage({
                       {lineTypeLabel[c.line_type] ?? c.line_type}
                     </Td>
                     <Td>
-                      <Badge tone={statusTone[c.status] ?? 'neutral'}>
+                      <Badge tone={contractStatusTone[c.status] ?? 'neutral'}>
                         {lineStatusLabel[c.status] ?? c.status}
                       </Badge>
                     </Td>

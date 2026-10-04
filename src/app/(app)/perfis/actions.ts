@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
 import { requireSession, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/app/(app)/tickets/actions'
 import { recordId } from '@/lib/schemas/cadastros'
@@ -10,7 +11,6 @@ import { emptyToNull } from '@/lib/form-schemas'
 import { PERMISSION_KEYS, unreachableForRole, withAncestors } from '@/lib/permissions'
 import type { UserRole } from '@/lib/types'
 
-const NOT_AFFECTED = 'Não foi possível salvar: registro não encontrado ou sem permissão.'
 
 /** `super_admin` fora: é papel da operação da plataforma, não do ambiente do cliente. */
 const BASE_ROLES = ['admin', 'gestor', 'atendente', 'solicitante', 'visualizador'] as const
@@ -37,10 +37,7 @@ export async function createAccessProfile(
     .from('access_profiles')
     .insert({ ...parsed.data, tenant_id: profile.tenant_id })
 
-  if (error) {
-    if (error.code === '23505') return { error: 'Já existe um perfil com este nome.' }
-    return { error: error.message }
-  }
+  if (error) return { error: mensagemDeErro(error, 'Já existe um perfil com este nome.') }
 
   revalidatePath('/perfis')
   return { success: 'Perfil criado. Marque as permissões dele abaixo.' }
@@ -75,7 +72,7 @@ export async function updateAccessProfile(
     }
     return { error: error.message }
   }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/perfis')
   return { success: 'Perfil atualizado.' }
@@ -104,7 +101,7 @@ export async function setAccessProfileActive(
     .select('id')
 
   if (error) return { error: error.message }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/perfis')
   revalidatePath('/usuarios')
@@ -150,7 +147,7 @@ export async function saveProfileGrants(
     .eq('id', id.data)
     .maybeSingle<{ id: string; base_role: UserRole; is_active: boolean }>()
 
-  if (!alvo) return { error: NOT_AFFECTED }
+  if (!alvo) return { error: NAO_AFETADO }
 
   const chaves = withAncestors(marcadas)
   const foraDoTeto = unreachableForRole(chaves, alvo.base_role)
@@ -227,7 +224,7 @@ export async function setUserAccessProfile(
     }
     return { error: error.message }
   }
-  if (!updated?.length) return { error: NOT_AFFECTED }
+  if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/usuarios')
   return { success: 'Perfil de acesso atualizado.' }
