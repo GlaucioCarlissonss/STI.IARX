@@ -1,0 +1,288 @@
+# Auditoria do código-fonte e plano de repaginada — Entrega 1 (diagnóstico)
+
+> **Nada foi alterado nesta entrega.** Este documento é o diagnóstico e o plano de
+> ação, para aprovação antes de qualquer mudança.
+>
+> Tudo aqui foi **medido**, não estimado: os números vêm de varredura do código,
+> do build de produção e de consulta ao PostgreSQL com as migrações aplicadas.
+> Quando a medição contrariou a suspeita, está registrado assim.
+
+---
+
+## 0. Quatro premissas do briefing que não batem com este sistema
+
+Precisam de decisão sua antes das Entregas 3 e 4 — duas delas mudariam código que
+hoje está correto.
+
+### 0.1 "Escopo por `client_id` obrigatório"
+
+Neste sistema o isolamento **não é por `client_id`**. É por `tenant_id`, que vem
+do JWT (`app_metadata`) e é aplicado por **165 policies de RLS** no banco
+(ADR-002). `src/lib/supabase/server.ts` diz, literalmente:
+
+> *"Nenhum código de aplicação deve filtrar `tenant_id` manualmente: se a policy
+> falhar, o dado não aparece, em vez de aparecer por acidente."*
+
+`client_id` existe (22 arquivos), mas é outra coisa: é o **grupo econômico
+atendido** — Grupo Meridiano, Construtora Vertex — dentro de um tenant. Uma
+filial pertence a um cliente; o ticket deriva o cliente da filial.
+
+Adicionar filtro por `client_id` na camada de dados seria **acrescentar uma
+segunda fronteira de segurança em paralelo à que já existe**, e é assim que se
+cria o caso em que uma delas protege e a outra não. Se o que você quer é um
+*seletor de cliente* na interface — "ver só o Grupo Meridiano" —, isso é um
+**filtro de visualização**, não escopo de segurança, e eu trataria como tal.
+
+**Preciso saber qual dos dois você quer.**
+
+### 0.2 Os módulos citados não são os deste sistema
+
+O briefing fala em "Financeiro, Projetos, SLA, Suporte, Sistema". Os módulos
+reais, tirados do catálogo de permissões, são doze:
+
+`helpdesk` · `sla` · `inventario` · `telefonia` · `conectividade` · `clientes` ·
+`fornecedores` · `mapas` · `financeiro` · `usuarios` · `integracoes` · `tv`
+
+**Não existe módulo de Projetos** — zero ocorrências no código e no banco.
+
+### 0.3 A identidade visual descrita não existe aqui
+
+O briefing manda manter "as cores por unidade já definidas (RESIDENCIAL roxo,
+MILAGRES laranja, ALIANÇA azul, UNION rosa, MOOVE verde)" e "a identidade dos
+Faróis/Objetivos".
+
+Busquei os oito termos em `src/`, `supabase/` e `docs/`: **zero ocorrências**.
+(As seis ocorrências de "UNION" são `union all` em SQL.) Esses nomes são de outro
+produto.
+
+A identidade que este sistema tem é outra: azul `#1d4ed8` como cor de ação, e
+cinco tons semânticos de estado (`ok`, `warn`, `crit`, `breach`, `neutral`) que
+comunicam situação de SLA. Vou **preservar essa semântica** — ela carrega
+significado operacional, não é decoração — e evoluir o resto. Se as cores por
+unidade forem para entrar, preciso saber a que entidade elas se ligam.
+
+### 0.4 A arquitetura não tem "hooks" nem "services"
+
+O briefing pede padronizar "components, services, hooks, utils, types". Aqui não
+há camada de API nem de serviços: a leitura acontece em **Server Components** e a
+escrita em **Server Actions** (ADR-011), com apenas duas rotas HTTP
+(`/api/health` e o retorno do e-mail de recuperação). Só **8 arquivos** usam
+`'use client'` com estado.
+
+Criar `services/` e `hooks/` aqui significaria introduzir uma camada que o
+framework torna desnecessária. Vou padronizar a estrutura **que existe**.
+
+---
+
+## 1. Inventário
+
+| | |
+|---|---|
+| Páginas (`page.tsx`) | 29 |
+| Rotas HTTP (`route.ts`) | 2 |
+| Arquivos de Server Actions | 20 |
+| Componentes compartilhados | 14 |
+| Arquivos com `'use client'` | 8 |
+| Módulos em `src/lib` | 18 |
+| Arquivos de teste | 11 (210 testes) |
+| Migrações SQL | 25 (365 asserções) |
+| **Linhas** | `src/app` 15.566 · `src/lib` 6.333 · `src/components` 1.531 · SQL 7.486 |
+
+Rotas construídas: **30**.
+
+---
+
+## 2. Código morto — há muito menos do que o briefing supõe
+
+Esta é a parte do diagnóstico que contraria a expectativa, e é melhor dizer antes
+de prometer uma limpeza grande.
+
+### O que de fato está morto (crítico: nenhum; baixo: tudo)
+
+| Item | Onde | Observação |
+|---|---|---|
+| `requireRole()` | `src/lib/session.ts` | Função exportada, **zero chamadas**. Sobrou da fase anterior ao catálogo de permissões. |
+| `ChangeSource` | `src/lib/types.ts:31` | Tipo declarado, nunca referenciado |
+| `PayableApproval` | `src/lib/types.ts:455` | idem — a tabela existe, o tipo não é usado |
+| `PayableSummaryRow` | `src/lib/types.ts:466` | idem |
+| `RequiredAddressField` | `src/lib/address.ts:38` | idem |
+| `@eslint/eslintrc` | `package.json` | Dependência não usada: o `eslint.config.mjs` abandonou o `FlatCompat` e o pacote ficou |
+| `vw_payables_summary` | migração 0020 | View criada e **nunca consultada** |
+| `vw_telecom_costs` | migração 0007 | Ficou órfã quando a tela passou a ler `vw_telecom_dashboard` |
+| `vw_internet_dashboard` | migração 0013 | Nunca consultada — os indicadores de link são calculados em memória, por decisão registrada |
+
+**Total: 9 itens.** É o que há.
+
+### O que eu esperava achar e NÃO achei
+
+| Suspeita | Medição |
+|---|---|
+| Código comentado | **0 linhas.** Os 10% de comentários (2.248 linhas) são prosa explicativa, que é convenção declarada deste repositório |
+| `<button>` sem `type` | **0** (uma varredura ingênua acusa 16; todas têm `type` na linha seguinte) |
+| `<img>` sem `alt` | **0** |
+| Componentes de mapa duplicados | **Não é duplicação.** `BranchMap` escolhe entre Google e Leaflet conforme exista chave de API — é fallback deliberado |
+| Dependências não usadas | Só uma (acima). As outras 17 estão todas em uso |
+
+**Consequência para a Entrega 2:** ela será pequena. Prefiro dizer isso agora a
+inflar o escopo para parecer produtiva.
+
+### Superfície de exportação larga (baixo)
+
+Cerca de **30 tipos** são exportados e usados só dentro do próprio arquivo. Não é
+código morto — é API pública maior que o necessário. Tirar o `export` deixa claro
+o que é contrato e o que é detalhe interno.
+
+---
+
+## 3. Duplicação real — aqui há trabalho
+
+| Padrão repetido | Vezes | Proposta |
+|---|---|---|
+| `const NOT_AFFECTED = 'Não foi possível salvar…'` | **11 arquivos** | Um único `src/lib/actions/erros.ts` |
+| Tratamento de `error.code === '23505'` com mensagem própria | **29 pontos** | Um `mensagemDeErroDeBanco(error, contexto)` que já conhece 23505, 23503, 23514 e `restrict_violation` |
+| Tripla `requireSession` + `requirePermission` + `canManageRecords` | **15 arquivos de actions** | Um helper `guardaDeEscrita(chave)` que devolve `{ ctx }` ou `{ error }` |
+| Agrupamento anti-N+1 (`new Map` + `for…of`) | **10 páginas** | `agruparPor(linhas, 'campo_id')` em `src/lib/data` |
+| Mapas locais `statusTone` | 4 arquivos | Mover para `src/lib/i18n.ts`, junto dos rótulos que já estão lá |
+| Bloco de filtros `<form method="get">` | 3 páginas, markup próprio em cada | Um `<FiltroBar>` com os campos como dados |
+| `EditPanel` + `ActionForm` + `SubmitButton` | 12 páginas | Já é reutilizado — **não mexer** |
+
+Nenhuma dessas mudanças altera comportamento: são extrações mecânicas, e os 210
+testes mais as 365 asserções de banco cobrem o entorno.
+
+---
+
+## 4. Inconsistências de organização
+
+| Achado | Gravidade |
+|---|---|
+| `src/app/(app)/filas/actions.ts` mistura dois assuntos — 3 ações de fila e 3 de regra de roteamento, 11 exports | Médio |
+| `src/lib` tem **10 arquivos soltos** e 4 pastas (`data`, `integrations`, `schemas`, `supabase`) — critério de agrupamento não é óbvio | Médio |
+| Nomes de arquivo de formulário quase consistentes: `line-forms`, `asset-forms`, `rule-forms`, `queue-forms`, `area-forms`, `attachment-forms` — mas `clientes/forms.tsx` e `financeiro/titulos/forms.tsx` são genéricos | Baixo |
+| **11 cores em hexadecimal** cruas em `src/components/map-marker.tsx` | Baixo — a API de popup do Leaflet/Google exige string de HTML, mas `var(--color-ok-ink)` funcionaria ali e hoje são valores copiados |
+| `style={{…}}` em **14 pontos** | Baixo — a maioria é legítima (cor vinda do banco, altura do mapa, duração de animação). Três são valores mágicos que viram token |
+
+---
+
+## 5. Visual e usabilidade — o diagnóstico que mais pesa
+
+### 5.1 Não existe dark mode na aplicação (CRÍTICO para a Entrega 4)
+
+`src/app/globals.css` não tem **nenhuma** regra `prefers-color-scheme` nem
+`data-theme`. A única parte escura do sistema é o painel de TV, que tem tokens
+próprios (`--color-tv-*`) porque é uma TV numa sala.
+
+O **protótipo** (`demo/sti-tool.html`) tem dark mode completo, com os três
+estados (claro, escuro, preferência do sistema). A aplicação não. É uma
+divergência real entre o que o cliente viu e o que existe.
+
+### 5.2 A tipografia é exatamente a que o briefing manda evitar
+
+```css
+--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+```
+
+Não há `next/font`, nem fonte display, nem escala tipográfica. O briefing pede
+"fontes distintas e únicas (display + body), nunca Arial, Inter, Roboto" — hoje é
+literalmente Roboto e Arial na cadeia.
+
+### 5.3 O design system está pela metade
+
+29 tokens `--color-*` e **mais nada**: nenhum token de espaçamento, raio, sombra,
+tipografia ou duração de animação. Os valores vivem espalhados em classes Tailwind
+(`rounded-xl`, `gap-3`, `p-4`) repetidas à mão.
+
+### 5.4 Zero `loading.tsx` e zero `error.tsx` em 29 páginas (CRÍTICO)
+
+Toda página é um Server Component que faz `await Promise.all([…consultas…])`.
+Hoje:
+
+- **não há estado de carregamento**: a navegação fica parada sem resposta até a
+  última consulta voltar — e duas páginas fazem **10 consultas**;
+- **não há fronteira de erro**: uma consulta que falhe derruba a página na tela de
+  erro padrão do Next, em inglês.
+
+É a lacuna de usabilidade com maior efeito percebido, e a mais barata de fechar.
+
+### 5.5 Outros
+
+| Achado | Gravidade |
+|---|---|
+| `EmptyState` em 19 de 29 páginas — 10 telas sem estado vazio tratado | Médio |
+| Nenhuma transição ou animação além do `hover:` do Tailwind | Médio |
+| 34 atributos `aria-*` e 14 `role=` — existe, mas sem cobertura sistemática | Médio |
+| Foco visível: **resolvido globalmente** em `globals.css` | — (não é achado) |
+
+---
+
+## 6. Performance
+
+| Medição | Valor |
+|---|---|
+| JavaScript total servido | **1.309 KB** em 50+ chunks |
+| Maior chunk | 245 KB |
+| `next/dynamic` | **0** |
+| `Suspense` | **0** |
+| `useMemo` / `useCallback` / `memo` | 2 |
+| `.range()` (paginação) | **0** |
+
+### 6.1 Truncamento silencioso (CRÍTICO — e é correção, não performance)
+
+Não há paginação em lugar nenhum. O que há são **cortes fixos**, e o problema não
+é a lentidão: é que o registro 201 **simplesmente não aparece, e a tela não diz
+nada**.
+
+| Tela | Corte | O que some sem aviso |
+|---|---|---|
+| `/tickets` | `.limit(200)` | o 201º ticket |
+| `/inventario` | `.limit(400)` | o 401º ativo |
+| `/conectividade/links` | `.limit(300)` | o 301º evento de queda |
+| `/telefonia`, `/clientes`, `/fornecedores`, `/usuarios`, `/perfis` | **nenhum** | nada some, mas a consulta traz a tabela inteira |
+
+### 6.2 O que já está certo
+
+O padrão anti-N+1 (uma consulta para todos os registros, agrupada em memória)
+está aplicado em **10 páginas** — está documentado no código e funciona. Não vou
+mexer.
+
+### 6.3 Oportunidades
+
+- `leaflet` entra no bundle de quem nunca abre o mapa → `next/dynamic`
+- Páginas com 10 consultas em paralelo → `Suspense` por bloco, para a tela
+  aparecer em partes
+- Listas sem corte → paginação por `.range()`
+
+---
+
+## 7. Plano de ação proposto
+
+A ordem difere um pouco do briefing por uma razão: **a Entrega 2 é pequena** (9
+itens de código morto) e a dívida real está na duplicação e nos estados de tela.
+Proponho fundir e redistribuir, mantendo os sete pontos de parada.
+
+| Entrega | Conteúdo | Tamanho | Risco |
+|---|---|---|---|
+| **2** | Remover os 9 itens mortos · consolidar as 7 duplicações da §3 · reduzir a superfície de exportação | Médio | Baixo — extrações mecânicas com testes em volta |
+| **3** | Separar `filas/actions.ts` · reorganizar `src/lib` · padronizar nomes de formulário · tokens de espaçamento/raio/sombra/tipografia em `globals.css` · `map-marker` passa a usar `var()` | Médio | Baixo |
+| **4** | **Dark mode completo** (os três estados) · tipografia display + body via `next/font` · escala tipográfica · micro-interações e motion · refino de botões, inputs, cards, tabelas e modais | Grande | Médio — é o que mais muda a tela |
+| **5** | `loading.tsx` e `error.tsx` em todas as rotas · estados vazios nas 10 telas que faltam · revisão de `aria-*` e ordem de tabulação · responsividade | Grande | Baixo |
+| **6** | Paginação real nas listas · `next/dynamic` no mapa · `Suspense` nas páginas de 10 consultas · medição antes × depois | Médio | Médio — mexe em consulta |
+| **7** | Revisão de consistência, build, 210 testes, 365 asserções, 44 asserções de navegador, comparativo | Pequeno | — |
+
+### Regra que vou seguir em todas
+
+Nenhuma regra de negócio, cálculo, policy de RLS, migração ou fluxo é alterado.
+Ao fim de cada entrega: `tsc`, `eslint`, 210 testes, 365 asserções contra
+PostgreSQL real, build e as 44 asserções de navegador — e o relatório do que
+mudou.
+
+---
+
+## 8. O que preciso de você antes da Entrega 2
+
+1. **`client_id`**: filtro de visualização na interface, ou algo mais? (§0.1)
+2. **Identidade visual**: as cores por unidade e os Faróis/Objetivos entram neste
+   sistema? Se sim, ligadas a qual entidade? (§0.3)
+3. **Tipografia**: posso escolher o par display + body, ou há fonte de marca?
+4. **Ordem**: aceita o plano da §7, ou prefere a sequência literal do briefing?
+
+Com isso respondido, sigo para a Entrega 2.
