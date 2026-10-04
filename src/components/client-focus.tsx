@@ -45,7 +45,7 @@ export function ClientFocus({
     <form ref={form} action={formAction} className="hidden items-center gap-2 md:flex">
       <span
         aria-hidden="true"
-        className="size-2.5 shrink-0 rounded-full ring-1 ring-inset ring-black/10"
+        className="size-2.5 shrink-0 rounded-full ring-1 ring-inset ring-[var(--color-border-strong)]"
         style={{ backgroundColor: atual?.cor ?? 'var(--color-ink-3)' }}
       />
       <label htmlFor="foco-empresa" className="sr-only">
@@ -56,7 +56,7 @@ export function ClientFocus({
         name="client_id"
         defaultValue={selecionado ?? ''}
         onChange={() => form.current?.requestSubmit()}
-        className="max-w-44 truncate rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm text-[var(--color-ink)]"
+        className="max-w-44 truncate rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm text-[var(--color-ink)] transition-colors focus:border-[var(--color-brand)]"
       >
         <option value="">Todas as empresas</option>
         {opcoes.map((o) => (

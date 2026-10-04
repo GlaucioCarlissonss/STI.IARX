@@ -184,7 +184,7 @@ export default async function FluxoDeCaixaPage({
           <div className="sm:col-span-2 xl:col-span-4">
             <button
               type="submit"
-              className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-white"
+              className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)]"
             >
               Aplicar
             </button>

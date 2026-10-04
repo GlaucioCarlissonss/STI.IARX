@@ -6,6 +6,7 @@ import { roleLabel } from '@/lib/i18n'
 import { initials } from '@/lib/format'
 import { signOut } from '@/app/login/actions'
 import { ClientFocus } from '@/components/client-focus'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { getClients } from '@/lib/data/lookups'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -46,7 +47,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       <header className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="mx-auto flex max-w-[110rem] items-center gap-4 px-4 py-2.5">
-          <Link href="/painel" className="text-lg font-bold tracking-tight text-[var(--color-brand)]">
+          <Link
+            href="/painel"
+            className="fonte-display text-lg font-bold text-[var(--color-brand)]"
+          >
             STI
           </Link>
           {tenant && (
@@ -71,6 +75,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             >
               {initials(profile.full_name)}
             </span>
+            <ThemeToggle />
             <form action={signOut}>
               <button
                 type="submit"
@@ -98,7 +103,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <CompactNav items={planos} />
         </nav>
 
-        <main id="conteudo" tabIndex={-1} className="min-w-0 flex-1 pb-20 lg:pb-0 focus:outline-none">
+        {/* `entrar`: quatro pixels e 180ms ao trocar de tela. É direção, não
+            animação — e some inteiro sob `prefers-reduced-motion`. */}
+        <main
+          id="conteudo"
+          tabIndex={-1}
+          className="entrar min-w-0 flex-1 pb-20 lg:pb-0 focus:outline-none"
+        >
           {children}
         </main>
       </div>

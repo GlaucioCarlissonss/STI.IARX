@@ -98,13 +98,24 @@ export default async function ClientesPage() {
             return (
               <Card key={c.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-base font-semibold text-[var(--color-ink)]">
-                      {c.trade_name ?? c.legal_name}
-                    </h2>
-                    <p className="text-xs text-[var(--color-ink-3)]">
-                      {c.legal_name} · {formatCnpj(c.cnpj)}
-                    </p>
+                  {/* `aria-hidden` no quadrado: a cor é reconhecimento de
+                      relance, não informação. O nome está logo ao lado, e
+                      anunciar "círculo azul" a cada cliente da lista só
+                      acrescentaria ruído a quem usa leitor de tela. */}
+                  <div className="flex items-start gap-2.5">
+                    <span
+                      aria-hidden="true"
+                      className="mt-1 size-3 shrink-0 rounded-full ring-1 ring-inset ring-[var(--color-border-strong)]"
+                      style={{ backgroundColor: c.color ?? '#64748b' }}
+                    />
+                    <div>
+                      <h2 className="text-base font-semibold text-[var(--color-ink)]">
+                        {c.trade_name ?? c.legal_name}
+                      </h2>
+                      <p className="text-xs text-[var(--color-ink-3)]">
+                        {c.legal_name} · {formatCnpj(c.cnpj)}
+                      </p>
+                    </div>
                   </div>
                   <Badge tone={c.status === 'active' ? 'ok' : 'neutral'}>
                     {c.status === 'active' ? 'Ativo' : c.status}

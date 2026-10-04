@@ -47,13 +47,28 @@ describe('clientSchema', () => {
       trade_name: '',
       cnpj: '   ',
       contract_ref: '',
+      color: '#1d4ed8',
     })
     expect(parsed).toEqual({
       legal_name: 'Grupo Meridiano',
       trade_name: null,
       cnpj: null,
       contract_ref: null,
+      color: '#1d4ed8',
     })
+  })
+
+  /*
+   * A cor é obrigatória no esquema porque a coluna é NOT NULL (0027). Deixá-la
+   * opcional aqui faria o formulário "salvar" e o banco aplicar o cinza padrão —
+   * a pessoa escolheria uma cor, veria a confirmação e encontraria outra cor na
+   * tela, sem erro nenhum para explicar.
+   */
+  it('recusa cor fora de #rrggbb, com a mesma mensagem da prioridade', () => {
+    const base = { legal_name: 'Grupo Meridiano', trade_name: '', cnpj: '', contract_ref: '' }
+    expect(firstError(clientSchema.safeParse({ ...base, color: 'azul' }))).toBe('Cor inválida.')
+    expect(firstError(clientSchema.safeParse({ ...base, color: '#12345' }))).toBe('Cor inválida.')
+    expect(clientSchema.parse({ ...base, color: '#A1B2C3' }).color).toBe('#A1B2C3')
   })
 })
 

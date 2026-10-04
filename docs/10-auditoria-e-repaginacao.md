@@ -373,7 +373,7 @@ Na mesma passada, `docs/04` dizia 18 views.
 | Testes unitários | 210 | **210** |
 | Asserções de banco | 365 | **365** |
 | Asserções em navegador | 44, zero erro | **44, zero erro** |
-| Build | 30 rotas | **30 rotas** |
+| Build | 32 rotas | **32 rotas** |
 
 Nenhum teste foi alterado para acomodar a refatoração — é essa a prova de que o
 comportamento não mudou.
@@ -525,7 +525,7 @@ não resolvia no teste, que é o tipo de atrito que faz alguém não escrever o 
 | Testes unitários | 210 | **216** (+6, cor do pino e escape do popup) |
 | Asserções de banco | 365 | **377** (+12, seção 32) |
 | Asserções em navegador | 44, zero erro | **44, zero erro** |
-| Build | 30 rotas | **30 rotas** |
+| Build | 32 rotas | **32 rotas** |
 | Catálogo de permissões | 151 chaves | **151 chaves** (o foco não é permissão) |
 
 As doze asserções novas cobrem o que a aplicação sozinha não provaria: a FK
@@ -537,9 +537,157 @@ de quatro argumentos não ficou ambígua.
 
 Nenhum teste existente foi alterado.
 
+---
+
+# Entrega 4 — Design system e repaginada visual (executada)
+
+Nenhuma regra de negócio, cálculo, integração ou fluxo foi tocado. O que mudou
+foi a camada que decide **como** a aplicação aparece — e ela passou a ser
+verificável, que é a parte que costuma faltar numa repaginada.
+
+## 1. Tipografia: duas famílias, dois papéis
+
+Saiu `system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial`.
+Essa pilha dava **três aparências diferentes** para a mesma tela em Windows,
+macOS e Android, e nenhuma delas era uma decisão de ninguém.
+
+| Papel | Família | Por quê |
+|---|---|---|
+| Display — títulos, números de destaque, painel de TV | **Space Grotesk** | Desenho próprio e algarismos de largura fixa. Metade desta aplicação é número grande — saldo, contagem de ticket, TV a cinco metros — e algarismo tabular é o que impede a coluna de dançar a cada atualização em tempo real |
+| Corpo — texto, tabela, formulário | **IBM Plex Sans** | Desenhada para interface técnica densa: abre bem em 12–14px e distingue `l`/`I`/`1` e `0`/`O`, que numa tela de patrimônio e número de série é a diferença entre ler certo e abrir chamado errado |
+
+Carregadas por `next/font`, o que subsetifica, auto-hospeda e evita a requisição
+ao domínio de terceiros. `display: 'swap'` é deliberado: o texto aparece na fonte
+de recurso e troca quando a web font chega — `block` esconderia o conteúdo por
+até três segundos numa tela de operação.
+
+## 2. Tema claro e escuro
+
+A aplicação não tinha nenhum. Agora tem três estados, não dois: **claro**,
+**escuro** e **sistema** — que é o padrão. Um interruptor de duas posições
+obriga a escolher, e a escolha que a maioria quer é "o que o meu sistema já
+decidiu", que num botão de duas posições simplesmente não existe.
+
+Três detalhes carregam quase toda a dificuldade:
+
+1. **O lampejo branco.** Um script síncrono e inline no `<head>` lê o
+   `localStorage` e escreve `data-tema` **antes da primeira pintura**. Qualquer
+   outra coisa — efeito, componente, arquivo externo — acontece tarde demais e a
+   tela pisca em branco antes de escurecer.
+2. **A escolha explícita vence a do sistema.** A media query é condicionada a
+   `:root:not([data-tema='claro'])`. Sem isso, alguém com o computador em modo
+   escuro clicaria em "claro" e nada aconteceria — e num teste manual feito num
+   monitor claro esse defeito **nunca** aparece. Há uma asserção só para ele.
+3. **`color-scheme`.** É o que faz barra de rolagem, campo nativo e seletor de
+   data do navegador acompanharem o tema. Sem ele a aplicação fica escura com
+   uma barra de rolagem branca atravessada no meio.
+
+O estado mora no `<html>`, não no React, e é lido com `useSyncExternalStore` —
+copiá-lo para um `useState` dentro de um efeito abriria a janela em que os dois
+discordam, e o React 19 recusa a construção justamente por isso.
+
+**O painel de TV não participa do tema**, e isso é verificado. Ele usa apenas
+`--color-tv-*`, que não têm variante clara. Um token temável entrando ali faria
+a TV da parede ficar **branca** assim que aquele computador estivesse em modo
+claro — e ninguém no escritório saberia o que aconteceu nem como desfazer.
+
+## 3. A paleta, e os três tokens que ela obrigou a criar
+
+| Token | O problema que resolve |
+|---|---|
+| `--color-on-brand` | Era `text-white`, em onze lugares. No tema escuro o preenchimento da marca é que clareia, e branco sobre azul claro não chega a 4.5:1 |
+| `--color-danger-solid` · `--color-ok-solid` · `--color-on-solid` | O botão "Excluir" usava `--color-breach-ink`, que no escuro clareia porque ali ele é **texto**. O resultado era um botão destrutivo de vermelho claro, mais chamativo que o primário — hierarquia invertida, com a ação perigosa no topo |
+| `--color-border-strong` | O fio de 1px de um campo de formulário é "componente de interface" para a WCAG 1.4.11 e precisa de 3:1; o fio decorativo de cartão não precisa. Com o mesmo cinza nos dois, o campo sumia dentro do cartão branco e só reaparecia ao receber foco |
+
+Também entraram `--shadow-card` / `--shadow-overlay` (duas, e só duas: uma escala
+de seis sombras vira seis decisões por tela e nenhuma hierarquia) e os tokens de
+movimento `--ease-padrao` / `--duracao-rapida` / `--duracao-padrao`.
+
+### Contraste: medido, não prometido
+
+`src/app/tokens.test.ts` lê `globals.css`, aplica a fórmula da WCAG 2.1 e mede
+**as combinações que as telas realmente produzem**, nos dois temas — 61
+asserções. Nenhuma cor escrita à mão no teste: se a paleta mudar e o arquivo
+não, o teste mede a paleta nova.
+
+AA conferido uma vez, à mão, no dia da entrega, dura até a primeira pessoa
+clarear um cinza porque "ficou melhor assim". E o sintoma de uma falha dessas
+não é um erro: é alguém com baixa visão, num monitor pior que o nosso, que não
+consegue ler a dica do campo — e não reporta, porque acha que o problema é a
+vista dele.
+
+O teste também cobre dois defeitos de estrutura que não são de contraste: os
+dois blocos do tema escuro (escolha explícita e preferência do sistema)
+precisam definir **a mesma** paleta, e nenhum token de superfície, tinta ou
+semáforo pode ficar sem valor no escuro — um token esquecido vira mancha branca
+no meio da tela escura, ou texto cinza-claro sobre fundo branco, que é pior.
+
+## 4. Movimento
+
+Uma duração e uma curva, em token, e duas aplicações:
+
+- transição de cor e sombra em `a`, `button`, `summary` e nos controles de
+  rádio/aba. **Só cor e sombra**: mover geometria no hover faz a tela "respirar"
+  e cansa em oito horas de uso;
+- `entrar` — quatro pixels e 180ms ao trocar de tela. É direção, não animação.
+
+O bloco `prefers-reduced-motion` que já existia desliga os dois.
+
+## 5. A cor por empresa, aplicada
+
+`clients.color` (migração 0027) saiu do banco para a tela: campo no cadastro de
+cliente, bolinha ao lado do nome em `/clientes` e no seletor de foco do
+cabeçalho. É `aria-hidden` — a cor é reconhecimento de relance, não informação, e
+anunciar "círculo azul" a cada cliente só acrescentaria ruído a quem usa leitor
+de tela.
+
+A validação virou `hexColor` em `src/lib/schemas/cadastros.ts`, compartilhada com
+a cor da prioridade: duas expressões regulares para a mesma regra divergiriam na
+primeira vez que uma delas aceitasse três dígitos.
+
+**A cor é obrigatória no esquema** porque a coluna é NOT NULL. Deixá-la opcional
+faria o formulário "salvar" e o banco aplicar o cinza padrão — a pessoa
+escolheria uma cor, veria a confirmação e encontraria outra na tela, sem erro
+nenhum para explicar.
+
+## 6. O que NÃO foi feito, e por quê
+
+**O protótipo (`demo/sti-tool.html`) não foi repaginado.** Ele é a referência de
+**comportamento** — é com ele que `prototipo.spec.mjs` prova regra de permissão
+em navegador —, e repintá-lo agora significaria manter duas folhas de estilo em
+sincronia manual sem nenhum teste cobrindo a segunda. Se a repaginada precisar
+chegar até ele, isso é uma decisão a tomar por si, não um resto desta entrega.
+
+**Nenhuma escala tipográfica nova.** Os tamanhos continuam os do Tailwind. Trocar
+família e escala na mesma entrega tornaria impossível saber qual das duas causou
+uma diferença de leitura.
+
+## Verificação — antes × depois
+
+| | Entrega 3 | Entrega 4 |
+|---|---|---|
+| `tsc` | limpo | limpo |
+| `eslint` | limpo | limpo |
+| Testes unitários | 216 | **278** (+62: 61 de tema e contraste, 1 da cor do cliente) |
+| Asserções de banco | 377 | **377** |
+| Asserções em navegador | 44, zero erro | **44, zero erro** |
+| Build | 32 rotas | **32 rotas** |
+| Combinações de tema verificadas em navegador | — | **4/4** |
+
+**Sobre as "30 rotas" das tabelas anteriores:** era número copiado adiante, não
+recontado. O build imprime **32** — e imprimia 32 na entrega 3 também. Corrigido
+aqui e nas duas tabelas acima, pela mesma razão que fez o contador do instalador
+ser reescrito na entrega 2: número escrito à mão envelhece em silêncio.
+
+As quatro combinações de tema foram exercitadas em Chromium contra o build de
+produção: sistema claro sem escolha, sistema escuro sem escolha, sistema claro
+com "escuro" escolhido e **sistema escuro com "claro" escolhido** — esta última é
+a que o `:not()` existe para salvar. As quatro resolveram o fundo correto, sem
+erro de console.
+
 ## Próximo passo
 
-Entrega 4 (design system e repaginada visual): fontes display + corpo via
-`next/font`, paleta, **dark mode** (a aplicação não tem nenhum hoje; o protótipo
-tem), aplicação da cor por empresa, e movimento. A `clients.color` e os tokens de
-raio já estão no lugar esperando.
+Entrega 5 (UX, usabilidade, acessibilidade e responsividade): `loading.tsx` e
+`error.tsx` para as 29 páginas — hoje não existe **nenhum** dos dois —, estado
+vazio nas 10 telas que ainda não têm, revisão de ordem de tabulação e de rótulos
+ARIA, e comportamento em tela estreita.

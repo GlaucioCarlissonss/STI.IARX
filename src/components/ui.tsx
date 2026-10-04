@@ -85,7 +85,7 @@ export function Card({
 }) {
   return (
     <section
-      className={`rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] ${className}`}
+      className={`rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] ${className}`}
     >
       {(title || action) && (
         <header className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-3.5">
@@ -110,11 +110,13 @@ export function StatTile({
   tone?: Tone
 }) {
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-3)]">
         {label}
       </p>
-      <p className={`mt-1.5 text-3xl font-bold tabular-nums ${toneClasses[tone].split(' ')[1]}`}>
+      <p
+        className={`fonte-display mt-1.5 text-3xl font-bold tabular-nums ${toneClasses[tone].split(' ')[1]}`}
+      >
         {value}
       </p>
       {hint && <p className="mt-1 text-xs text-[var(--color-ink-3)]">{hint}</p>}
@@ -134,7 +136,7 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-[var(--color-ink)]">{title}</h1>
+        <h1 className="text-2xl font-bold text-[var(--color-ink)]">{title}</h1>
         {description && <p className="mt-1 text-sm text-[var(--color-ink-2)]">{description}</p>}
       </div>
       {action}
@@ -250,8 +252,15 @@ export function Field({
   )
 }
 
+/**
+ * `border-strong`, e não `border`: o fio de 1px que delimita um campo é
+ * "componente de interface" para a WCAG 1.4.11 e precisa de 3:1 contra o fundo
+ * — o fio decorativo de cartão não precisa, e é por isso que são dois tokens.
+ * Com o mesmo cinza-claro dos dois, o campo de texto sumia no cartão branco e
+ * só reaparecia ao receber foco.
+ */
 export const inputClass =
-  'w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-3)]'
+  'w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink)] transition-colors placeholder:text-[var(--color-ink-3)] focus:border-[var(--color-brand)]'
 
 export function Button({
   children,
@@ -274,10 +283,10 @@ export function Button({
   'aria-describedby'?: string
 }) {
   const variants = {
-    primary: 'bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-ink)]',
+    primary: 'bg-[var(--color-brand)] text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]',
     secondary:
       'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]',
-    danger: 'bg-[var(--color-breach-ink)] text-white hover:opacity-90',
+    danger: 'bg-[var(--color-danger-solid)] text-[var(--color-on-solid)] hover:opacity-90',
   }
   return (
     <button

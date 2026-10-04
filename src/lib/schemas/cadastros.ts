@@ -29,11 +29,24 @@ export const recordId = z.string().uuid('Registro inválido.')
 
 /* --- Cliente ------------------------------------------------------------ */
 
+/**
+ * Cor `#rrggbb`, espelhando o CHECK do banco.
+ *
+ * Existia escrita à mão em `prioritySchema`; agora atende também a cor da
+ * empresa-cliente (migração 0027). Duas expressões regulares para a mesma regra
+ * divergiriam na primeira vez que uma delas aceitasse três dígitos.
+ */
+export const hexColor = z
+  .string()
+  .trim()
+  .regex(/^#[0-9a-fA-F]{6}$/, 'Cor inválida.')
+
 export const clientSchema = z.object({
   legal_name: z.string().trim().min(2, 'Informe a razão social.'),
   trade_name: emptyToNull,
   cnpj: emptyToNull,
   contract_ref: emptyToNull,
+  color: hexColor,
 })
 
 export const clientStatusSchema = z.enum(['active', 'inactive', 'prospect'])
@@ -354,10 +367,7 @@ export const categorySchema = z.object({
 export const prioritySchema = z.object({
   label: z.string().trim().min(2, 'Informe o nome da prioridade.'),
   weight: intInRange(0, 100),
-  color: z
-    .string()
-    .trim()
-    .regex(/^#[0-9a-fA-F]{6}$/, 'Cor inválida.'),
+  color: hexColor,
   sort_order: intInRange(0, 999),
 })
 

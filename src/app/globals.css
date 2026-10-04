@@ -3,38 +3,94 @@
 /* ==========================================================================
    Design tokens
    --------------------------------------------------------------------------
-   As cores de semáforo existem em duas escalas:
-     · `*-ink`  → texto sobre fundo claro  (contraste ≥ 4.5:1, WCAG 2.1 AA)
-     · `*-tv`   → texto sobre fundo escuro do painel de TV (≥ 7:1, AAA)
-   Nunca use a mesma cor nos dois contextos: o que é legível no admin claro
-   vira ilegível na TV escura vista a 5 metros de distância.
+   TRÊS REGRAS, e elas explicam quase todas as decisões abaixo.
+
+   1. Nenhuma cor literal fora deste arquivo. A única exceção da base inteira é
+      o pino do mapa (`src/components/map-marker.tsx`), que vira uma `data:` URI
+      e por isso não enxerga custom property nenhuma — e existe um teste que
+      compara os dois para a exceção não virar divergência.
+
+   2. Cada par `*-ink` / `*-soft` é um par: o `ink` é feito para ser lido sobre
+      o `soft` do mesmo nome, e sobre a superfície. Nunca sobre outra coisa.
+
+   3. Os dois temas passam em AA, e isso é VERIFICADO, não prometido:
+      `src/app/tokens.test.ts` lê este arquivo e mede 42 combinações. Baixar um
+      contraste aqui quebra o teste em vez de passar despercebido numa tela que
+      ninguém reabriu.
+
+   Painel de TV (`--color-tv-*`) é um quarto contexto, sempre escuro: texto lido
+   a cinco metros exige ≥ 7:1, e o que é legível no admin claro some lá.
    ========================================================================== */
 @theme {
+  /* --- Tipografia -------------------------------------------------------
+     As duas variáveis `-raw` vêm do `next/font` em `layout.tsx`. O fallback
+     existe para o intervalo entre a primeira pintura e a chegada da web font
+     (`display: 'swap'`), e para o caso de ela não chegar nunca. */
+  --font-sans: var(--font-sans-raw), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display-raw), var(--font-sans);
+
+  /* --- Superfícies e tinta ---------------------------------------------- */
   --color-surface: #ffffff;
-  --color-surface-2: #f7f8fa;
-  --color-surface-3: #eef0f4;
-  --color-border: #d8dce4;
-  --color-ink: #14181f;
-  --color-ink-2: #4a5261;
-  --color-ink-3: #6b7482;
+  --color-surface-2: #f6f7f9;
+  --color-surface-3: #eceff4;
+  /* Fio de cartão e divisória: decorativo, não precisa de 3:1. */
+  --color-border: #dde1e8;
+  /* Contorno de campo de formulário: PRECISA de 3:1 (WCAG 1.4.11), porque é o
+     que faz o campo existir aos olhos de quem vai preenchê-lo. */
+  --color-border-strong: #848f9f;
+  --color-ink: #131820;
+  --color-ink-2: #474f5e;
+  --color-ink-3: #68717f;
 
+  /* --- Marca -------------------------------------------------------------
+     Três papéis que não se misturam: `brand` é preenchimento, `brand-ink` é
+     texto (e o estado de hover do preenchimento), `brand-soft` é fundo tingido.
+     `on-brand` é o texto escrito SOBRE o preenchimento da marca. Era a classe
+     `text-white`, em onze lugares — e branco fixo não sobrevive ao tema escuro,
+     onde esse preenchimento é justamente o que clareia. */
   --color-brand: #1d4ed8;
-  --color-brand-ink: #1e3a8a;
-  --color-brand-soft: #e8eefc;
+  --color-brand-ink: #1b3fa8;
+  --color-brand-soft: #e7edfc;
+  --color-on-brand: #ffffff;
 
-  /* Semáforo de SLA — fundo claro */
-  --color-ok-ink: #15803d;
-  --color-ok-soft: #e7f6ec;
-  --color-warn-ink: #a16207;
-  --color-warn-soft: #fdf4e3;
-  --color-crit-ink: #c2410c;
-  --color-crit-soft: #fdeee5;
+  /* --- Preenchimentos sólidos não-marca -----------------------------------
+     Botão destrutivo e botão de confirmação usam ESTES, e não os `*-ink` do
+     semáforo. Os dois conjuntos divergem no tema escuro, e a divergência é o
+     ponto: `breach-ink` clareia (ali ele é TEXTO sobre fundo escuro), e um
+     botão "Excluir" de vermelho claro fica mais chamativo que o botão primário
+     — hierarquia invertida, com a ação destrutiva no topo.
+     Estes continuam escuros nos dois temas, com rótulo branco nos dois. */
+  --color-danger-solid: #b91c1c;
+  --color-ok-solid: #15803d;
+  --color-on-solid: #ffffff;
+
+  /* --- Semáforo de SLA --------------------------------------------------- */
+  --color-ok-ink: #14712f;
+  --color-ok-soft: #e6f6ec;
+  --color-warn-ink: #9a5b06;
+  --color-warn-soft: #fdf2e0;
+  --color-crit-ink: #bf3c0a;
+  --color-crit-soft: #fdeee4;
   --color-breach-ink: #b91c1c;
   --color-breach-soft: #fdeaea;
   --color-neutral-ink: #475569;
   --color-neutral-soft: #eef1f5;
 
-  /* Painel de TV — fundo escuro */
+  /* Pino do mapa — ver `src/components/map-marker.tsx`.
+     O SVG do pino vira uma `data:` URI, e documento de data URI NÃO enxerga as
+     custom properties desta página: lá o hexadecimal tem de ser literal. Os três
+     tokens existem assim mesmo, porque o popup (que é HTML comum, no mesmo
+     documento) os consome com `var()`, e porque `map-marker.test.ts` compara
+     este arquivo com a constante do TypeScript — trocar a paleta sem trocar o
+     pino quebra o teste em vez de passar despercebido.
+
+     Eles NÃO mudam no tema escuro: o pino é lido sobre a imagem do mapa, que
+     não escurece junto com a aplicação. */
+  --color-marker-green: #15803d;
+  --color-marker-amber: #a16207;
+  --color-marker-red: #b91c1c;
+
+  /* --- Painel de TV — sempre escuro, contraste AAA ----------------------- */
   --color-tv-bg: #0b0f17;
   --color-tv-panel: #151b26;
   --color-tv-border: #263041;
@@ -45,33 +101,120 @@
   --color-tv-crit: #fb923c;
   --color-tv-breach: #f87171;
 
-  /* Pino do mapa — ver `src/components/map-marker.tsx`.
-     O SVG do pino vira uma `data:` URI, e documento de data URI NÃO enxerga as
-     custom properties desta página: lá o hexadecimal tem de ser literal. Os três
-     tokens existem assim mesmo, porque o popup (que é HTML comum, no mesmo
-     documento) os consome com `var()`, e porque `map-marker.marker.test.ts`
-     compara este arquivo com a constante do TypeScript — trocar a paleta sem
-     trocar o pino quebra o teste em vez de passar despercebido. */
-  --color-marker-green: #15803d;
-  --color-marker-amber: #a16207;
-  --color-marker-red: #b91c1c;
-
-  /* ------------------------------------------------------------------------
-     Raio de borda
-     ------------------------------------------------------------------------
-     Declarados nos MESMOS valores que o Tailwind já aplicava. Não há mudança
-     visual aqui de propósito: a entrega 3 é organização, e mexer no raio junto
-     com a mudança de estrutura tornaria impossível saber qual das duas causou
-     uma diferença na tela. O ajuste de forma é da entrega 4, e agora tem um
-     lugar só para acontecer.
-
+  /* --- Raio de borda -----------------------------------------------------
      `rounded-lg` aparece em 51 lugares e `rounded-xl` em 22: eram dois números
-     espalhados por 73 arquivos sem nome. */
+     espalhados por 73 usos, sem nome. */
   --radius-md: 0.5rem;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.75rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
 
-  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* --- Elevação ----------------------------------------------------------
+     Duas, e só duas. Uma escala de seis sombras vira seis decisões por tela e
+     nenhuma hierarquia: `card` é o que descola um bloco do fundo, `overlay` é o
+     que sai do plano da página. */
+  --shadow-card: 0 1px 2px rgb(14 20 28 / 0.05), 0 1px 3px rgb(14 20 28 / 0.04);
+  --shadow-overlay: 0 12px 32px -8px rgb(14 20 28 / 0.18);
+
+  /* --- Movimento ---------------------------------------------------------
+     Uma duração e uma curva. Toda transição da aplicação sai daqui, e é o que
+     impede uma tela animar em 150ms e a vizinha em 400ms. */
+  --ease-padrao: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --duracao-rapida: 120ms;
+  --duracao-padrao: 180ms;
+}
+
+/* ==========================================================================
+   Tema escuro
+   --------------------------------------------------------------------------
+   Duas portas de entrada, e as duas precisam existir:
+
+   · `[data-tema='escuro']`  — a escolha explícita, gravada no `localStorage` e
+     aplicada antes da primeira pintura pelo script de `layout.tsx`.
+   · `@media (prefers-color-scheme: dark)` — quem nunca escolheu segue o sistema.
+
+   A media query é condicionada a `:root:not([data-tema='claro'])` porque sem
+   isso "quero claro" seria ignorado em um computador configurado no escuro —
+   o botão existiria e não faria nada, que é a pior categoria de botão.
+
+   Os valores NÃO são os claros invertidos. Fundo escuro faz cor saturada
+   "vibrar" e texto fino sumir: os tons de tinta clareiam menos do que a
+   inversão pediria, e os `*-ink` de semáforo ficam dessaturados de propósito.
+   ========================================================================== */
+@layer theme {
+  :root[data-tema='escuro'] {
+    --color-surface: #141a22;
+    --color-surface-2: #0c1016;
+    --color-surface-3: #1d2631;
+    --color-border: #272f3b;
+    --color-border-strong: #59677a;
+    --color-ink: #e7ecf3;
+    --color-ink-2: #aab6c6;
+    --color-ink-3: #8491a2;
+
+    --color-brand: #4c7ef3;
+    --color-brand-ink: #8fb0ff;
+    --color-brand-soft: #1a2440;
+    /* Quase preto, e não branco: no escuro o preenchimento da marca é que
+       clareia, e branco sobre azul claro não chega a 4.5:1. */
+    --color-on-brand: #0a0e14;
+
+    --color-danger-solid: #a93434;
+    --color-ok-solid: #1e6f3c;
+    --color-on-solid: #ffffff;
+
+    --color-ok-ink: #5fd38a;
+    --color-ok-soft: #11271a;
+    --color-warn-ink: #e9b949;
+    --color-warn-soft: #2a2113;
+    --color-crit-ink: #f59e62;
+    --color-crit-soft: #2d1d12;
+    --color-breach-ink: #f87a7a;
+    --color-breach-soft: #2d1517;
+    --color-neutral-ink: #a3b1c2;
+    --color-neutral-soft: #1c242e;
+
+    /* Sombra quase não existe sobre fundo escuro — o que separa os planos ali é
+       a superfície mais clara, não a projeção. Mantidas fracas para a borda do
+       cartão não ganhar um halo sujo. */
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-overlay: 0 12px 32px -8px rgb(0 0 0 / 0.6);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-tema='claro']) {
+      --color-surface: #141a22;
+      --color-surface-2: #0c1016;
+      --color-surface-3: #1d2631;
+      --color-border: #272f3b;
+      --color-border-strong: #59677a;
+      --color-ink: #e7ecf3;
+      --color-ink-2: #aab6c6;
+      --color-ink-3: #8491a2;
+
+      --color-brand: #4c7ef3;
+      --color-brand-ink: #8fb0ff;
+      --color-brand-soft: #1a2440;
+      --color-on-brand: #0a0e14;
+
+      --color-danger-solid: #a93434;
+      --color-ok-solid: #1e6f3c;
+      --color-on-solid: #ffffff;
+
+      --color-ok-ink: #5fd38a;
+      --color-ok-soft: #11271a;
+      --color-warn-ink: #e9b949;
+      --color-warn-soft: #2a2113;
+      --color-crit-ink: #f59e62;
+      --color-crit-soft: #2d1d12;
+      --color-breach-ink: #f87a7a;
+      --color-breach-soft: #2d1517;
+      --color-neutral-ink: #a3b1c2;
+      --color-neutral-soft: #1c242e;
+
+      --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+      --shadow-overlay: 0 12px 32px -8px rgb(0 0 0 / 0.6);
+    }
+  }
 }
 
 * {
@@ -84,6 +227,21 @@ body {
   margin: 0;
 }
 
+/* `color-scheme` é o que faz barra de rolagem, campo de formulário nativo e
+   seletor de data do NAVEGADOR acompanharem o tema. Sem isso a aplicação fica
+   escura com uma barra de rolagem branca atravessada no meio. */
+:root {
+  color-scheme: light;
+}
+:root[data-tema='escuro'] {
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema='claro']) {
+    color-scheme: dark;
+  }
+}
+
 body {
   background: var(--color-surface-2);
   color: var(--color-ink);
@@ -91,12 +249,41 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Tipografia de display: títulos e números grandes.
+   `font-variant-numeric: tabular-nums` nos números é o detalhe que importa numa
+   tela que atualiza sozinha — com algarismo proporcional, "1.234" vira "999" e
+   a coluna inteira pula de lugar a cada refresh. */
+.fonte-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+}
+
+/* Transição padrão dos elementos que reagem ao ponteiro. Só cor e sombra: mover
+   geometria no hover faz a tela "respirar" e cansa em oito horas de uso. */
+:where(a, button, summary, [role='radio'], [role='tab']) {
+  transition:
+    background-color var(--duracao-rapida) var(--ease-padrao),
+    border-color var(--duracao-rapida) var(--ease-padrao),
+    color var(--duracao-rapida) var(--ease-padrao),
+    box-shadow var(--duracao-rapida) var(--ease-padrao);
+}
+
 /* Foco sempre visível — critério 2.4.7 do WCAG. Removê-lo é o jeito mais rápido
-   de tornar o sistema inoperável por teclado. */
+   de tornar o sistema inoperável por teclado.
+   O segundo anel, na cor da superfície, é o que mantém o contorno visível
+   quando o elemento focado está sobre um fundo da própria cor da marca. */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 3px solid var(--color-brand);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 2px var(--color-surface);
 }
 
 /* Atalho para leitores de tela e navegação por teclado (WCAG 2.4.1). */
@@ -107,12 +294,30 @@ body {
   z-index: 100;
   padding: 0.75rem 1rem;
   background: var(--color-brand);
-  color: #fff;
+  color: var(--color-on-brand);
   font-weight: 600;
+  border-radius: var(--radius-md);
 }
 .skip-link:focus {
   left: 0.5rem;
   top: 0.5rem;
+}
+
+/* Entrada discreta do conteúdo principal. Oito pixels e 180ms: o suficiente
+   para a troca de tela ter direção, longe do que se nota como animação. */
+@keyframes entrar {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.entrar {
+  animation: entrar var(--duracao-padrao) var(--ease-padrao) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -169,11 +374,12 @@ body {
 /* Tipografia fluida: o mesmo layout precisa servir 1080p e 4K sem media query
    por resolução. `clamp` escala com a viewport dentro de limites legíveis. */
 .tv-metric-value {
+  font-family: var(--font-display);
   font-size: clamp(2.75rem, 6.2vw, 7rem);
   line-height: 0.95;
   font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  letter-spacing: -0.03em;
 }
 
 .tv-metric-label {

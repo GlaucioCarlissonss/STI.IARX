@@ -181,7 +181,7 @@ export default async function TelefoniaPage({
         </div>
         <button
           type="submit"
-          className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-white"
+          className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)]"
         >
           Filtrar
         </button>

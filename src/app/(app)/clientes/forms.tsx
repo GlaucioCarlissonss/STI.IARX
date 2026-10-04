@@ -78,6 +78,21 @@ function ClientFields({ defaults }: { defaults?: Client }) {
           className={inputClass}
         />
       </Field>
+      <Field
+        label="Cor de identificação"
+        htmlFor={`${uid}-color`}
+        required
+        hint="Aparece no seletor de empresa e ao lado do nome. Serve para reconhecer a empresa de relance; nada no sistema depende dela."
+      >
+        <input
+          id={`${uid}-color`}
+          name="color"
+          type="color"
+          required
+          defaultValue={defaults?.color ?? '#64748b'}
+          className={`${inputClass} h-10 p-1`}
+        />
+      </Field>
     </>
   )
 }

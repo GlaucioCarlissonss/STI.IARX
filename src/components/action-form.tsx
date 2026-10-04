@@ -55,10 +55,10 @@ export function SubmitButton({
   const { pending } = useFormStatus()
 
   const variants = {
-    primary: 'bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-ink)]',
+    primary: 'bg-[var(--color-brand)] text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]',
     secondary:
       'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]',
-    danger: 'bg-[var(--color-breach-ink)] text-white hover:opacity-90',
+    danger: 'bg-[var(--color-danger-solid)] text-[var(--color-on-solid)] hover:opacity-90',
   }
 
   return (

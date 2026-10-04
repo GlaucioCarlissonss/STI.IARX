@@ -192,7 +192,7 @@ export function DecisionForm({ payable, nivel }: { payable: Payable; nivel: numb
       </Field>
       <div className="flex flex-wrap gap-2">
         <button type="submit" name="decision" value="approved"
-          className="inline-flex items-center rounded-lg bg-[var(--color-ok-ink)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+          className="inline-flex items-center rounded-lg bg-[var(--color-ok-solid)] px-4 py-2 text-sm font-semibold text-[var(--color-on-solid)] hover:opacity-90">
           Aprovar
         </button>
         <button type="submit" name="decision" value="rejected"

@@ -7,6 +7,7 @@ e um Integration Hub aberto — cuja primeira integração é o Bitrix24.
 ```
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4
 Supabase — PostgreSQL, Auth, Realtime, Storage, Edge Functions
+Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 ```
 
 ## Sumário
@@ -40,6 +41,8 @@ Supabase — PostgreSQL, Auth, Realtime, Storage, Edge Functions
 | **Usuários** | 6 papéis, visibilidade por filial (1 ou N), proteção contra auto-escalonamento, criação de conta com senha temporária e troca de senha em `/conta` |
 | **Integration Hub** | Handler Bitrix24 e handler genérico, idempotência, retry com backoff, supressão de eco, logs e mapeamento editável |
 | **Auditoria** | Trigger em 18 tabelas + histórico dedicado de tickets |
+| **Foco por empresa** | Seletor no cabeçalho que estreita treze telas de uma vez. É visualização, não autorização — o isolamento entre tenants continua sendo o RLS |
+| **Tema claro e escuro** | Segue o sistema por padrão, com escolha explícita que vence a preferência do sistema. Os dois temas passam em AA, verificado por teste |
 
 ## Instalação
 

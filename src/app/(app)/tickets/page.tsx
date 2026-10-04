@@ -66,7 +66,7 @@ export default async function TicketsPage({
         action={
           <Link
             href="/tickets/novo"
-            className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--color-brand-ink)]"
+            className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]"
           >
             Abrir ticket
           </Link>
