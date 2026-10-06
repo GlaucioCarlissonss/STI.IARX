@@ -7,7 +7,7 @@ import { formatRelative, formatTimeRemaining } from '@/lib/format'
 /** Tabela de tickets reutilizada pela listagem geral e pela visão de fila. */
 export function TicketList({ tickets }: { tickets: EnrichedTicket[] }) {
   return (
-    <Table head={['#', 'Título', 'Status', 'Prioridade', 'Fila', 'Filial', 'Atendente', 'SLA', 'Prazo']}>
+    <Table head={['#', 'Título', 'Status', 'Prioridade', 'Fila', 'Filial', 'Atendente', 'SLA', 'Prazo']} label="Tickets">
       {tickets.map((t) => (
         <tr key={t.id} className="hover:bg-[var(--color-surface-2)]">
           <Td className="font-mono text-xs text-[var(--color-ink-3)]">#{t.ticket_number}</Td>

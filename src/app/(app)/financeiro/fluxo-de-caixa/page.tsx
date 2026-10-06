@@ -246,7 +246,7 @@ export default async function FluxoDeCaixaPage({
           description="Não há título a pagar comprometido nem título a receber em aberto no recorte escolhido."
         />
       ) : (
-        <Table head={['Período', 'Entradas', 'Saídas', 'Resultado', 'Saldo projetado', 'Maior dia de saída']}>
+        <Table head={['Período', 'Entradas', 'Saídas', 'Resultado', 'Saldo projetado', 'Maior dia de saída']} label="Projeção de caixa mês a mês">
           {baldes.map((b) => {
             const saida = Number(b.outflow)
             const pico = Number(b.peak_day_outflow)

@@ -195,6 +195,7 @@ export default async function SlaPage() {
         </h2>
         {compliance && compliance.length > 0 ? (
           <Table
+            label="Compliance de SLA por período"
             head={['Período', 'Fila', 'Tickets', 'Com SLA', 'Resolução', 'Resposta', 'Violações']}
           >
             {compliance.map((row, i) => (
@@ -354,7 +355,7 @@ export default async function SlaPage() {
             {verDefinicoes && (
           <Card title="Definições de SLA">
             {definitions && definitions.length > 0 ? (
-              <Table head={['Contrato', 'Categoria', 'Prioridade', '1ª resposta', 'Resolução', '', '']}>
+              <Table head={['Contrato', 'Categoria', 'Prioridade', '1ª resposta', 'Resolução', '', '']} label="Definições de SLA">
                 {definitions.map((d) => (
                   <Fragment key={d.id}>
                     <tr>

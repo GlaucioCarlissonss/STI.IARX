@@ -685,9 +685,150 @@ com "escuro" escolhido e **sistema escuro com "claro" escolhido** — esta últi
 a que o `:not()` existe para salvar. As quatro resolveram o fundo correto, sem
 erro de console.
 
+---
+
+# Entrega 5 — UX, acessibilidade e responsividade (executada)
+
+## 0. Uma correção ao diagnóstico
+
+O relatório da Entrega 1 dizia "estado vazio falta em 10 telas". Conferindo uma
+a uma, **sete delas não têm lista nenhuma**: `/conta`, `/tickets/[id]`,
+`/tickets/novo`, `/login`, `/recuperar-senha`, `/nova-senha` e a raiz. Estado
+vazio ali seria componente sem caso de uso.
+
+Faltava de verdade em **duas**: `/tv`, que tinha a informação certa numa forma
+própria (um `Card` com um parágrafo, que não se parecia com o vazio de nenhuma
+outra tela), e `/mapas`, que não tinha nada. O número do diagnóstico estava
+inflado, e dizer isso é mais útil que entregar oito componentes para fechar uma
+conta errada.
+
+## 1. O que realmente faltava: limite de carregamento e de erro
+
+A aplicação tinha **zero** `loading.tsx` e **zero** `error.tsx`. O efeito do
+primeiro era visível todos os dias: ao clicar em "Inventário", a tela anterior
+ficava parada até a última das dez consultas voltar. Sem sinal nenhum, o clique
+parecia não ter funcionado — e o segundo clique, esse sim, atrapalhava.
+
+| Arquivo | Cobre |
+|---|---|
+| `src/app/(app)/loading.tsx` | Todas as 25 telas autenticadas |
+| `src/app/(app)/error.tsx` | Falha em qualquer uma delas |
+| `src/app/global-error.tsx` | Falha no próprio layout raiz |
+| `src/app/not-found.tsx` | Endereço inexistente e todo `notFound()` |
+| `src/app/icon.svg` | O ícone de aba que não existia |
+
+**Um `loading.tsx` cobre as 25.** No App Router o limite de Suspense vale para
+todo segmento abaixo que não tenha o seu. A alternativa seriam 25 esqueletos
+para manter em dia com 25 layouts — e esqueleto desatualizado é pior que
+genérico, porque promete uma forma que não chega. Como o limite fica DENTRO do
+layout, cabeçalho e menu permanecem na tela durante a troca: a pessoa não perde
+o contexto nem a posição do menu enquanto espera.
+
+**A tela de erro não mostra `error.message`.** Numa falha de banco essa mensagem
+traz nome de tabela, de coluna e às vezes o SQL; para quem queria lançar um
+título não ajuda em nada, e para quem não deveria conhecer o esquema é
+informação de graça. O que aparece é o que a pessoa pode fazer — e **dois**
+caminhos, não um: "tentar de novo" resolve a falha passageira, mas quando não
+resolve, insistir no mesmo botão é o único caminho que resta. O link para a
+Visão geral está ao lado desde o começo. O `digest` fica à vista porque é a
+única coisa ali que serve ao suporte, e serve justamente por não dizer nada
+sozinho.
+
+O 404 trata "não existe" e "o RLS não me entregou" **do mesmo jeito**, de
+propósito: dizer "este ticket existe, mas não é seu" confirmaria a existência do
+registro a quem não pode vê-lo.
+
+## 2. A regra de mensagem de erro, que o código ainda violava
+
+O briefing pede mensagens "sem expor detalhes técnicos internos".
+`mensagemDeErro` tinha **dois** caminhos que expunham:
+
+- `default: return error.message` — qualquer erro não previsto ia cru para a
+  tela. `could not connect to server: ECONNREFUSED` na cara de quem lança uma
+  despesa;
+- `case '23514': return error.message` — o comentário dizia que esse código vem
+  das nossas triggers, e **vem**, em dezessete lugares. Mas `23514` é também o
+  código de uma CHECK constraint comum, e aí quem escreve a frase é o Postgres:
+  `new row for relation "clients" violates check constraint "clients_color_hex"`.
+
+Os dois agora passam por um filtro, e o texto cru vai para o log do servidor —
+onde serve a quem investiga, em vez de assustar quem trabalha. O SQLSTATE
+acompanha a mensagem genérica pela mesma razão que o `digest` acompanha a tela
+de erro.
+
+Distinguir "nossa trigger" de "Postgres" pelo texto é heurística, e está
+admitida como tal no código: a alternativa seria dar às nossas triggers um
+SQLSTATE próprio, que é mudança de banco e não cabe numa entrega de código e
+visual.
+
+`src/lib/actions/erros.test.ts` cobre os dois casos, e termina com uma varredura
+sobre todos os códigos conhecidos exigindo que **nenhuma** mensagem devolvida
+contenha jargão de banco — porque cada caso testa um ramo, e um ramo novo entra
+sem teste.
+
+## 3. Acessibilidade: três correções concretas
+
+**Tabela que rola só com o dedo.** Todas as 20 tabelas vivem num `div` com
+`overflow-x`, que rola com ponteiro ou toque e **não** com teclado. Quem navega
+por teclado chegava ao fim da tabela sem nunca ver as últimas colunas — e as
+últimas colunas são sempre situação e ação, que é onde está o trabalho
+(WCAG 2.1.1). O invólucro ganhou `tabIndex={0}` e `role="region"`.
+
+**Vinte tabelas com o mesmo nome.** Com `role="region"` elas entram na lista de
+regiões do leitor de tela, e vinte "tabela de dados" não ajudam ninguém. Cada
+chamada passou a declarar o seu: "Títulos a pagar", "Regras de roteamento",
+"Projeção de caixa mês a mês".
+
+**O menu falava antes da página.** Os rótulos de grupo da barra lateral eram
+`<h2>`, e o menu vem antes do `<main>` no documento: quem navega por títulos
+ouvia "Atendimento, Financeiro, Infraestrutura…" antes do `<h1>` da tela, e a
+hierarquia começava no nível 2. Viraram texto comum com `aria-labelledby` na
+lista — ao entrar no grupo o leitor anuncia "Atendimento, lista com 4 itens",
+que é mais informação do que o `<h2>` dava, e sem nenhuma linha no índice de
+títulos.
+
+## 4. O teste de navegador que a aplicação não tinha
+
+`demo/tests/aplicacao.spec.mjs`. O protótipo tinha 44 asserções em navegador; a
+aplicação, nenhuma — e três coisas das entregas 4 e 5 **só** existem no
+navegador: a resolução do tema, o foco visível e o comportamento em tela
+estreita. As três falham em silêncio: ninguém abre chamado dizendo "o contorno
+de foco sumiu".
+
+Ele achou um defeito na primeira execução: **não havia ícone de aba**. O
+navegador pedia `/favicon.ico` a cada navegação, levava 404 e registrava um erro
+no console — ruído permanente, que é o que esconde o erro de verdade quando ele
+vem.
+
+São 16 asserções: rotas públicas sem erro **nem recurso faltando**, as quatro
+combinações de tema, as duas famílias tipográficas efetivamente aplicadas (e
+nenhuma das proibidas), contorno de foco com 3px na primeira tabulação, ausência
+de rolagem horizontal em 360px, e o ícone respondendo 200.
+
+**O que ele não cobre, e por quê.** Só as rotas públicas. `src/proxy.ts` guarda
+toda rota, então sem um Supabase de verdade (docs/09) não há sessão — e fingir
+uma testaria o dublê, não o sistema. Uma primeira versão deste arquivo afirmava
+"rota inexistente responde 404" e **oscilava**: com uma URL de Supabase
+inventada, a chamada de autenticação às vezes falha rápido e às vezes estoura o
+tempo, e os dois caminhos terminam em páginas diferentes. Asserção que oscila é
+pior que asserção ausente — ela ensina a ignorar o vermelho. Foi removida, com o
+motivo escrito no lugar dela.
+
+## Verificação — antes × depois
+
+| | Entrega 4 | Entrega 5 |
+|---|---|---|
+| `tsc` | limpo | limpo |
+| `eslint` | limpo | limpo |
+| Testes unitários | 278 | **288** (+10 de mensagem de erro) |
+| Asserções de banco | 377 | **377** |
+| Asserções no protótipo | 44, zero erro | **44, zero erro** |
+| Asserções na aplicação, em navegador | — | **16, zero erro** |
+| Build | 32 rotas | **33 rotas** (a 33ª é o `/icon.svg` que faltava) |
+
 ## Próximo passo
 
-Entrega 5 (UX, usabilidade, acessibilidade e responsividade): `loading.tsx` e
-`error.tsx` para as 29 páginas — hoje não existe **nenhum** dos dois —, estado
-vazio nas 10 telas que ainda não têm, revisão de ordem de tabulação e de rótulos
-ARIA, e comportamento em tela estreita.
+Entrega 6 (desempenho): paginação de verdade — hoje não há nenhum `.range()`, e
+a lista trunca em silêncio em 200 tickets, 400 ativos e 300 links —,
+`next/dynamic` para o Leaflet, `Suspense` nas telas de dez consultas, e medição
+antes e depois a partir da linha de base de 1309 KB de JavaScript.

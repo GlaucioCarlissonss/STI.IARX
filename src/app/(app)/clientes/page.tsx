@@ -136,6 +136,7 @@ export default async function ClientesPage() {
                   <div className="mt-4">
                     {clientBranches.length > 0 ? (
                       <Table
+                        label="Filiais do cliente"
                         head={[
                           'Filial',
                           'Código',

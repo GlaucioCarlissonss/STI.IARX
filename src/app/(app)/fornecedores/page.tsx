@@ -98,6 +98,7 @@ export default async function FornecedoresPage() {
                 {podeVerContrato && supplierContracts.length > 0 && (
                   <div className="mt-4">
                     <Table
+                      label="Contratos do fornecedor"
                       head={[
                         'Contrato',
                         'Vigência',

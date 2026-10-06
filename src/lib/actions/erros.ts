@@ -24,12 +24,42 @@ export interface ErroDeBanco {
   message: string
 }
 
+/** O que a pessoa lê quando não sabemos dizer nada de útil sobre a falha. */
+const GENERICA = 'Não foi possível concluir. Tente de novo; se continuar, avise o suporte'
+
+/**
+ * A mensagem veio de uma trigger NOSSA, ou do próprio Postgres?
+ *
+ * Dezessete triggers desta base levantam `check_violation` **de propósito**, com
+ * a frase já escrita em português — "Área não pertence à filial do ativo". Mas
+ * `23514` é também o código de uma CHECK constraint comum, e aí quem escreve a
+ * frase é o Postgres: `new row for relation "clients" violates check constraint
+ * "clients_color_hex"`. Repassar essa segunda entrega nome de tabela e de
+ * constraint a quem só queria salvar um cadastro — e em inglês.
+ *
+ * Distinguir pelo texto é heurística, e fica admitido como tal. A alternativa
+ * seria dar às nossas triggers um SQLSTATE próprio, que é mudança de banco e não
+ * cabe numa entrega de código e visual; até lá, os marcadores abaixo são
+ * gerados pelo Postgres e não aparecem em nenhuma mensagem escrita por nós.
+ */
+function pareceMensagemDoPostgres(mensagem: string): boolean {
+  return /violates .*constraint|new row for relation|null value in column|invalid input syntax/i.test(
+    mensagem,
+  )
+}
+
 /**
  * Traduz o erro do PostgREST para uma frase acionável.
  *
- * `duplicado` é a frase específica de quem chama, para o caso de chave única.
- * Os demais códigos são genéricos de verdade — e, antes disto, vazavam para a
- * tela em inglês, com nome de constraint junto.
+ * **Nenhum caminho devolve detalhe técnico interno.** Antes desta revisão dois
+ * devolviam: o `default`, que repassava cru qualquer erro inesperado, e o
+ * `23514`, que repassava também as CHECK constraints do schema. Os dois agora
+ * passam pelo filtro acima, e o texto cru vai para o log do servidor — onde
+ * serve a quem investiga, em vez de assustar quem trabalha.
+ *
+ * O SQLSTATE acompanha a mensagem genérica pela mesma razão que o `digest`
+ * acompanha a tela de erro: sozinho não diz nada a ninguém, e é exatamente o que
+ * o suporte precisa para achar a linha certa no log.
  */
 export function mensagemDeErro(error: ErroDeBanco, duplicado?: string): string {
   switch (error.code) {
@@ -39,14 +69,15 @@ export function mensagemDeErro(error: ErroDeBanco, duplicado?: string): string {
       return 'Este registro está vinculado a outro cadastro e não pode ser alterado ou removido.'
     case '23502': // not_null_violation
       return 'Faltou preencher um campo obrigatório.'
-    /* `check_violation` e `restrict_violation` vêm das nossas próprias triggers,
-       que já levantam a mensagem em português — repassar é o certo aqui. */
-    case '23514':
-    case '2BP01':
-      return error.message
+    case '23514': // check_violation — nossa trigger, ou uma CHECK do schema
+    case '2BP01': // restrict_violation — idem
+      if (!pareceMensagemDoPostgres(error.message)) return error.message
+      console.error('[erro de banco]', error.code, error.message)
+      return 'Os dados informados não atendem a uma regra do sistema. Revise os campos e tente de novo.'
     case '42501': // insufficient_privilege
       return NAO_AFETADO
     default:
-      return error.message
+      console.error('[erro de banco]', error.code, error.message)
+      return error.code ? `${GENERICA} (código ${error.code}).` : `${GENERICA}.`
   }
 }

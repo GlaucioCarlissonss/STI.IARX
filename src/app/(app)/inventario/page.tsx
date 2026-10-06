@@ -128,6 +128,7 @@ export default async function InventarioPage() {
                 Valor total de aquisição: {formatCurrency(totalValue)}
               </p>
               <Table
+                label="Ativos de TI"
                 head={[
                   'Patrimônio', 'Equipamento', 'Nº de série', 'Status',
                   'Filial / área', 'Responsável', 'Garantia',

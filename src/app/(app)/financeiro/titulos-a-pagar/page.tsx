@@ -112,7 +112,7 @@ export default async function TitulosAPagarPage() {
             <EmptyState title="Nenhum título lançado"
               description="Use o formulário ao lado para lançar a primeira despesa." />
           ) : (
-            <Table head={['Vencimento', 'Descrição', 'Valor', 'Situação', 'Classificação', '']}>
+            <Table head={['Vencimento', 'Descrição', 'Valor', 'Situação', 'Classificação', '']} label="Títulos a pagar">
               {lista.map((t) => {
                 const st = PAYABLE_STATUS[t.status]
                 const encerrado = t.status === 'paid' || t.status === 'cancelled'

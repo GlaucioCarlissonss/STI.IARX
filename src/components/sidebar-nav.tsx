@@ -17,14 +17,34 @@ import { NavLink } from './nav-link'
 export function SidebarNav({ groups }: { groups: NavGroup[] }) {
   return (
     <ul className="flex flex-col gap-4">
-      {groups.map((grupo, i) => (
+      {groups.map((grupo, i) => {
+        /*
+         * O rótulo do grupo era um `<h2>`, e o menu vem ANTES do `<main>` no
+         * documento. Quem navega por títulos — que é como se lê uma tela com
+         * leitor de tela — ouvia "Atendimento, Financeiro, Infraestrutura…"
+         * antes do `<h1>` da página, e a hierarquia do documento começava no
+         * nível 2. Rótulo de grupo de menu não é título de seção da página.
+         *
+         * Vira texto comum com `id`, e a lista aponta para ele com
+         * `aria-labelledby`: ao entrar no grupo o leitor anuncia "Atendimento,
+         * lista com 4 itens" — mais informação do que o `<h2>` dava, e sem
+         * nenhuma linha no índice de títulos.
+         */
+        const rotuloId = `nav-grupo-${i}`
+        return (
         <li key={grupo.label ?? `solto-${i}`}>
           {grupo.label && (
-            <h2 className="mb-1 px-3 text-[0.68rem] font-semibold uppercase tracking-wider text-[var(--color-ink-3)]">
+            <p
+              id={rotuloId}
+              className="mb-1 px-3 text-[0.68rem] font-semibold uppercase tracking-wider text-[var(--color-ink-3)]"
+            >
               {grupo.label}
-            </h2>
+            </p>
           )}
-          <ul className="flex flex-col gap-0.5">
+          <ul
+            aria-labelledby={grupo.label ? rotuloId : undefined}
+            className="flex flex-col gap-0.5"
+          >
             {grupo.items.map((item) => (
               <li key={item.href ?? item.label}>
                 {item.href === null ? <SoonItem item={item} /> : (
@@ -34,7 +54,8 @@ export function SidebarNav({ groups }: { groups: NavGroup[] }) {
             ))}
           </ul>
         </li>
-      ))}
+        )
+      })}
     </ul>
   )
 }

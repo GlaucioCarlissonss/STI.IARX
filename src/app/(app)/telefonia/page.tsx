@@ -196,6 +196,7 @@ export default async function TelefoniaPage({
         <div className="flex flex-col gap-6">
           {list.length > 0 ? (
             <Table
+              label="Linhas telefônicas"
               head={[
                 'Número', 'Operadora / plano', 'Tipo', 'Status',
                 'Filial / área', 'Responsável', 'Custo', 'Fidelidade',
@@ -267,6 +268,7 @@ export default async function TelefoniaPage({
             </h2>
             {linhasPainel.length > 0 ? (
               <Table
+                label="Painel de telefonia"
                 head={[
                   'Filial / área', 'Operadora', 'Tipo', 'Situação',
                   'Linhas', 'Custo mensal', 'Média', 'Sem dono', 'Sem fidelidade',

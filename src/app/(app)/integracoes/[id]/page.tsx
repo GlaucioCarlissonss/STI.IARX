@@ -118,7 +118,7 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
 
           <Card title={`Mapeamento de campos (${mappings?.length ?? 0})`}>
             {mappings && mappings.length > 0 ? (
-              <Table head={['Campo de origem', 'Campo do ticket', 'Transformação', 'Valores']}>
+              <Table head={['Campo de origem', 'Campo do ticket', 'Transformação', 'Valores']} label="Mapeamento de campos">
                 {mappings.map((m) => (
                   <tr key={m.id}>
                     <Td className="font-mono text-xs">{m.source_path}</Td>
@@ -146,7 +146,7 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
 
           <Card title="Eventos recentes">
             {events && events.length > 0 ? (
-              <Table head={['Recebido', 'Evento', 'ID externo', 'Situação', 'Tentativas', 'Erro']}>
+              <Table head={['Recebido', 'Evento', 'ID externo', 'Situação', 'Tentativas', 'Erro']} label="Eventos recebidos">
                 {events.map((e) => (
                   <tr key={e.id}>
                     <Td className="tabular-nums text-xs text-[var(--color-ink-2)]">
@@ -171,7 +171,7 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
 
           <Card title="Log de requisições">
             {logs && logs.length > 0 ? (
-              <Table head={['Quando', 'Direção', 'Endpoint', 'HTTP', 'Duração', 'Resultado']}>
+              <Table head={['Quando', 'Direção', 'Endpoint', 'HTTP', 'Duração', 'Resultado']} label="Registro de chamadas">
                 {logs.map((l) => (
                   <tr key={l.id}>
                     <Td className="tabular-nums text-xs text-[var(--color-ink-2)]">

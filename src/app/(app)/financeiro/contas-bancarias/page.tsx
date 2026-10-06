@@ -122,6 +122,7 @@ export default async function ContasBancariasPage() {
             />
           ) : (
             <Table
+              label="Contas bancárias"
               head={['Conta', 'Tipo', 'Saldo inicial', 'Entradas', 'Saídas', 'Saldo atual', 'Situação', '']}
             >
               {saldos.map((s) => {
@@ -177,7 +178,7 @@ export default async function ContasBancariasPage() {
                 Últimas 60 movimentações. Transferências aparecem duas vezes — uma saída e uma
                 entrada — porque são o mesmo fato em duas contas.
               </p>
-              <Table head={['Data', 'Conta', 'Descrição', 'Centro de custo', 'Valor', 'Conciliação']}>
+              <Table head={['Data', 'Conta', 'Descrição', 'Centro de custo', 'Valor', 'Conciliação']} label="Movimentos das contas">
                 {movements.map((m) => (
                   <tr key={m.id}>
                     <Td className="tabular-nums text-[var(--color-ink-2)]">{formatDate(m.moved_on)}</Td>

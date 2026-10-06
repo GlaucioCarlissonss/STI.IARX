@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireScreen } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
 import { formatDateTime } from '@/lib/format'
-import { Badge, Card, PageHeader, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
 import { NewTokenForm } from './new-token-form'
 import { RevokeTokenButton } from './revoke-token-button'
 
@@ -46,7 +46,7 @@ export default async function TvAdminPage() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <div>
           {tokens && tokens.length > 0 ? (
-            <Table head={['Painel', 'Layout', 'Escopo', 'Último uso', 'Situação', '']}>
+            <Table head={['Painel', 'Layout', 'Escopo', 'Último uso', 'Situação', '']} label="Painéis de TV emitidos">
               {tokens.map((t) => {
                 const revoked = Boolean(t.revoked_at)
                 const expired = Boolean(t.expires_at && new Date(t.expires_at) < new Date())
@@ -82,11 +82,13 @@ export default async function TvAdminPage() {
               })}
             </Table>
           ) : (
-            <Card>
-              <p className="text-sm text-[var(--color-ink-2)]">
-                Nenhum painel emitido ainda. Crie o primeiro token ao lado.
-              </p>
-            </Card>
+            /* Era um `Card` com um parágrafo — a mesma informação, numa forma
+               que não se parecia com o vazio de nenhuma outra tela. Estado
+               vazio é um componente justamente para ser reconhecido de longe. */
+            <EmptyState
+              title="Nenhum painel de TV emitido"
+              description="Cada painel é um endereço com token próprio, que você abre na TV e pode revogar a qualquer momento. Emita o primeiro no formulário ao lado."
+            />
           )}
         </div>
 

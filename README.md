@@ -152,9 +152,20 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 149 testes: mapeamento, coordenadas, geolocalização, cadastros e herança de permissão
-npm run db:validate   # migrações + seed + 365 asserções em PostgreSQL real
+npm test              # 288 testes: cadastros, permissões, coordenadas, contraste dos temas e mensagens de erro
+npm run db:validate   # migrações + seed + 377 asserções em PostgreSQL real
 ```
+
+Mais duas suítes em navegador de verdade, que rodam à parte porque precisam de
+Chromium e, no caso da segunda, de um build:
+
+```bash
+node demo/tests/prototipo.spec.mjs   # 44 asserções de permissão no protótipo
+node demo/tests/aplicacao.spec.mjs   # 16 asserções na aplicação: tema, fontes, foco, 360px
+```
+
+A segunda cobre só as rotas públicas: `src/proxy.ts` guarda toda rota, e sem um
+Supabase de verdade não há sessão para exercitar as telas internas.
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
 **com um papel sem `BYPASSRLS`**. Testar isolamento como superusuário passaria

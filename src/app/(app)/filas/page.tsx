@@ -219,7 +219,7 @@ export default async function FilasPage() {
         </p>
 
         {listaRegras.length > 0 ? (
-          <Table head={['Ordem', 'Regra', 'Quando', 'Vai para', 'Situação']}>
+          <Table head={['Ordem', 'Regra', 'Quando', 'Vai para', 'Situação']} label="Regras de roteamento">
             {listaRegras.map((r) => (
               <Fragment key={r.id}>
                 <tr>

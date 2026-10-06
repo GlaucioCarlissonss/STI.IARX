@@ -89,7 +89,7 @@ export default async function TitulosAReceberPage() {
             <EmptyState title="Nenhum título a receber"
               description="Lance a primeira cobrança no formulário ao lado." />
           ) : (
-            <Table head={['Vencimento', 'Descrição', 'Cliente', 'Valor', 'Situação', '']}>
+            <Table head={['Vencimento', 'Descrição', 'Cliente', 'Valor', 'Situação', '']} label="Títulos a receber">
               {lista.map((t) => {
                 const st = RECEIVABLE_STATUS[t.status]
                 const encerrado = t.status === 'received' || t.status === 'cancelled'

@@ -188,6 +188,7 @@ export default async function LinksDeInternetPage() {
         <div className="flex flex-col gap-6">
           {lista.length > 0 ? (
             <Table
+              label="Links de internet"
               head={[
                 'Contrato',
                 'Operadora',
@@ -336,6 +337,7 @@ export default async function LinksDeInternetPage() {
             </h2>
             {custos && custos.length > 0 ? (
               <Table
+                label="Custo de conectividade por filial"
                 head={['Filial', 'Linhas', 'Telefonia', 'Links', 'Internet', 'Total mensal']}
               >
                 {custos.map((c) => (

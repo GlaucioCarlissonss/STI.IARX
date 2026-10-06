@@ -6,7 +6,7 @@ import { agruparPor } from '@/lib/data/agrupar'
 import { escopoDeCliente, porCliente, porFilial, porFilialOuGeral } from '@/lib/data/escopo'
 import { requireScreen, allowed } from '@/lib/session'
 import { isPreciseEnough, type GeocodePrecision } from '@/lib/maps'
-import { Badge, PageHeader, StatTile } from '@/components/ui'
+import { Badge, EmptyState, PageHeader, StatTile } from '@/components/ui'
 import { type MapPoint } from '@/components/branch-map'
 import { MapWorkspace } from './map-workspace'
 import { BranchGeoPanel, type BranchAddress } from './branch-geo-panel'
@@ -271,6 +271,16 @@ export default async function MapasPage({
         />
       </div>
 
+      {/* Sem NENHUMA filial no domínio, o mapa abria vazio e os quatro
+          indicadores mostravam zero — e zero não distingue "não há nada
+          cadastrado" de "nada foi geocodificado ainda", que pedem ações
+          opostas. O estado vazio diz qual dos dois é. */}
+      {all.length === 0 ? (
+        <EmptyState
+          title={`Nenhuma filial com ${domain.unit} para mostrar`}
+          description="Ou não há registros deste tipo, ou o foco por empresa está estreitando a lista. A filial entra no mapa assim que tiver endereço geocodificado."
+        />
+      ) : (
       <MapWorkspace
         points={points}
         unitLabel={domain.unit}
@@ -283,6 +293,7 @@ export default async function MapasPage({
           count: Number(r[domain.countField] ?? 0),
         }))}
       />
+      )}
 
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-[var(--color-ink-2)]">
         <span className="inline-flex items-center gap-1.5">

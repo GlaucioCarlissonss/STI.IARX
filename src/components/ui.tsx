@@ -144,11 +144,69 @@ export function PageHeader({
   )
 }
 
-export function EmptyState({ title, description }: { title: string; description?: string }) {
+export function EmptyState({
+  title,
+  description,
+  action,
+}: {
+  title: string
+  description?: string
+  /** O caminho de saída. Tela vazia sem saída é um beco. */
+  action?: ReactNode
+}) {
   return (
-    <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center">
+    <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center sm:p-10">
       <p className="font-semibold text-[var(--color-ink)]">{title}</p>
       {description && <p className="mt-1 text-sm text-[var(--color-ink-2)]">{description}</p>}
+      {action && <div className="mt-4 flex justify-center">{action}</div>}
+    </div>
+  )
+}
+
+/* --- Carregamento -------------------------------------------------------- */
+
+/**
+ * Bloco cinza que ocupa o lugar do conteúdo enquanto ele vem.
+ *
+ * `aria-hidden`: a forma do esqueleto não é informação, e um leitor de tela
+ * anunciando oito retângulos vazios atrapalha mais do que o silêncio. Quem
+ * anuncia é o `PageSkeleton`, uma vez só.
+ */
+export function Skeleton({ className = '' }: { className?: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={`animate-pulse rounded-lg bg-[var(--color-surface-3)] ${className}`}
+    />
+  )
+}
+
+/**
+ * O esqueleto padrão de uma tela da aplicação.
+ *
+ * **Por que um só, e não um por tela.** Um esqueleto fiel a cada página seriam
+ * 25 arquivos para manter em dia com 25 layouts — e esqueleto desatualizado é
+ * pior que esqueleto genérico, porque promete uma forma que não chega. Este
+ * reproduz o que praticamente toda tela tem: título, uma faixa de indicadores e
+ * uma lista. A função dele é dizer "está vindo, e vem aqui", não enganar.
+ *
+ * `role="status"` com `aria-live="polite"` anuncia uma vez, sem interromper o
+ * que a pessoa estiver ouvindo.
+ */
+export function PageSkeleton() {
+  return (
+    <div role="status" aria-live="polite">
+      <p className="sr-only">Carregando a tela…</p>
+      <div className="mb-6">
+        <Skeleton className="h-7 w-56" />
+        <Skeleton className="mt-2 h-4 w-80 max-w-full" />
+      </div>
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-24" />
+        ))}
+      </div>
+      <Skeleton className="h-64" />
     </div>
   )
 }
@@ -165,9 +223,32 @@ export function ErrorNote({ children }: { children: ReactNode }) {
   )
 }
 
-export function Table({ head, children }: { head: string[]; children: ReactNode }) {
+/**
+ * Tabela com rolagem horizontal em tela estreita.
+ *
+ * `tabIndex={0}` e `role="region"` no invólucro não são enfeite: um `div` com
+ * `overflow-x` só rola com ponteiro ou toque. Quem navega por teclado chegava ao
+ * fim da tabela sem nunca ver as últimas colunas — e as últimas colunas são
+ * sempre as de situação e ação, que é onde está o trabalho (WCAG 2.1.1). Com
+ * `tabIndex`, as setas rolam a região; com `role` e `aria-label`, o leitor de
+ * tela diz o que é aquilo antes de entrar.
+ */
+export function Table({
+  head,
+  children,
+  label = 'Tabela de dados',
+}: {
+  head: string[]
+  children: ReactNode
+  label?: string
+}) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+    <div
+      role="region"
+      aria-label={label}
+      tabIndex={0}
+      className="overflow-x-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]"
+    >
       <table className="w-full min-w-[52rem] border-collapse text-sm">
         <thead>
           <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-left">
