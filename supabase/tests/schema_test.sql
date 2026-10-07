@@ -3300,5 +3300,219 @@ begin
 end
 $$;
 
+-- =============================================================================
+\echo '=== 33. Agregados de paginação: a view conta o mesmo que a tabela (0028) ==='
+-- =============================================================================
+reset role;
+
+-- Estas quatro views existem por um motivo só: quando a lista passar a vir
+-- paginada, os indicadores no alto da tela precisam continuar contando o acervo
+-- INTEIRO. Uma divergência aqui não daria erro em lugar nenhum — daria um número
+-- com cara de fato e conteúdo errado, que é a pior saída possível.
+--
+-- Por isso cada asserção compara a view com a mesma conta feita direto na
+-- tabela, em vez de comparar com um número escrito à mão, que envelheceria na
+-- primeira vez que o seed mudasse.
+
+do $$
+declare
+  v_t         uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_fil       uuid := '11110000-0000-4000-8000-000000000001';
+  v_vertex    uuid := '11110000-0000-4000-8000-000000000004';
+begin
+  delete from public.payables;
+  delete from public.receivables;
+
+  insert into public.payables (tenant_id, branch_id, description, amount, due_on, status) values
+    (v_t, v_fil,    'Vencido',        100.00, current_date - 5,  'approved'),
+    (v_t, v_fil,    'A vencer em 3',  200.00, current_date + 3,  'approved'),
+    (v_t, v_vertex, 'Outra filial',   400.00, current_date + 30, 'pending_approval'),
+    (v_t, null,     'Sem filial',     800.00, current_date + 30, 'approved'),
+    (v_t, v_fil,    'Pago',          1600.00, current_date - 20, 'draft');
+
+  -- Totais: a view contra a tabela, sem número escrito à mão.
+  perform app.assert(
+    (select coalesce(sum(titulos), 0) from public.vw_payables_summary where tenant_id = v_t)
+      = (select count(*) from public.payables where tenant_id = v_t and deleted_at is null),
+    'a soma de títulos da view bate com a contagem da tabela');
+
+  perform app.assert(
+    (select coalesce(sum(total), 0) from public.vw_payables_summary where tenant_id = v_t)
+      = (select coalesce(sum(amount), 0) from public.payables where tenant_id = v_t and deleted_at is null),
+    'e a soma de valores também');
+
+  perform app.assert(
+    (select coalesce(sum(vencidos), 0) from public.vw_payables_summary where tenant_id = v_t)
+      = (select count(*) from public.payables
+          where tenant_id = v_t and deleted_at is null
+            and due_on < current_date and status not in ('paid', 'cancelled')),
+    'vencidos exclui pago e cancelado, exatamente como a tela');
+
+  -- A coluna que a 0028 acrescentou, e a razão de ela existir: sem `branch_id`
+  -- o indicador contaria o tenant inteiro enquanto a lista mostra uma empresa só.
+  perform app.assert(
+    (select coalesce(sum(total), 0) from public.vw_payables_summary
+      where tenant_id = v_t and (branch_id = v_fil or branch_id is null))
+      = 100.00 + 200.00 + 800.00 + 1600.00,
+    'o agregado por filial soma a filial MAIS o que não tem filial — a regra do escopo');
+
+  -- `coalesce` nos somatórios com filtro: sem nenhum vencido o resultado tem de
+  -- ser 0, não NULL. NULL chegaria na tela como NaN no primeiro mês sem atraso.
+  delete from public.payables where due_on < current_date;
+  perform app.assert(
+    (select coalesce(sum(total_vencido), -1) from public.vw_payables_summary where tenant_id = v_t) = 0,
+    'sem título vencido o total vencido é zero, e não nulo');
+end
+$$;
+
+do $$
+declare
+  v_t       uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_cliente uuid := 'f0000000-0000-4000-8000-000000000001';
+  v_conta   uuid := 'c2220000-0000-4000-8000-000000000001';
+begin
+  delete from public.receivables;
+  -- Nasce sempre em aberto: `app.receivables_guard()` recusa criar já recebido,
+  -- e a baixa exige data e conta (`receivables_received_has_evidence`). O teste
+  -- passa pelo mesmo caminho que a tela percorre.
+  insert into public.receivables
+    (tenant_id, client_id, description, amount, due_on, status) values
+    (v_t, v_cliente, 'Em aberto',        500.00, current_date + 10, 'open'),
+    (v_t, v_cliente, 'Vencido',          300.00, current_date - 2,  'open'),
+    (v_t, v_cliente, 'Recebido a menos', 200.00, current_date - 30, 'open'),
+    (v_t, null,      'Sem cliente',      100.00, current_date + 10, 'open');
+
+  update public.receivables
+     set status = 'received', received_on = current_date,
+         bank_account_id = v_conta, received_amount = 180.00
+   where tenant_id = v_t and description = 'Recebido a menos';
+
+  perform app.assert(
+    (select coalesce(sum(titulos), 0) from public.vw_receivables_summary where tenant_id = v_t)
+      = (select count(*) from public.receivables where tenant_id = v_t and deleted_at is null),
+    'a view de recebíveis conta o mesmo que a tabela');
+
+  -- A conta que a tela chama de "diferença": onde desconto e recebimento parcial
+  -- aparecem. Somar só o recebido esconderia a perda de 20.
+  perform app.assert(
+    (select coalesce(sum(diferenca_recebida), 0) from public.vw_receivables_summary where tenant_id = v_t)
+      = 20.00,
+    'a diferença entre combinado e recebido é 20, e não zero');
+
+  -- Título baixado sem valor informado foi recebido integralmente: não entra na
+  -- diferença. Sem o `coalesce` da view, ele entraria como o valor inteiro.
+  insert into public.receivables
+    (tenant_id, client_id, description, amount, due_on, status)
+  values (v_t, v_cliente, 'Recebido sem valor', 700.00, current_date - 3, 'open');
+  update public.receivables
+     set status = 'received', received_on = current_date, bank_account_id = v_conta
+   where tenant_id = v_t and description = 'Recebido sem valor';
+  perform app.assert(
+    (select coalesce(sum(diferenca_recebida), 0) from public.vw_receivables_summary where tenant_id = v_t)
+      = 20.00,
+    'e baixa sem valor informado continua valendo integral, sem inflar a diferença');
+
+  delete from public.receivables;
+end
+$$;
+
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_fil  uuid := '11110000-0000-4000-8000-000000000001';
+  v_id   uuid;
+  v_base bigint;
+begin
+  perform app.assert(
+    (select coalesce(sum(ativos), 0) from public.vw_assets_summary where tenant_id = v_t)
+      = (select count(*) from public.it_assets where tenant_id = v_t and deleted_at is null),
+    'a view de inventário conta o mesmo que a tabela');
+
+  perform app.assert(
+    (select coalesce(sum(valor_total), 0) from public.vw_assets_summary where tenant_id = v_t)
+      = (select coalesce(sum(acquisition_cost), 0) from public.it_assets
+          where tenant_id = v_t and deleted_at is null),
+    'e soma o mesmo valor de aquisição');
+
+  -- O piso em `current_date` é a regra que a tela já aplica, com motivo escrito
+  -- lá: sem ele, garantia vencida há anos ficaria para sempre em "vencendo nos
+  -- próximos 90 dias", e o indicador vermelho permanente esconderia a que de
+  -- fato vence semana que vem.
+  -- Delta, e não valor absoluto: o seed já traz ativos com garantia, e uma
+  -- asserção escrita como "= 0" mediria o seed em vez da regra. Esse erro já
+  -- aconteceu duas vezes nesta base, nos testes de custódia.
+  select coalesce(sum(garantia_90d), 0) into v_base
+    from public.vw_assets_summary where tenant_id = v_t;
+
+  insert into public.it_assets (tenant_id, branch_id, asset_tag, asset_type, status, warranty_until)
+  values (v_t, v_fil, 'GARANTIA-VELHA', 'notebook', 'active', current_date - 400)
+  returning id into v_id;
+  perform app.assert(
+    (select coalesce(sum(garantia_90d), 0) from public.vw_assets_summary where tenant_id = v_t)
+      = v_base,
+    'garantia vencida há muito tempo NÃO conta como vencendo em 90 dias');
+
+  update public.it_assets set warranty_until = current_date + 30 where id = v_id;
+  perform app.assert(
+    (select coalesce(sum(garantia_90d), 0) from public.vw_assets_summary where tenant_id = v_t)
+      = v_base + 1,
+    'e a que vence em 30 dias conta');
+
+  -- Equipamento baixado não tem garantia a renovar.
+  update public.it_assets set status = 'retired' where id = v_id;
+  perform app.assert(
+    (select coalesce(sum(garantia_90d), 0) from public.vw_assets_summary where tenant_id = v_t)
+      = v_base,
+    'ativo baixado sai da conta de garantia');
+
+  delete from public.it_assets where id = v_id;
+end
+$$;
+
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  perform app.assert(
+    (select coalesce(sum(links_count), 0) from public.vw_internet_dashboard where tenant_id = v_t)
+      = (select count(*) from public.internet_links where tenant_id = v_t and deleted_at is null),
+    'a view de links conta o mesmo que a tabela');
+
+  -- A coluna que a 0028 acrescentou. "Não monitorado" é indicador da tela desde
+  -- que o módulo ganhou interface, e a view de 2013 não o tinha.
+  perform app.assert(
+    (select coalesce(sum(links_unknown), 0) from public.vw_internet_dashboard where tenant_id = v_t)
+      = (select count(*) from public.internet_links
+          where tenant_id = v_t and deleted_at is null and last_state = 'unknown'),
+    'links_unknown conta exatamente os links sem host monitorado');
+
+  perform app.assert(
+    (select coalesce(sum(monthly_total), 0) from public.vw_internet_dashboard
+      where tenant_id = v_t and status = 'active')
+      = (select coalesce(sum(monthly_cost), 0) from public.internet_links
+          where tenant_id = v_t and deleted_at is null and status = 'active'),
+    'e o custo mensal ativo bate com a soma dos links ativos');
+end
+$$;
+
+-- Isolamento: as quatro views são `security_invoker`, então o RLS da tabela de
+-- origem continua valendo. Sem isso, um agregado seria o caminho mais fácil para
+-- descobrir quanto outro tenant tem a pagar — sem nunca ver uma linha dele.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000099","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.vw_payables_summary) = 0,
+    'tenant 2 não enxerga o agregado de títulos a pagar do tenant 1');
+  perform app.assert((select count(*) from public.vw_receivables_summary) = 0,
+    'nem o de títulos a receber');
+  perform app.assert((select count(*) from public.vw_assets_summary) = 0,
+    'nem o do inventário');
+  perform app.assert((select count(*) from public.vw_internet_dashboard) = 0,
+    'nem o dos links');
+end
+$$;
+reset role;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

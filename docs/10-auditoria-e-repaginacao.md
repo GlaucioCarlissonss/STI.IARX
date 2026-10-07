@@ -826,9 +826,186 @@ motivo escrito no lugar dela.
 | Asserções na aplicação, em navegador | — | **16, zero erro** |
 | Build | 32 rotas | **33 rotas** (a 33ª é o `/icon.svg` que faltava) |
 
+---
+
+# Entrega 6 — Desempenho (executada)
+
+## 0. Duas correções ao diagnóstico, antes de qualquer coisa
+
+O relatório da Entrega 1 errou em dois pontos deste tema, e os dois teriam me
+feito gastar a entrega no lugar errado.
+
+**"`next/dynamic` para o Leaflet".** O Leaflet **já** é carregado sob demanda:
+`leaflet-branch-map.tsx` faz `import('leaflet')` em tempo de execução desde
+antes desta auditoria. Não havia nada a adiar ali.
+
+**"linha de base de 1309 KB de JavaScript".** Esse número era o tamanho de
+`.next/static` no disco — todas as rotas, todos os pedaços — e foi apresentado
+como se fosse o que uma página baixa. Medindo o que o navegador realmente puxa
+na rota mais leve: **515 KB**, e dentro deles não há Leaflet, nem Zod, nem o
+cliente do Supabase. É o runtime do React 19 com o do Next 16, que é o piso do
+framework.
+
+Conclusão desagradável e verdadeira: **não havia problema de bundle para
+resolver.** O problema de desempenho desta aplicação está inteiro no servidor, e
+é onde esta entrega atua.
+
+## 1. O defeito real: duas formas de errar o tamanho da consulta
+
+| Tela | Antes | Sintoma |
+|---|---|---|
+| `/tickets` | `.limit(200)` | **Trunca em silêncio** |
+| `/inventario` | `.limit(400)` | idem |
+| `/conectividade/links` | `.limit(300)` | idem |
+| `/financeiro/titulos-a-pagar` | nenhum limite | **Traz tudo** |
+| `/financeiro/titulos-a-receber` | nenhum limite | idem |
+| `/telefonia` | nenhum limite | idem |
+
+As duas são ruins, por motivos opostos. **O teto mente:** a consulta corta em
+200 e a tela não diz nada — quem tem 240 tickets abertos trabalha a semana
+inteira sem saber que 40 existem. Não há erro, não há aviso, não há sintoma: há
+200 linhas e uma lista que parece completa. **A ausência de teto trava:**
+`/financeiro/titulos-a-pagar` trazia todos os títulos, de todos os meses, com
+todas as colunas, e o travamento viria de uma vez, no dia em que o acervo
+crescesse.
+
+As seis telas agora paginam de verdade, em páginas de 50, com `?pagina=` na
+barra de endereço e um rodapé que diz **"51–100 de 412"** — o total é a parte
+que importa, e era exatamente a que não existia.
+
+Cada consulta paginada ganhou **desempate por `id`**. Sem ele, duas linhas com o
+mesmo `due_on` (ou dois ativos sem patrimônio) trocam de lugar entre uma página
+e outra: uma aparece duas vezes e a outra, nunca. É o defeito de paginação mais
+fácil de não notar e o mais difícil de explicar depois.
+
+## 2. O que a paginação ia quebrar, e a migração que existe para impedir
+
+Cinco dessas telas calculavam os indicadores do topo **a partir da lista
+inteira** — `lista.filter(...).length`, `lista.reduce(...)`. Paginar a consulta e
+parar por aí teria transformado "Ativos cadastrados: 412" em "Ativos
+cadastrados: 50".
+
+Isso é pior que a truncagem que a entrega veio corrigir: a truncagem esconde
+linhas; o número errado **afirma uma coisa falsa com cara de fato**.
+
+A migração **0028** dá a cada tela paginada a sua fonte de total:
+
+| View | Situação | Serve a |
+|---|---|---|
+| `vw_payables_summary` | existia desde a 0020, **sem nenhum leitor** — recriada com `branch_id` | `/financeiro/titulos-a-pagar` |
+| `vw_internet_dashboard` | existia desde a 0013, **sem nenhum leitor** — ganhou `links_unknown` e `expirados` | `/conectividade/links` |
+| `vw_receivables_summary` | nova, com `client_id` | `/financeiro/titulos-a-receber` |
+| `vw_assets_summary` | nova, com `branch_id` | `/inventario` |
+| `vw_telecom_dashboard` | já era lida | `/telefonia` |
+
+Duas views órfãs finalmente ganharam leitor. Não por elegância: elas já
+continham quase exatamente a conta que a aplicação refazia em JavaScript.
+
+**Todas carregam a coluna do escopo** — `branch_id` nas de patrimônio e despesa,
+`client_id` na de receita. Sem isso, o foco por empresa estreitaria a lista e
+deixaria o indicador em cima dela contando o tenant inteiro: dois números na
+mesma tela, discordando, sem nada que explique. É o defeito que
+`vw_dashboard_metrics` ainda tem, registrado como lacuna na Entrega 3.
+
+**Nenhuma regra mudou.** Cada view reproduz o filtro que a tela já aplicava,
+inclusive onde eu discordo dele — e aí o comentário na migração diz que discordo,
+e a regra fica:
+
+- a garantia do inventário mantém o piso em `current_date`, que a tela já tinha e
+  cujo motivo está escrito lá: sem ele, garantia vencida há anos contaria como
+  "vencendo em 90 dias" para sempre;
+- o aviso de contrato de link **não** tem esse piso: contrato terminado há dois
+  anos continua contando como "vigência terminando nos próximos 90 dias". Essa é
+  a regra da tela hoje; trocá-la muda um número que alguém lê todo dia, e é
+  decisão de produto, não de refatoração. **`[DECISÃO PENDENTE]`**
+
+## 3. O ganho maior, que não aparece em nenhum gráfico
+
+As consultas auxiliares passaram a buscar **só os registros da página**.
+
+`/inventario` trazia a timeline de custódia inteira (até 400 eventos) e os anexos
+do parque inteiro, para alimentar gavetas que, numa tela de 50 linhas, no máximo
+50 pessoas abririam. O mesmo em `/conectividade/links` (anexos de todos os
+contratos e os 300 eventos mais recentes), `/telefonia` e os dois de títulos.
+
+| Tela | Linhas buscadas antes | Depois |
+|---|---|---|
+| `/inventario` | até 400 ativos + até 400 eventos + **todos** os anexos | 50 ativos + eventos e anexos **desses 50** + dezenas de linhas agregadas |
+| `/conectividade/links` | até 300 links + **todos** os anexos + 300 eventos | 50 links + anexos e eventos **desses 50** + agregado |
+| `/financeiro/titulos-a-pagar` | **todos** os títulos + **todos** os anexos | 50 títulos + anexos **desses 50** + agregado |
+
+O custo é uma viagem a mais ao banco — a segunda rodada só pode começar quando
+os ids da página existem. Em troca, o payload deixa de crescer com o acervo e
+passa a crescer com a página, que é a única das duas coisas que tem teto.
+
+Lista vazia nem chega a consultar: `.in('asset_id', [])` é uma ida ao banco
+garantidamente sem resultado.
+
+## 4. `/telefonia`: o filtro teve de sair da memória
+
+Essa tela filtrava em JavaScript, com um comentário que dizia "são poucas linhas
+por tenant". Com paginação isso deixa de funcionar: filtrar **depois** de cortar
+em 50 filtraria a página, não o acervo, e a tela mostraria "3 resultados" quando
+existem 300. Filtro e corte precisam acontecer no mesmo lugar, e esse lugar é o
+banco.
+
+Um efeito colateral que precisou de cuidado: a lista de operadoras do seletor
+vinha das linhas carregadas. Tirá-la da página 1 deixaria o filtro com as
+operadoras daquela página — escolher uma que só aparece na página 4 seria
+impossível. Ela agora vem do painel agregado, que enxerga todas.
+
+## 5. Índices
+
+Cinco índices parciais `(tenant_id, <ordem>, id) where deleted_at is null`, um
+por tabela paginada. `.range()` com `order by` sem índice obriga o Postgres a
+ordenar a tabela inteira para devolver 50 linhas, e o custo cresce com o acervo,
+não com a página. Com poucos milhares de linhas ninguém nota — e é exatamente
+por isso que o índice entra agora, e não no dia em que alguém notar.
+
+## 6. Verificação
+
+Um teto de JavaScript entrou em `aplicacao.spec.mjs`, e ele não é meta de
+desempenho: é **alarme de contágio**. A tela de login tem um formulário e dois
+links; se o número saltar, quase sempre é porque algo pesado vazou para um módulo
+compartilhado — um `import` sem `type`, um componente de servidor que virou
+cliente. O teto é folgado de propósito: apertá-lo até o valor de hoje
+transformaria cada refatoração legítima numa falha, e o teste passaria a ser
+ignorado, que é o único jeito garantido de um alarme não servir para nada.
+
+| | Entrega 5 | Entrega 6 |
+|---|---|---|
+| `tsc` | limpo | limpo |
+| `eslint` | limpo | limpo |
+| Testes unitários | 288 | **306** (+18 de paginação) |
+| Asserções de banco | 377 | **397** (+20, seção 33) |
+| Asserções no protótipo | 44, zero erro | **44, zero erro** |
+| Asserções na aplicação | 16 | **17** (+1, teto de JavaScript) |
+| Views no banco | 17 | **19** |
+| JavaScript em `/login` | 515 KB | **515 KB** |
+
+As vinte asserções novas comparam **cada view com a mesma conta feita direto na
+tabela**, em vez de com um número escrito à mão que envelheceria no primeiro
+`seed.sql` alterado. Uma delas já pagou o custo de existir: `drop view` leva
+junto os `GRANT`, e sem o `grant select` restaurado as duas views recriadas
+devolveriam *"permission denied for view"* numa tela que funcionava — num
+ambiente onde ninguém tocou em permissão nenhuma.
+
+## 7. O que NÃO foi paginado, e por quê
+
+- **`/clientes` e `/fornecedores`** — são cartões com tabelas aninhadas. Paginar
+  separaria um cliente das suas filiais, e a contagem desses cadastros é de
+  dezenas, não de milhares.
+- **`/financeiro/centros-de-custo`** — hierarquia de três níveis renderizada por
+  `parent_id`: cortar a lista esconderia um ancestral e os filhos sumiriam da
+  árvore sem aviso. É a mesma razão pela qual ele ficou fora do escopo por
+  cliente, na Entrega 3.
+- **`Suspense` por consulta.** O briefing sugere; com `loading.tsx` já cobrindo
+  a troca de tela (Entrega 5) e as consultas agora pequenas, dividir cada página
+  em cinco limites de Suspense acrescentaria estados de carregamento parcial
+  piscando sem reduzir espera nenhuma.
+
 ## Próximo passo
 
-Entrega 6 (desempenho): paginação de verdade — hoje não há nenhum `.range()`, e
-a lista trunca em silêncio em 200 tickets, 400 ativos e 300 links —,
-`next/dynamic` para o Leaflet, `Suspense` nas telas de dez consultas, e medição
-antes e depois a partir da linha de base de 1309 KB de JavaScript.
+Entrega 7: revisão final de consistência — varrer o que as seis entregas
+deixaram divergente entre si, conferir os números que a documentação afirma
+contra o que as ferramentas medem, e fechar o comparativo de ponta a ponta.

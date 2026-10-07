@@ -152,8 +152,8 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 288 testes: cadastros, permissões, coordenadas, contraste dos temas e mensagens de erro
-npm run db:validate   # migrações + seed + 377 asserções em PostgreSQL real
+npm test              # 306 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro e paginação
+npm run db:validate   # migrações + seed + 397 asserções em PostgreSQL real
 ```
 
 Mais duas suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -161,7 +161,7 @@ Chromium e, no caso da segunda, de um build:
 
 ```bash
 node demo/tests/prototipo.spec.mjs   # 44 asserções de permissão no protótipo
-node demo/tests/aplicacao.spec.mjs   # 16 asserções na aplicação: tema, fontes, foco, 360px
+node demo/tests/aplicacao.spec.mjs   # 17 asserções na aplicação: tema, fontes, foco, 360px, peso do JS
 ```
 
 A segunda cobre só as rotas públicas: `src/proxy.ts` guarda toda rota, e sem um

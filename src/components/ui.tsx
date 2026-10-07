@@ -1,4 +1,6 @@
+import Link from 'next/link'
 import { cloneElement, isValidElement, type ReactNode } from 'react'
+import { enderecoDaPagina, totalDePaginas } from '@/lib/data/paginacao'
 import type { SlaState, TicketStatus } from '@/lib/types'
 import { slaStateLabel, ticketStatusLabel, ticketStatusTone } from '@/lib/i18n'
 
@@ -160,6 +162,103 @@ export function EmptyState({
       {description && <p className="mt-1 text-sm text-[var(--color-ink-2)]">{description}</p>}
       {action && <div className="mt-4 flex justify-center">{action}</div>}
     </div>
+  )
+}
+
+/* --- Paginação ----------------------------------------------------------- */
+
+/**
+ * Rodapé de página: quantas linhas, de quantas, e como ir para as outras.
+ *
+ * ## "51–100 de 412" antes dos botões
+ *
+ * O número total é a parte que importa, e é justamente a que não existia: a
+ * tela truncava em 200 sem dizer nada. Com o total à vista, quem olha sabe o
+ * tamanho do acervo mesmo sem percorrer — e sabe que existe mais.
+ *
+ * ## `<Link>` e não botão
+ *
+ * Paginação é navegação: o endereço muda, o botão "voltar" do navegador
+ * funciona, e a página 3 de uma busca filtrada pode ser copiada e mandada para
+ * outra pessoa. Com `<button>` e estado em memória nada disso valeria, e seria
+ * mais código.
+ *
+ * ## `aria-disabled` em vez de sumir
+ *
+ * Na primeira página, "Anterior" fica visível e inerte. Remover o botão faria a
+ * barra inteira pular de posição a cada troca de página, e quem navega por
+ * teclado perderia a referência de onde estava a tabulação.
+ */
+export function Pager({
+  pagina,
+  total,
+  tamanho,
+  base,
+  params,
+}: {
+  pagina: number
+  total: number
+  tamanho: number
+  base: string
+  params: Record<string, string | undefined>
+}) {
+  const paginas = totalDePaginas(total, tamanho)
+  if (total === 0) return null
+
+  const primeiro = (pagina - 1) * tamanho + 1
+  const ultimo = Math.min(pagina * tamanho, total)
+  const temAnterior = pagina > 1
+  const temProxima = pagina < paginas
+
+  const estilo = (ativo: boolean) =>
+    `rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium ${
+      ativo
+        ? 'text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]'
+        : 'cursor-not-allowed text-[var(--color-ink-3)] opacity-60'
+    }`
+
+  return (
+    <nav
+      aria-label="Paginação"
+      className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm"
+    >
+      <p className="text-[var(--color-ink-2)]">
+        {total > 0 ? (
+          <>
+            <span className="font-medium text-[var(--color-ink)] tabular-nums">
+              {primeiro}–{ultimo}
+            </span>{' '}
+            de <span className="tabular-nums">{total}</span>
+          </>
+        ) : (
+          'Nenhum registro'
+        )}
+      </p>
+
+      <div className="flex items-center gap-2">
+        {temAnterior ? (
+          <Link href={enderecoDaPagina(base, params, pagina - 1)} className={estilo(true)}>
+            Anterior
+          </Link>
+        ) : (
+          <span aria-disabled="true" className={estilo(false)}>
+            Anterior
+          </span>
+        )}
+        <span className="text-[var(--color-ink-3)] tabular-nums">
+          {pagina} / {paginas}
+        </span>
+        {temProxima ? (
+          <Link href={enderecoDaPagina(base, params, pagina + 1)} className={estilo(true)}>
+            Próxima
+          </Link>
+        ) : (
+          <span aria-disabled="true" className={estilo(false)}>
+            Próxima
+          </span>
+        )}
+      </div>
+    </nav>
   )
 }
 

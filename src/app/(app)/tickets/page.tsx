@@ -4,10 +4,11 @@ import { createClient } from '@/lib/supabase/server'
 import { requireScreen } from '@/lib/session'
 import { getPriorities, getQueues } from '@/lib/data/lookups'
 import { escopoDeCliente, porClienteOuGeral } from '@/lib/data/escopo'
+import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { ticketStatusLabel } from '@/lib/i18n'
 import type { EnrichedTicket, TicketStatus } from '@/lib/types'
 import { TicketList } from '@/components/ticket-list'
-import { EmptyState, PageHeader, inputClass } from '@/components/ui'
+import { EmptyState, PageHeader, Pager, inputClass } from '@/components/ui'
 
 export const metadata: Metadata = { title: 'Tickets' }
 
@@ -23,7 +24,13 @@ const OPEN_STATUSES: TicketStatus[] = [
 export default async function TicketsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; fila?: string; prioridade?: string; busca?: string }>
+  searchParams: Promise<{
+    status?: string
+    fila?: string
+    prioridade?: string
+    busca?: string
+    pagina?: string
+  }>
 }) {
   const params = await searchParams
   await requireScreen('helpdesk.tickets.ver')
@@ -35,12 +42,23 @@ export default async function TicketsPage({
     escopoDeCliente(),
   ])
 
+  /*
+   * `count: 'exact'` em vez de uma segunda consulta: o PostgREST devolve o total
+   * de ANTES do `range`, que é exatamente o número que o rodapé precisa. Uma
+   * consulta a mais para contar a mesma coisa seria o dobro de viagens ao banco
+   * para um dado que já vem junto.
+   */
+  const pagina = lerPagina(params.pagina)
+
   let query = porClienteOuGeral(
     supabase
       .from('vw_tickets_enriched')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('queue_score', { ascending: false })
-      .limit(200),
+      // Desempate estável: sem ele, dois tickets com o mesmo score podem trocar
+      // de lugar entre uma página e outra, e um deles aparece duas vezes
+      // enquanto o outro não aparece nunca.
+      .order('id'),
     escopo,
   )
 
@@ -55,8 +73,9 @@ export default async function TicketsPage({
   if (params.prioridade) query = query.eq('priority_key', params.prioridade)
   if (params.busca) query = query.ilike('title', `%${params.busca}%`)
 
-  const { data, error } = await query.returns<EnrichedTicket[]>()
+  const { data, error, count } = await paginar(query, pagina).returns<EnrichedTicket[]>()
   const tickets = data ?? []
+  const total = count ?? 0
 
   return (
     <>
@@ -147,8 +166,14 @@ export default async function TicketsPage({
         </button>
       </form>
 
+      {/* `error.message` NÃO entra aqui: numa falha de banco ele traz nome de
+          tabela e de coluna, e quem está procurando um ticket não tem o que
+          fazer com isso. Mesma regra de `mensagemDeErro` e de `error.tsx`. */}
       {error ? (
-        <EmptyState title="Não foi possível carregar os tickets" description={error.message} />
+        <EmptyState
+          title="Não foi possível carregar os tickets"
+          description="Tente de novo em instantes. Se continuar, avise o suporte."
+        />
       ) : tickets.length === 0 ? (
         <EmptyState
           title="Nenhum ticket encontrado"
@@ -156,10 +181,14 @@ export default async function TicketsPage({
         />
       ) : (
         <>
-          <p className="mb-2 text-sm text-[var(--color-ink-2)]">
-            {tickets.length} ticket{tickets.length === 1 ? '' : 's'}
-          </p>
           <TicketList tickets={tickets} />
+          <Pager
+            pagina={pagina.numero}
+            total={total}
+            tamanho={pagina.tamanho}
+            base="/tickets"
+            params={params}
+          />
         </>
       )}
     </>

@@ -5,11 +5,12 @@ import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
 import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
+import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { contractStatusTone, lineStatusLabel, lineTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { BranchArea, TelecomDashboardRow, TelecomLine } from '@/lib/types'
 import {
-  Badge, Card, EmptyState, Field, PageHeader, StatTile, Table, Td, inputClass,
+  Badge, Card, EmptyState, Field, PageHeader, Pager, StatTile, Table, Td, inputClass,
 } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
 import { Attachments, type AttachmentRecord } from '@/components/attachments'
@@ -20,26 +21,53 @@ export const metadata: Metadata = { title: 'Telefonia' }
 export default async function TelefoniaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filial?: string; operadora?: string; situacao?: string }>
+  searchParams: Promise<{
+    filial?: string
+    operadora?: string
+    situacao?: string
+    pagina?: string
+  }>
 }) {
   const filtros = await searchParams
   await requireScreen('telefonia.linhas.ver')
   const supabase = await createClient()
   const escopo = await escopoDeCliente()
+  const pagina = lerPagina(filtros.pagina)
 
   const [
-    { data: lines }, { data: painel }, branches, agents,
-    { data: areas }, { data: devices }, { data: anexos },
+    { data: lines, count }, { data: painel }, branches, agents,
+    { data: areas }, { data: devices },
   ] = await Promise.all([
-    porFilialOuGeral(
-      supabase
-        .from('telecom_lines')
-        .select(
-          'id, phone_number, carrier, plan_name, line_type, status, branch_id, company_area_id, assigned_user_id, device_asset_id, monthly_cost, activated_on, cancelled_on, loyalty_until',
+    /*
+     * Os filtros saíram da memória e foram para o banco.
+     *
+     * Antes a consulta trazia TODAS as linhas do tenant e o filtro acontecia
+     * depois, em JavaScript — com o comentário "são poucas linhas por tenant".
+     * Com paginação isso deixa de funcionar: filtrar depois de cortar em 50
+     * filtraria a página, não o acervo, e a tela mostraria "3 resultados" quando
+     * existem 300. Filtro e corte precisam acontecer no mesmo lugar, e esse
+     * lugar é o banco.
+     */
+    paginar(
+      (() => {
+        let q = porFilialOuGeral(
+          supabase
+            .from('telecom_lines')
+            .select(
+              'id, phone_number, carrier, plan_name, line_type, status, branch_id, company_area_id, assigned_user_id, device_asset_id, monthly_cost, activated_on, cancelled_on, loyalty_until',
+              { count: 'exact' },
+            )
+            .is('deleted_at', null)
+            .order('phone_number')
+            .order('id'),
+          escopo,
         )
-        .is('deleted_at', null)
-        .order('phone_number'),
-      escopo,
+        if (filtros.filial) q = q.eq('branch_id', filtros.filial)
+        if (filtros.operadora) q = q.eq('carrier', filtros.operadora)
+        if (filtros.situacao) q = q.eq('status', filtros.situacao)
+        return q
+      })(),
+      pagina,
     ).returns<TelecomLine[]>(),
     /* `vw_telecom_dashboard` (0013) no lugar de `vw_telecom_costs`: ela traz os
        mesmos números e mais dois que não apareciam em lugar nenhum — linha sem
@@ -68,12 +96,19 @@ export default async function TelefoniaPage({
       .in('asset_type', ['smartphone', 'tablet'])
       .is('deleted_at', null),
     // Uma consulta para todas as linhas; agrupada em memória para não virar N+1.
-    supabase
-      .from('telecom_line_attachments')
-      .select('id, line_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
-      .order('created_at', { ascending: false })
-      .returns<(AttachmentRecord & { line_id: string })[]>(),
   ])
+
+  /* Anexos só das linhas desta página. */
+  const idsDaPagina = (lines ?? []).map((l) => l.id)
+  const { data: anexos } =
+    idsDaPagina.length > 0
+      ? await supabase
+          .from('telecom_line_attachments')
+          .select('id, line_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
+          .in('line_id', idsDaPagina)
+          .order('created_at', { ascending: false })
+          .returns<(AttachmentRecord & { line_id: string })[]>()
+      : { data: null }
 
   const [podeEditar, podeCriar, podeAnexar] = await Promise.all([
     allowed('telefonia.linhas.editar'),
@@ -81,25 +116,32 @@ export default async function TelefoniaPage({
     allowed('telefonia.linhas.anexar'),
   ])
   const anexosPorLinha = agruparPor(anexos, 'line_id')
-  /* Filtros no servidor, em memória: são poucas linhas por tenant e a consulta
-     já trouxe todas para a tabela. Refazer a ida ao banco por filtro custaria
-     mais do que economizaria. */
-  const todas = lines ?? []
-  const list = todas.filter(
-    (l) =>
-      (!filtros.filial || l.branch_id === filtros.filial) &&
-      (!filtros.operadora || l.carrier === filtros.operadora) &&
-      (!filtros.situacao || l.status === filtros.situacao),
-  )
-  const operadoras = [...new Set(todas.map((l) => l.carrier))].sort()
+  const list = lines ?? []
+
+  /* A lista de operadoras do seletor vem do PAINEL, não da lista.
+     Com a consulta paginada, tirá-la das linhas visíveis deixaria o filtro com
+     as operadoras da página 1 — e escolher uma operadora que só aparece na
+     página 4 seria impossível. */
+  const operadoras = [...new Set((painel ?? []).map((c) => c.carrier))].filter(Boolean).sort()
+
   /* O painel acompanha o mesmo recorte da tabela: dois números na mesma tela
-     dizendo coisas diferentes sobre o mesmo filtro é pior que um número só. */
+     dizendo coisas diferentes sobre o mesmo filtro é pior que um número só.
+     Ele continua sendo filtrado em memória porque é agregado — dezenas de
+     linhas, não milhares. */
   const linhasPainel = (painel ?? []).filter(
     (c) =>
       (!filtros.filial || c.branch_id === filtros.filial) &&
       (!filtros.operadora || c.carrier === filtros.operadora) &&
       (!filtros.situacao || c.status === filtros.situacao),
   )
+  const somaPainel = (campo: 'lines_count' | 'monthly_total', status?: string) =>
+    linhasPainel
+      .filter((c) => status === undefined || c.status === status)
+      .reduce((n, c) => n + Number(c[campo] ?? 0), 0)
+
+  const totalLinhas = somaPainel('lines_count')
+  const ativas = somaPainel('lines_count', 'active')
+  const suspensas = somaPainel('lines_count', 'suspended')
   const semDono = linhasPainel.reduce((n, c) => n + Number(c.without_user), 0)
   const semFidelidade = linhasPainel.reduce((n, c) => n + Number(c.free_to_cancel), 0)
   const listaAreas = areas ?? []
@@ -107,9 +149,7 @@ export default async function TelefoniaPage({
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const userName = new Map(agents.map((a) => [a.id, a.full_name]))
 
-  const activeCost = list
-    .filter((l) => l.status === 'active')
-    .reduce((sum, l) => sum + (l.monthly_cost ?? 0), 0)
+  const activeCost = somaPainel('monthly_total', 'active')
 
   return (
     <>
@@ -119,11 +159,11 @@ export default async function TelefoniaPage({
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="Linhas cadastradas" value={list.length} />
-        <StatTile label="Ativas" value={list.filter((l) => l.status === 'active').length} tone="ok" />
+        <StatTile label="Linhas cadastradas" value={totalLinhas} />
+        <StatTile label="Ativas" value={ativas} tone="ok" />
         <StatTile
           label="Suspensas"
-          value={list.filter((l) => l.status === 'suspended').length}
+          value={suspensas}
           tone="warn"
         />
         <StatTile label="Custo mensal ativo" value={formatCurrency(activeCost)} />
@@ -195,6 +235,7 @@ export default async function TelefoniaPage({
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <div className="flex flex-col gap-6">
           {list.length > 0 ? (
+            <>
             <Table
               label="Linhas telefônicas"
               head={[
@@ -258,8 +299,19 @@ export default async function TelefoniaPage({
                 </Fragment>
               ))}
             </Table>
+            <Pager
+              pagina={pagina.numero}
+              total={count ?? 0}
+              tamanho={pagina.tamanho}
+              base="/telefonia"
+              params={filtros}
+            />
+            </>
           ) : (
-            <EmptyState title="Nenhuma linha cadastrada" />
+            <EmptyState
+              title="Nenhuma linha encontrada"
+              description="Ajuste os filtros ou cadastre a primeira linha no formulário ao lado."
+            />
           )}
 
           <section>

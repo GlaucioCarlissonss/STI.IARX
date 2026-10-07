@@ -5,10 +5,11 @@ import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
 import { escopoDeCliente, porFilial } from '@/lib/data/escopo'
+import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { contractStatusTone, linkStateLabel, linkStateTone, linkStatusLabel, linkTechnologyLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate, formatMinutes } from '@/lib/format'
 import type { ConnectivityCostRow, InternetLink, LinkAvailabilityEvent } from '@/lib/types'
-import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
 import { Attachments, type AttachmentRecord } from '@/components/attachments'
 import {
@@ -42,7 +43,23 @@ export const metadata: Metadata = { title: 'Links de internet' }
  * tabela logo abaixo é pior que nenhum número.
  */
 
-export default async function LinksDeInternetPage() {
+interface ResumoDeLinks {
+  status: string
+  links_count: number
+  monthly_total: number
+  links_down: number
+  links_unknown: number
+  expiring_90d: number
+  expirados: number
+  without_contract: number
+}
+
+export default async function LinksDeInternetPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pagina?: string }>
+}) {
+  const params = await searchParams
   await requireScreen('conectividade.links.ver')
 
   const [podeCriar, podeEditar, podeMudarStatus, podeRegistrar, podeAnexar] = await Promise.all([
@@ -55,27 +72,34 @@ export default async function LinksDeInternetPage() {
 
   const supabase = await createClient()
   const escopo = await escopoDeCliente()
+  const pagina = lerPagina(params.pagina)
 
   const [
-    { data: links },
+    { data: links, count },
     { data: custos },
     branches,
     { data: areas },
     { data: fornecedores },
-    { data: anexos },
-    { data: eventos },
+    { data: resumo },
   ] = await Promise.all([
     /* `internet_links.branch_id` é NOT NULL: link sempre pertence a uma filial,
        então aqui é `porFilial` e não a variante que inclui nulos. */
-    porFilial(
-      supabase
-        .from('internet_links')
-        .select(
-          'id, branch_id, branch_area_id, contract_number, supplier_id, carrier_name, technology, download_mbps, upload_mbps, guaranteed_mbps, has_static_ip, static_ip, cpe_brand, cpe_model, cpe_serial, status, monthly_cost, activated_on, cancelled_on, contract_start, contract_end, monitoring_host, last_state, last_state_at, notes',
-        )
-        .is('deleted_at', null)
-        .order('contract_number', { nullsFirst: false }),
-      escopo,
+    paginar(
+      porFilial(
+        supabase
+          .from('internet_links')
+          .select(
+            'id, branch_id, branch_area_id, contract_number, supplier_id, carrier_name, technology, download_mbps, upload_mbps, guaranteed_mbps, has_static_ip, static_ip, cpe_brand, cpe_model, cpe_serial, status, monthly_cost, activated_on, cancelled_on, contract_start, contract_end, monitoring_host, last_state, last_state_at, notes',
+            { count: 'exact' },
+          )
+          .is('deleted_at', null)
+          .order('contract_number', { nullsFirst: false })
+          // `contract_number` é nulável: sem desempate, dois links sem contrato
+          // trocam de lugar entre páginas.
+          .order('id'),
+        escopo,
+      ),
+      pagina,
     ).returns<InternetLink[]>(),
     porFilial(
       supabase
@@ -99,22 +123,48 @@ export default async function LinksDeInternetPage() {
       .is('deleted_at', null)
       .order('name')
       .returns<SupplierOption[]>(),
-    // Uma consulta para todos os links, agrupada em memória: uma por link viraria
-    // N+1 na primeira filial com muitos contratos.
-    supabase
-      .from('internet_link_attachments')
-      .select('id, link_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
-      .order('created_at', { ascending: false })
-      .returns<(AttachmentRecord & { link_id: string })[]>(),
-    supabase
-      .from('link_availability_events')
-      .select('id, link_id, state, started_at, ended_at, duration_seconds, source, note')
-      .order('started_at', { ascending: false })
-      .limit(300)
-      .returns<(LinkAvailabilityEvent & { link_id: string })[]>(),
+    /* Os indicadores vêm da VIEW (migração 0028), não da lista paginada —
+       `lista.filter(...).length` contaria 50 links num parque de 300. Ela é a
+       `vw_internet_dashboard`, que existia desde a 0013 e nunca tinha tido
+       leitor; a 0028 só lhe acrescentou `links_unknown`, que é o indicador de
+       "não monitorado" que a tela mostra desde que ganhou interface. */
+    porFilial(
+      supabase
+        .from('vw_internet_dashboard')
+        .select(
+          'branch_id, status, links_count, monthly_total, links_down, links_unknown, expiring_90d, expirados, without_contract',
+        ),
+      escopo,
+    ).returns<ResumoDeLinks[]>(),
   ])
 
   const lista = links ?? []
+
+  /*
+   * Segunda rodada: anexos e eventos SÓ dos links desta página. Antes vinham os
+   * anexos de todos os contratos e os 300 eventos mais recentes do tenant, para
+   * alimentar gavetas que, numa página de 50 linhas, no máximo 50 pessoas
+   * abririam.
+   */
+  const idsDaPagina = lista.map((k) => k.id)
+  const [{ data: anexos }, { data: eventos }] = await Promise.all([
+    idsDaPagina.length > 0
+      ? supabase
+          .from('internet_link_attachments')
+          .select('id, link_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
+          .in('link_id', idsDaPagina)
+          .order('created_at', { ascending: false })
+          .returns<(AttachmentRecord & { link_id: string })[]>()
+      : { data: null },
+    idsDaPagina.length > 0
+      ? supabase
+          .from('link_availability_events')
+          .select('id, link_id, state, started_at, ended_at, duration_seconds, source, note')
+          .in('link_id', idsDaPagina)
+          .order('started_at', { ascending: false })
+          .returns<(LinkAvailabilityEvent & { link_id: string })[]>()
+      : { data: null },
+  ])
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const areaName = new Map((areas ?? []).map((a) => [a.id, a.name]))
   const fornecedorName = new Map((fornecedores ?? []).map((f) => [f.id, f.name]))
@@ -127,16 +177,29 @@ export default async function LinksDeInternetPage() {
   const quedaAberta = (id: string) =>
     (eventosPorLink.get(id) ?? []).some((e) => e.state === 'down' && e.ended_at === null)
 
-  const ativos = lista.filter((k) => k.status === 'active')
-  const agora = new Date()
-  const hoje = agora.toISOString().slice(0, 10)
-  const limite = new Date(agora)
-  limite.setDate(limite.getDate() + 90)
-  const em90 = limite.toISOString().slice(0, 10)
-  const vencendo = lista.filter(
-    (k) => k.status !== 'cancelled' && k.contract_end !== null && k.contract_end <= em90,
-  )
-  const custoAtivo = ativos.reduce((s, k) => s + Number(k.monthly_cost ?? 0), 0)
+  /*
+   * Indicadores a partir da view, somando as linhas agregadas. A regra de cada
+   * um é a mesma de antes, agora escrita em SQL — inclusive `expiring_90d`, que
+   * NÃO põe piso em `current_date`: contrato terminado há dois anos continua
+   * contando como "vigência terminando nos próximos 90 dias". Essa regra é da
+   * tela, não minha, e mudá-la mudaria um número que alguém lê todo dia; está
+   * registrada em docs/10 como decisão de produto pendente.
+   */
+  const agregado = resumo ?? []
+  const somar = (campo: keyof ResumoDeLinks, status?: string) =>
+    agregado
+      .filter((r) => status === undefined || r.status === status)
+      .reduce((s, r) => s + Number(r[campo] ?? 0), 0)
+
+  const totalLinks = somar('links_count')
+  const totalAtivos = somar('links_count', 'active')
+  const foraDoAr = somar('links_down')
+  const naoMonitorados = somar('links_unknown')
+  const semContrato = somar('without_contract')
+  const custoAtivo = somar('monthly_total', 'active')
+  const vencendo = somar('expiring_90d')
+  const expirados = somar('expirados')
+
 
   /** Operadora do link: fornecedor cadastrado tem precedência sobre o texto livre. */
   const operadora = (k: InternetLink) =>
@@ -153,40 +216,35 @@ export default async function LinksDeInternetPage() {
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <StatTile label="Links cadastrados" value={lista.length} />
-        <StatTile label="Ativos" value={ativos.length} tone="ok" />
+        <StatTile label="Links cadastrados" value={totalLinks} />
+        <StatTile label="Ativos" value={totalAtivos} tone="ok" />
         <StatTile
           label="Fora do ar"
-          value={lista.filter((k) => k.last_state === 'down').length}
+          value={foraDoAr}
           hint="agora"
-          tone={lista.some((k) => k.last_state === 'down') ? 'breach' : 'ok'}
+          tone={foraDoAr > 0 ? 'breach' : 'ok'}
         />
-        <StatTile
-          label="Não monitorados"
-          value={lista.filter((k) => k.last_state === 'unknown').length}
-          hint="sem host cadastrado"
-        />
+        <StatTile label="Não monitorados" value={naoMonitorados} hint="sem host cadastrado" />
         <StatTile label="Custo mensal ativo" value={formatCurrency(custoAtivo)} />
         <StatTile
           label="Sem contrato anexado"
-          value={lista.filter((k) => !temContrato(k.id)).length}
+          value={semContrato}
           hint="governança documental"
-          tone={lista.some((k) => !temContrato(k.id)) ? 'warn' : 'ok'}
+          tone={semContrato > 0 ? 'warn' : 'ok'}
         />
       </div>
 
-      {vencendo.length > 0 && (
+      {vencendo > 0 && (
         <p className="mb-6 rounded-lg bg-[var(--color-warn-soft)] px-4 py-3 text-sm text-[var(--color-warn-ink)]">
-          {vencendo.length} contrato(s) com vigência terminando nos próximos 90 dias
-          {vencendo.some((k) => k.contract_end !== null && k.contract_end < hoje) &&
-            ' — e há vigência já expirada'}
-          .
+          {vencendo} contrato(s) com vigência terminando nos próximos 90 dias
+          {expirados > 0 && ` — ${expirados} já expirada(s)`}.
         </p>
       )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_25rem]">
         <div className="flex flex-col gap-6">
           {lista.length > 0 ? (
+            <>
             <Table
               label="Links de internet"
               head={[
@@ -324,6 +382,14 @@ export default async function LinksDeInternetPage() {
                 </Fragment>
               ))}
             </Table>
+            <Pager
+              pagina={pagina.numero}
+              total={count ?? 0}
+              tamanho={pagina.tamanho}
+              base="/conectividade/links"
+              params={params}
+            />
+            </>
           ) : (
             <EmptyState
               title="Nenhum link cadastrado"

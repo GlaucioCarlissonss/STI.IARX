@@ -1,10 +1,11 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { escopoDeCliente, porClienteOuGeral } from '@/lib/data/escopo'
+import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { requireScreen, allowed } from '@/lib/session'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { BankAccount, Client, CostCenter, Receivable } from '@/lib/types'
-import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
 import { RECEIVABLE_STATUS, tomDoVencimento } from '../titulos/labels'
 import {
@@ -13,7 +14,22 @@ import {
 
 export const metadata: Metadata = { title: 'Títulos a receber' }
 
-export default async function TitulosAReceberPage() {
+interface ResumoDeRecebiveis {
+  client_id: string | null
+  status: string
+  titulos: number
+  total: number
+  vencidos: number
+  total_vencido: number
+  diferenca_recebida: number
+}
+
+export default async function TitulosAReceberPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pagina?: string }>
+}) {
+  const params = await searchParams
   await requireScreen('financeiro.titulos_receber.ver')
   const [podeCriar, podeEditar, podeBaixar, podeCancelar] = await Promise.all([
     allowed('financeiro.titulos_receber.criar'),
@@ -24,16 +40,27 @@ export default async function TitulosAReceberPage() {
 
   const supabase = await createClient()
   const escopo = await escopoDeCliente()
-  const [{ data: titulos }, { data: contas }, { data: clientes }, { data: contratos }, { data: centros }] =
-    await Promise.all([
+  const pagina = lerPagina(params.pagina)
+  const [
+    { data: titulos, count },
+    { data: contas },
+    { data: clientes },
+    { data: contratos },
+    { data: centros },
+    { data: resumo },
+  ] = await Promise.all([
       /* Só a LISTA entra no escopo. Os quatro lookups abaixo alimentam o
          formulário e continuam completos de propósito: um seletor que perde a
          opção já gravada no título faria o campo voltar vazio ao salvar. */
-      porClienteOuGeral(
-        supabase.from('receivables')
-          .select('id, description, document_ref, client_id, sla_contract_id, cost_center_id, branch_id, amount, issued_on, due_on, installment_number, installment_total, status, received_on, received_amount, bank_account_id, notes')
-          .is('deleted_at', null).order('due_on'),
-        escopo,
+      paginar(
+        porClienteOuGeral(
+          supabase.from('receivables')
+            .select('id, description, document_ref, client_id, sla_contract_id, cost_center_id, branch_id, amount, issued_on, due_on, installment_number, installment_total, status, received_on, received_amount, bank_account_id, notes',
+              { count: 'exact' })
+            .is('deleted_at', null).order('due_on').order('id'),
+          escopo,
+        ),
+        pagina,
       ).returns<Receivable[]>(),
       supabase.from('bank_accounts')
         .select('id, name, bank_name, bank_code, agency, account_number, account_type, holder_name, holder_document, opening_balance, credit_limit, status, notes')
@@ -45,6 +72,15 @@ export default async function TitulosAReceberPage() {
       supabase.from('cost_centers')
         .select('id, parent_id, code, name, description, branch_id, is_active')
         .eq('is_active', true).order('code').returns<CostCenter[]>(),
+      /* Indicadores da view criada na 0028, com `client_id` para acompanhar o
+         foco por empresa. Sem ela, paginar transformaria "Em aberto: 312" em
+         "Em aberto: 50" sem nenhum sinal de que o número mudou de significado. */
+      porClienteOuGeral(
+        supabase
+          .from('vw_receivables_summary')
+          .select('client_id, status, titulos, total, vencidos, total_vencido, diferenca_recebida'),
+        escopo,
+      ).returns<ResumoDeRecebiveis[]>(),
     ])
 
   const lista = titulos ?? []
@@ -54,15 +90,24 @@ export default async function TitulosAReceberPage() {
     costCenters: centros ?? [],
   }
 
-  const hoje = new Date().toISOString().slice(0, 10)
-  const abertos = lista.filter((t) => t.status === 'open')
-  const vencidos = abertos.filter((t) => t.due_on < hoje)
-  const recebidos = lista.filter((t) => t.status === 'received')
-  const totalAberto = abertos.reduce((s, t) => s + Number(t.amount), 0)
+  const agregado = resumo ?? []
+  const soma = (campo: keyof ResumoDeRecebiveis, status?: string) =>
+    agregado
+      .filter((r) => status === undefined || r.status === status)
+      .reduce((s, r) => s + Number(r[campo] ?? 0), 0)
+
+  const qtdAbertos = soma('titulos', 'open')
+  const totalAberto = soma('total', 'open')
+  const qtdVencidos = soma('vencidos')
+  const totalVencido = soma('total_vencido')
+  const qtdRecebidos = soma('titulos', 'received')
   // Diferença entre combinado e recebido: é onde desconto e recebimento parcial
-  // aparecem. Somar só o recebido esconderia a perda.
-  const diferenca = recebidos.reduce(
-    (s, t) => s + (Number(t.amount) - Number(t.received_amount ?? t.amount)), 0)
+  // aparecem. Somar só o recebido esconderia a perda. A view calcula a mesma
+  // conta em SQL (0028), inclusive a regra de que baixa sem valor informado
+  // valeu integral.
+  const diferenca = soma('diferenca_recebida')
+  // O que de fato entrou: o combinado dos recebidos menos a diferença.
+  const totalRecebido = soma('total', 'received') - diferenca
 
   return (
     <>
@@ -72,12 +117,12 @@ export default async function TitulosAReceberPage() {
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="Em aberto" value={abertos.length} hint={formatCurrency(totalAberto)} />
-        <StatTile label="Vencidos" value={vencidos.length}
-          hint={formatCurrency(vencidos.reduce((s, t) => s + Number(t.amount), 0))}
-          tone={vencidos.length > 0 ? 'crit' : 'ok'} />
-        <StatTile label="Recebidos" value={recebidos.length}
-          hint={formatCurrency(recebidos.reduce((s, t) => s + Number(t.received_amount ?? t.amount), 0))}
+        <StatTile label="Em aberto" value={qtdAbertos} hint={formatCurrency(totalAberto)} />
+        <StatTile label="Vencidos" value={qtdVencidos}
+          hint={formatCurrency(totalVencido)}
+          tone={qtdVencidos > 0 ? 'crit' : 'ok'} />
+        <StatTile label="Recebidos" value={qtdRecebidos}
+          hint={formatCurrency(totalRecebido)}
           tone="ok" />
         <StatTile label="Diferença de baixa" value={formatCurrency(diferenca)}
           hint="desconto e recebimento parcial" tone={diferenca > 0 ? 'warn' : 'neutral'} />
@@ -89,6 +134,7 @@ export default async function TitulosAReceberPage() {
             <EmptyState title="Nenhum título a receber"
               description="Lance a primeira cobrança no formulário ao lado." />
           ) : (
+            <>
             <Table head={['Vencimento', 'Descrição', 'Cliente', 'Valor', 'Situação', '']} label="Títulos a receber">
               {lista.map((t) => {
                 const st = RECEIVABLE_STATUS[t.status]
@@ -146,6 +192,14 @@ export default async function TitulosAReceberPage() {
                 )
               })}
             </Table>
+            <Pager
+              pagina={pagina.numero}
+              total={count ?? 0}
+              tamanho={pagina.tamanho}
+              base="/financeiro/titulos-a-receber"
+              params={params}
+            />
+            </>
           )}
         </div>
 

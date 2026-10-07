@@ -208,6 +208,42 @@ try {
     await ctx.close()
   }
 
+  // ---------------------------------------------------------------------------
+  console.log('\n=== 7. Peso do JavaScript na rota mais leve ===')
+  /*
+   * Não é uma meta de desempenho: é um alarme de contágio.
+   *
+   * A tela de login não usa Leaflet, nem Zod, nem o cliente do Supabase — ela
+   * tem um formulário e dois links. Se o número abaixo saltar, quase sempre é
+   * porque algo pesado vazou para um módulo compartilhado: um `import` sem
+   * `type`, um componente de servidor que virou cliente, uma biblioteca
+   * carregada no topo em vez de sob demanda. Esse tipo de regressão não quebra
+   * nada e não aparece em nenhum outro teste.
+   *
+   * O teto é folgado de propósito. Apertá-lo até o valor de hoje transformaria
+   * cada refatoração legítima numa falha, e o teste passaria a ser ignorado —
+   * que é o único jeito garantido de um alarme não servir para nada.
+   */
+  {
+    const TETO_KB = 700
+    const ctx = await b.newContext()
+    const p = await ctx.newPage()
+    const pedacos = []
+    p.on('response', (r) => {
+      if (r.request().resourceType() !== 'script') return
+      pedacos.push(
+        r
+          .body()
+          .then((b) => b.length)
+          .catch(() => 0),
+      )
+    })
+    await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' })
+    const kb = (await Promise.all(pedacos)).reduce((a, b) => a + b, 0) / 1024
+    ok(kb < TETO_KB, `/login baixa ${kb.toFixed(0)} KB de JavaScript (teto ${TETO_KB} KB)`)
+    await ctx.close()
+  }
+
   await b.close()
 } finally {
   servidor.kill('SIGTERM')

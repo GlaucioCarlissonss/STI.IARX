@@ -1,13 +1,14 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
+import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type {
   ApprovalRule, BankAccount, CostCenter, ExpenseCategory, Payable, Tenant,
 } from '@/lib/types'
-import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
 import { Attachments, type AttachmentRecord } from '@/components/attachments'
 import { PAYABLE_STATUS, tomDoVencimento } from '../titulos/labels'
@@ -19,7 +20,21 @@ import {
 
 export const metadata: Metadata = { title: 'Títulos a pagar' }
 
-export default async function TitulosAPagarPage() {
+interface ResumoDeTitulos {
+  branch_id: string | null
+  status: string
+  titulos: number
+  total: number
+  vencidos: number
+  total_vencido: number
+}
+
+export default async function TitulosAPagarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pagina?: string }>
+}) {
+  const params = await searchParams
   await requireScreen('financeiro.titulos_pagar.ver')
   const [podeCriar, podeEditar, podeAprovar, podePagar, podeCancelar, podeConfigurar] =
     await Promise.all([
@@ -33,19 +48,24 @@ export default async function TitulosAPagarPage() {
 
   const supabase = await createClient()
   const escopo = await escopoDeCliente()
+  const pagina = lerPagina(params.pagina)
   const [
-    { data: titulos }, { data: contas }, { data: categorias }, { data: centros },
+    { data: titulos, count }, { data: contas }, { data: categorias }, { data: centros },
     { data: fornecedores }, { data: filiais }, { data: faixas }, { data: perfis },
-    { data: tenant }, { data: anexos },
+    { data: tenant }, { data: resumo },
   ] = await Promise.all([
     /* Só a LISTA entra no escopo; os lookups seguem completos. Título sem filial
        é do tenant inteiro e aparece em qualquer foco — tirá-lo encolheria o
        total a pagar sem nenhum sinal na tela. */
-    porFilialOuGeral(
-      supabase.from('payables')
-        .select('id, description, document_ref, supplier_id, supplier_contract_id, expense_category_id, cost_center_id, branch_id, amount, issued_on, due_on, parent_payable_id, installment_number, installment_total, status, approved_at, approved_by, rejection_reason, paid_on, bank_account_id, notes')
-        .is('deleted_at', null).order('due_on'),
-      escopo,
+    paginar(
+      porFilialOuGeral(
+        supabase.from('payables')
+          .select('id, description, document_ref, supplier_id, supplier_contract_id, expense_category_id, cost_center_id, branch_id, amount, issued_on, due_on, parent_payable_id, installment_number, installment_total, status, approved_at, approved_by, rejection_reason, paid_on, bank_account_id, notes',
+            { count: 'exact' })
+          .is('deleted_at', null).order('due_on').order('id'),
+        escopo,
+      ),
+      pagina,
     ).returns<Payable[]>(),
     supabase.from('bank_accounts')
       .select('id, name, bank_name, bank_code, agency, account_number, account_type, holder_name, holder_document, opening_balance, credit_limit, status, notes')
@@ -64,11 +84,31 @@ export default async function TitulosAPagarPage() {
     supabase.from('access_profiles').select('id, name').eq('is_active', true).order('name'),
     supabase.from('tenants').select('id, name, payable_approval_required').maybeSingle<
       Tenant & { payable_approval_required: boolean }>(),
-    supabase.from('payable_attachments')
-      .select('id, payable_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
-      .order('created_at', { ascending: false })
-      .returns<(AttachmentRecord & { payable_id: string })[]>(),
+    /* Indicadores da VIEW (migração 0028). Ela existia desde a 0020 e nunca
+       tinha tido leitor — a tela calculava tudo a partir da lista completa, que
+       é exatamente o que a paginação deixou de trazer. A 0028 lhe acrescentou
+       `branch_id`, sem o qual o número do topo contaria o tenant inteiro
+       enquanto a lista mostra uma empresa só. */
+    porFilialOuGeral(
+      supabase
+        .from('vw_payables_summary')
+        .select('branch_id, status, titulos, total, vencidos, total_vencido'),
+      escopo,
+    ).returns<ResumoDeTitulos[]>(),
   ])
+
+  /* Anexos só dos títulos desta página: antes vinham os de todos os títulos, de
+     todos os meses, para gavetas que quase ninguém abre. */
+  const idsDaPagina = (titulos ?? []).map((t) => t.id)
+  const { data: anexos } =
+    idsDaPagina.length > 0
+      ? await supabase
+          .from('payable_attachments')
+          .select('id, payable_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
+          .in('payable_id', idsDaPagina)
+          .order('created_at', { ascending: false })
+          .returns<(AttachmentRecord & { payable_id: string })[]>()
+      : { data: null }
 
   const lista = titulos ?? []
   const cats = categorias ?? []
@@ -80,11 +120,21 @@ export default async function TitulosAPagarPage() {
   }
   const anexosPorTitulo = agruparPor(anexos, 'payable_id')
 
-  const aberto = lista.filter((t) => !['paid', 'cancelled'].includes(t.status))
-  const aguardando = lista.filter((t) => t.status === 'pending_approval')
-  const hoje = new Date().toISOString().slice(0, 10)
-  const vencidos = aberto.filter((t) => t.due_on < hoje)
-  const totalAberto = aberto.reduce((s, t) => s + Number(t.amount), 0)
+  /*
+   * Os quatro indicadores somam a VIEW, que agrega o acervo inteiro. Com a
+   * lista paginada, `lista.filter(...)` contaria só os 50 títulos visíveis — e
+   * "Em aberto: 50" num mês com 300 lançamentos seria um número errado com cara
+   * de fato.
+   */
+  const agregado = resumo ?? []
+  const emAberto = agregado.filter((r) => !['paid', 'cancelled'].includes(r.status))
+  const qtdAberto = emAberto.reduce((s, r) => s + Number(r.titulos ?? 0), 0)
+  const totalAberto = emAberto.reduce((s, r) => s + Number(r.total ?? 0), 0)
+  const qtdAguardando = agregado
+    .filter((r) => r.status === 'pending_approval')
+    .reduce((s, r) => s + Number(r.titulos ?? 0), 0)
+  const qtdVencidos = agregado.reduce((s, r) => s + Number(r.vencidos ?? 0), 0)
+  const totalVencido = agregado.reduce((s, r) => s + Number(r.total_vencido ?? 0), 0)
   const aprovacaoLigada = tenant?.payable_approval_required ?? false
 
   return (
@@ -95,12 +145,12 @@ export default async function TitulosAPagarPage() {
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="Em aberto" value={aberto.length} hint={formatCurrency(totalAberto)} />
-        <StatTile label="Aguardando aprovação" value={aguardando.length}
-          tone={aguardando.length > 0 ? 'warn' : 'neutral'} />
-        <StatTile label="Vencidos" value={vencidos.length}
-          hint={formatCurrency(vencidos.reduce((s, t) => s + Number(t.amount), 0))}
-          tone={vencidos.length > 0 ? 'crit' : 'ok'} />
+        <StatTile label="Em aberto" value={qtdAberto} hint={formatCurrency(totalAberto)} />
+        <StatTile label="Aguardando aprovação" value={qtdAguardando}
+          tone={qtdAguardando > 0 ? 'warn' : 'neutral'} />
+        <StatTile label="Vencidos" value={qtdVencidos}
+          hint={formatCurrency(totalVencido)}
+          tone={qtdVencidos > 0 ? 'crit' : 'ok'} />
         <StatTile label="Aprovação" value={aprovacaoLigada ? 'exigida' : 'desligada'}
           hint={aprovacaoLigada ? `${(faixas ?? []).length} faixa(s) de alçada` : 'título nasce aprovado'}
           tone={aprovacaoLigada ? 'ok' : 'neutral'} />
@@ -112,6 +162,7 @@ export default async function TitulosAPagarPage() {
             <EmptyState title="Nenhum título lançado"
               description="Use o formulário ao lado para lançar a primeira despesa." />
           ) : (
+            <>
             <Table head={['Vencimento', 'Descrição', 'Valor', 'Situação', 'Classificação', '']} label="Títulos a pagar">
               {lista.map((t) => {
                 const st = PAYABLE_STATUS[t.status]
@@ -176,6 +227,14 @@ export default async function TitulosAPagarPage() {
                 )
               })}
             </Table>
+            <Pager
+              pagina={pagina.numero}
+              total={count ?? 0}
+              tamanho={pagina.tamanho}
+              base="/financeiro/titulos-a-pagar"
+              params={params}
+            />
+            </>
           )}
         </div>
 

@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-58 tabelas e 17 views em `public`, com 162 policies de RLS, mais 3 policies em
+58 tabelas e 19 views em `public`, com 162 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
@@ -229,6 +229,34 @@ entrou no saldo. A migração faz `drop` antes do `create`: em Postgres a lista 
 argumentos faz parte da identidade da função, e um `create or replace` com um
 parâmetro a mais deixaria **duas** funções, tornando a chamada antiga ambígua.
 
+### Agregados de paginação (0028)
+Quatro views de total, e uma razão só para existirem.
+
+Cinco telas calculavam os indicadores do topo a partir da lista inteira. No
+instante em que a lista passou a vir paginada, esses mesmos indicadores
+passariam a contar só a página visível — "Ativos cadastrados: 50" num parque de
+412. Isso é pior que a truncagem que a paginação veio corrigir: a truncagem
+esconde linhas, e o número errado **afirma uma coisa falsa com cara de fato**.
+
+| View | Agrupa por | Serve a |
+|---|---|---|
+| `vw_payables_summary` | `branch_id`, `status` | `/financeiro/titulos-a-pagar` |
+| `vw_receivables_summary` | `client_id`, `status` | `/financeiro/titulos-a-receber` |
+| `vw_assets_summary` | `branch_id`, `status` | `/inventario` |
+| `vw_internet_dashboard` | filial, operadora, tecnologia, situação | `/conectividade/links` |
+
+As duas primeiras colunas não são detalhe: sem `branch_id`/`client_id` o foco por
+empresa (0027) estreitaria a lista e deixaria o indicador contando o tenant
+inteiro — dois números na mesma tela, discordando, sem nada que explique.
+
+Cada view reproduz **exatamente** o filtro que a tela já aplicava, para que
+paginar não altere nenhum número; onde a regra é discutível, o comentário da
+migração diz, e a regra fica.
+
+Entram junto cinco índices parciais `(tenant_id, <ordem>, id) where deleted_at is
+null`, um por tabela paginada: `.range()` com `order by` sem índice obriga o
+Postgres a ordenar a tabela inteira para devolver 50 linhas.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -357,7 +385,7 @@ entre tenants.
 
 `supabase/tests/schema_test.sql` roda contra um banco semeado, com um papel
 **sem `BYPASSRLS`** — como superusuário, todo teste de isolamento passaria
-trivialmente e não provaria nada. São 377 asserções cobrindo cobertura de RLS,
+trivialmente e não provaria nada. São 397 asserções cobrindo cobertura de RLS,
 isolamento entre tenants, visibilidade por filial, comentário interno oculto do
 solicitante, escalonamento de privilégio, máquina de estados, fila padrão,
 precedência de SLA, pausa/retomada, idempotência, numeração, views, tokens de TV,

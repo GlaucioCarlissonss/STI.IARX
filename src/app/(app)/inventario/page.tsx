@@ -3,38 +3,61 @@ import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { agruparPor } from '@/lib/data/agrupar'
 import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
+import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
 import { assetStatusLabel, assetStatusTone, assetTypeLabel, custodyEventLabel, custodyReasonLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { Branch, BranchArea, CustodyEvent, ItAsset, Profile } from '@/lib/types'
-import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 import { EditPanel } from '@/components/edit-panel'
 import { Attachments, type AttachmentRecord } from '@/components/attachments'
 import { CustodyForm, EditAssetForm, NewAssetForm } from './asset-forms'
 
 export const metadata: Metadata = { title: 'Inventário de TI' }
 
-export default async function InventarioPage() {
+interface ResumoDeAtivos {
+  branch_id: string | null
+  status: string
+  ativos: number
+  valor_total: number
+  garantia_90d: number
+}
+
+export default async function InventarioPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pagina?: string }>
+}) {
+  const params = await searchParams
   await requireScreen('inventario.ativos.ver')
   const supabase = await createClient()
   const escopo = await escopoDeCliente()
+  const pagina = lerPagina(params.pagina)
 
   const [
-    { data: assets }, branches, agents, { data: suppliers },
-    { data: areas }, { data: custodia }, { data: anexos },
+    { data: assets, count }, branches, agents, { data: suppliers },
+    { data: areas }, { data: resumo },
   ] = await Promise.all([
     /* Ativo sem filial é do tenant inteiro e entra em qualquer foco — ver a
        regra das colunas nulas em `src/lib/data/escopo.ts`. */
-    porFilialOuGeral(
-      supabase
-        .from('it_assets')
-        .select(
-          'id, asset_tag, serial_number, asset_type, brand, model, status, branch_id, branch_area_id, assigned_user_id, supplier_id, acquisition_date, warranty_until, acquisition_cost, notes',
-        )
-        .is('deleted_at', null)
-        .order('asset_tag'),
-      escopo,
+    paginar(
+      porFilialOuGeral(
+        supabase
+          .from('it_assets')
+          .select(
+            'id, asset_tag, serial_number, asset_type, brand, model, status, branch_id, branch_area_id, assigned_user_id, supplier_id, acquisition_date, warranty_until, acquisition_cost, notes',
+            { count: 'exact' },
+          )
+          .is('deleted_at', null)
+          .order('asset_tag', { nullsFirst: false })
+          // Desempate estável: `asset_tag` é nulável, e sem segunda chave dois
+          // ativos sem patrimônio trocam de lugar entre páginas — um aparece
+          // duas vezes e o outro, nenhuma.
+          .order('id'),
+        escopo,
+      ),
+      pagina,
     ).returns<ItAsset[]>(),
     getBranches(),
     getAgents(),
@@ -45,32 +68,56 @@ export default async function InventarioPage() {
       .eq('is_active', true)
       .order('sort_order')
       .returns<BranchArea[]>(),
-    /* A timeline lê a VIEW, não a tabela: ela já resolve os nomes de quem
-       entregou e de quem recebeu, e refazer esse join aqui seria a quarta cópia
-       da mesma regra. Uma consulta para todos os ativos, agrupada em memória. */
-    supabase
-      .from('asset_custody_history')
-      .select(
-        'id, asset_id, event_type, previous_user_name, current_user_name, previous_branch_id, branch_id, previous_area_id, branch_area_id, reason, reason_note, performed_by_name, changed_at',
-      )
-      .order('changed_at', { ascending: false })
-      .limit(400)
-      .returns<CustodyEvent[]>(),
-    // Uma consulta para todos os ativos, agrupada em memória. Uma por linha da
-    // tabela seria N+1 numa tela que lista o inventário inteiro.
-    supabase
-      .from('asset_attachments')
-      .select('id, asset_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
-      .order('created_at', { ascending: false })
-      .returns<(AttachmentRecord & { asset_id: string })[]>(),
+    /* Os indicadores vêm da VIEW, não da lista. Com a lista paginada,
+       `list.filter(...).length` contaria 50 ativos num parque de 412 — número
+       errado com cara de fato, que é pior que a truncagem silenciosa que esta
+       entrega veio corrigir. A view agrega o acervo inteiro (migração 0028) e
+       respeita o mesmo foco por empresa, porque carrega `branch_id`. */
+    porFilialOuGeral(
+      supabase
+        .from('vw_assets_summary')
+        .select('branch_id, status, ativos, valor_total, garantia_90d'),
+      escopo,
+    ).returns<ResumoDeAtivos[]>(),
   ])
 
-  const [podeEditar, podeCriar, podeAnexar, podeCustodiar] = await Promise.all([
-    allowed('inventario.ativos.editar'),
-    allowed('inventario.ativos.criar'),
-    allowed('inventario.ativos.anexar'),
-    allowed('inventario.ativos.custodiar'),
-  ])
+  /*
+   * Segunda rodada, e de propósito sequencial: custódia e anexos agora são
+   * buscados SÓ dos ativos desta página. Antes vinham todos — a timeline de 400
+   * eventos e os anexos do parque inteiro — para alimentar gavetas que, numa
+   * tela de 50 linhas, no máximo 50 pessoas abririam. É uma viagem a mais ao
+   * banco em troca de um payload que encolhe junto com a página.
+   *
+   * Lista vazia nem chega a consultar: `.in('asset_id', [])` é uma ida ao banco
+   * garantidamente sem resultado.
+   */
+  const idsDaPagina = (assets ?? []).map((a) => a.id)
+
+  const [{ data: custodia }, { data: anexos }, podeEditar, podeCriar, podeAnexar, podeCustodiar] =
+    await Promise.all([
+      idsDaPagina.length > 0
+        ? supabase
+            .from('asset_custody_history')
+            .select(
+              'id, asset_id, event_type, previous_user_name, current_user_name, previous_branch_id, branch_id, previous_area_id, branch_area_id, reason, reason_note, performed_by_name, changed_at',
+            )
+            .in('asset_id', idsDaPagina)
+            .order('changed_at', { ascending: false })
+            .returns<CustodyEvent[]>()
+        : { data: null },
+      idsDaPagina.length > 0
+        ? supabase
+            .from('asset_attachments')
+            .select('id, asset_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
+            .in('asset_id', idsDaPagina)
+            .order('created_at', { ascending: false })
+            .returns<(AttachmentRecord & { asset_id: string })[]>()
+        : { data: null },
+      allowed('inventario.ativos.editar'),
+      allowed('inventario.ativos.criar'),
+      allowed('inventario.ativos.anexar'),
+      allowed('inventario.ativos.custodiar'),
+    ])
   // Anexo por ativo. Quem pode anexar mas não editar também precisa do painel,
   // então a linha aparece para qualquer uma das duas permissões.
   const anexosPorAtivo = agruparPor(anexos, 'asset_id')
@@ -81,21 +128,25 @@ export default async function InventarioPage() {
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const userName = new Map(agents.map((a) => [a.id, a.full_name]))
 
-  const today = new Date()
-  const in90 = new Date(today.getTime() + 90 * 86400000)
-  // Sem o piso em `today`, garantia vencida há anos contava como "vencendo em
-  // 90 dias" para sempre — um parque antigo mostrava um tile vermelho
-  // permanente e sem ação possível, e escondia no meio dele a garantia que de
-  // fato vence semana que vem.
-  const expiringWarranty = list.filter(
-    (a) =>
-      a.warranty_until &&
-      new Date(a.warranty_until) >= today &&
-      new Date(a.warranty_until) <= in90 &&
-      a.status !== 'retired',
-  ).length
+  /*
+   * Os totais somam as linhas da VIEW, que já vêm agrupadas por filial e
+   * situação — algumas dezenas de linhas, não o parque inteiro. A regra de cada
+   * um é a mesma de antes, agora escrita em SQL na migração 0028, inclusive o
+   * piso em `current_date` da garantia: sem ele, garantia vencida há anos
+   * contava como "vencendo em 90 dias" para sempre, e o indicador vermelho
+   * permanente escondia a que de fato vence semana que vem.
+   */
+  const agregado = resumo ?? []
+  const somar = (campo: 'ativos' | 'valor_total' | 'garantia_90d', status?: string) =>
+    agregado
+      .filter((r) => status === undefined || r.status === status)
+      .reduce((s, r) => s + Number(r[campo] ?? 0), 0)
 
-  const totalValue = list.reduce((sum, a) => sum + (a.acquisition_cost ?? 0), 0)
+  const totalAtivos = somar('ativos')
+  const emUso = somar('ativos', 'active')
+  const emManutencao = somar('ativos', 'maintenance')
+  const expiringWarranty = somar('garantia_90d')
+  const totalValue = somar('valor_total')
 
   return (
     <>
@@ -105,13 +156,9 @@ export default async function InventarioPage() {
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="Ativos cadastrados" value={list.length} />
-        <StatTile label="Em uso" value={list.filter((a) => a.status === 'active').length} tone="ok" />
-        <StatTile
-          label="Em manutenção"
-          value={list.filter((a) => a.status === 'maintenance').length}
-          tone="warn"
-        />
+        <StatTile label="Ativos cadastrados" value={totalAtivos} />
+        <StatTile label="Em uso" value={emUso} tone="ok" />
+        <StatTile label="Em manutenção" value={emManutencao} tone="warn" />
         <StatTile
           label="Garantia vencendo"
           value={expiringWarranty}
@@ -203,6 +250,13 @@ export default async function InventarioPage() {
                   </Fragment>
                 ))}
               </Table>
+              <Pager
+                pagina={pagina.numero}
+                total={count ?? 0}
+                tamanho={pagina.tamanho}
+                base="/inventario"
+                params={params}
+              />
             </>
           ) : (
             <EmptyState
