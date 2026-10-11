@@ -70,7 +70,7 @@ export async function updateAccessProfile(
     if (error.code === '42501') {
       return { error: 'Perfil de sistema só aceita mudança de situação (ativo/inativo).' }
     }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
   if (!updated?.length) return { error: NAO_AFETADO }
 
@@ -100,7 +100,7 @@ export async function setAccessProfileActive(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/perfis')
@@ -222,7 +222,7 @@ export async function setUserAccessProfile(
     if (error.code === '42501') {
       return { error: 'Você não pode alterar o seu próprio perfil de acesso.' }
     }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
   if (!updated?.length) return { error: NAO_AFETADO }
 

@@ -164,6 +164,15 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
           />
 
           <Card title="Histórico">
+            {/* O teto de 60 é antigo e fica; o que faltava era dizê-lo. A
+                ordem é decrescente, então o que o corte esconde num ticket
+                longo é a abertura — justamente a parte que alguém procura
+                quando volta ao histórico. */}
+            {(history ?? []).length >= 60 && (
+              <p className="mb-2 text-xs text-[var(--color-ink-3)]">
+                Mostrando os 60 eventos mais recentes.
+              </p>
+            )}
             <ol className="flex flex-col gap-2.5">
               {(history ?? []).map((h) => (
                 <li key={h.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">

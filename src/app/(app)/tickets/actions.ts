@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { mensagemDeErro } from '@/lib/actions/erros'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { optionalUuid, uuid } from '@/lib/schemas/campos'
@@ -70,7 +71,7 @@ export async function createTicket(_prev: ActionState, formData: FormData): Prom
     .select('id')
     .single()
 
-  if (error) return { error: `Não foi possível abrir o ticket: ${error.message}` }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/tickets')
   revalidatePath('/painel')
@@ -111,7 +112,7 @@ export async function changeStatus(_prev: ActionState, formData: FormData): Prom
   if (error) {
     // A máquina de estados vive no banco (ADR-007); a mensagem de violação já
     // explica o que foi tentado, então repassamos em vez de mascarar.
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
 
   revalidatePath(`/tickets/${parsed.data.ticket_id}`)
@@ -142,7 +143,7 @@ export async function assignTicket(_prev: ActionState, formData: FormData): Prom
     .update({ assignee_id: parsed.data.assignee_id, change_source: 'ui' })
     .eq('id', parsed.data.ticket_id)
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath(`/tickets/${parsed.data.ticket_id}`)
   return { success: parsed.data.assignee_id ? 'Ticket atribuído.' : 'Atribuição removida.' }
@@ -175,7 +176,7 @@ export async function transferQueue(_prev: ActionState, formData: FormData): Pro
     .update({ queue_id: parsed.data.queue_id, change_source: 'ui' })
     .eq('id', parsed.data.ticket_id)
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   // A trigger de histórico registra a troca de fila, mas não conhece o motivo —
   // ele é intenção do usuário, então entra como um registro próprio.
@@ -238,7 +239,7 @@ export async function addComment(_prev: ActionState, formData: FormData): Promis
     source: 'ui',
   })
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath(`/tickets/${parsed.data.ticket_id}`)
   return { success: 'Comentário publicado.' }

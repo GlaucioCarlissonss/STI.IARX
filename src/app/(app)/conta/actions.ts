@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { mensagemDeAuth } from '@/lib/actions/erros'
 import { requireSession } from '@/lib/session'
 import { newPasswordSchema } from '@/lib/schemas/auth'
 import type { ActionState } from '@/lib/actions/estado'
@@ -36,7 +37,7 @@ export async function changePassword(
   const supabase = await createClient()
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password })
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeAuth(error) }
 
   return { success: 'Senha atualizada.' }
 }

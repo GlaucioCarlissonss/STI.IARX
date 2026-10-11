@@ -85,7 +85,7 @@ export async function setSupplierActive(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/fornecedores')
@@ -111,7 +111,7 @@ export async function createSupplierContract(
     .from('supplier_contracts')
     .insert({ ...parsed.data, tenant_id: profile.tenant_id })
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/fornecedores')
   return { success: 'Contrato cadastrado.' }
@@ -137,7 +137,7 @@ export async function updateSupplierContract(
     .eq('id', id.data)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/fornecedores')
@@ -165,7 +165,7 @@ export async function setSupplierContractActive(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/fornecedores')

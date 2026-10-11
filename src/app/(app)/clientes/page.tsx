@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { requireScreen, allowed } from '@/lib/session'
 import { createClient } from '@/lib/supabase/server'
 import { agruparPor } from '@/lib/data/agrupar'
-import { escopoDeCliente } from '@/lib/data/escopo'
+import { escopoDeCliente, porFilial } from '@/lib/data/escopo'
 import { getBranches, getBusinessHours, getClients } from '@/lib/data/lookups'
 import { formatCnpj } from '@/lib/format'
 import { areaKindLabel } from '@/lib/i18n'
@@ -53,12 +53,17 @@ export default async function ClientesPage() {
     getBusinessHours(),
     // Uma consulta para todas as filiais, agrupada em memória. Uma por filial
     // viraria N+1 no primeiro cliente com muitas unidades.
+    /* `branch_areas.branch_id` é NOT NULL, então `porFilial`. A página já
+       filtrava as filiais em memória; sem isto, ela continuava trazendo do
+       banco as áreas de todas as empresas para desenhar as de uma. */
     podeVerArea
-      ? supabase
-          .from('branch_areas')
-          .select('id, branch_id, name, code, kind, is_active, sort_order')
-          .order('sort_order')
-          .returns<BranchArea[]>()
+      ? porFilial(
+          supabase
+            .from('branch_areas')
+            .select('id, branch_id, name, code, kind, is_active, sort_order')
+            .order('sort_order'),
+          escopo,
+        ).returns<BranchArea[]>()
       : { data: null },
   ])
 

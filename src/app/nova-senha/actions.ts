@@ -1,6 +1,7 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { mensagemDeAuth } from '@/lib/actions/erros'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { newPasswordSchema } from '@/lib/schemas/auth'
@@ -38,7 +39,7 @@ export async function setNewPassword(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
 
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password })
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeAuth(error) }
 
   /* Entra direto: a sessão de recuperação já é uma sessão válida, e mandar de
      volta ao login faria a pessoa digitar agora a senha que acabou de escolher. */

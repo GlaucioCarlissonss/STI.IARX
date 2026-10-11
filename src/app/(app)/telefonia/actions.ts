@@ -91,7 +91,7 @@ export async function setTelecomLineStatus(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/telefonia')

@@ -40,7 +40,7 @@ Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 | **Geolocalização** | Endereço estruturado obrigatório, geocodificação com nível de precisão, tratamento das 6 exceções, mapa em satélite e log append-only de cada tentativa |
 | **Usuários** | 6 papéis, visibilidade por filial (1 ou N), proteção contra auto-escalonamento, criação de conta com senha temporária e troca de senha em `/conta` |
 | **Integration Hub** | Handler Bitrix24 e handler genérico, idempotência, retry com backoff, supressão de eco, logs e mapeamento editável |
-| **Auditoria** | Trigger em 18 tabelas + histórico dedicado de tickets |
+| **Auditoria** | Trigger em 34 tabelas + histórico dedicado de tickets |
 | **Foco por empresa** | Seletor no cabeçalho que estreita treze telas de uma vez. É visualização, não autorização — o isolamento entre tenants continua sendo o RLS |
 | **Tema claro e escuro** | Segue o sistema por padrão, com escolha explícita que vence a preferência do sistema. Os dois temas passam em AA, verificado por teste |
 
@@ -152,7 +152,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 306 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro e paginação
+npm test              # 321 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação e compliance
 npm run db:validate   # migrações + seed + 397 asserções em PostgreSQL real
 ```
 
@@ -166,6 +166,13 @@ node demo/tests/aplicacao.spec.mjs   # 17 asserções na aplicação: tema, font
 
 A segunda cobre só as rotas públicas: `src/proxy.ts` guarda toda rota, e sem um
 Supabase de verdade não há sessão para exercitar as telas internas.
+
+E uma conferência que não roda código da aplicação: os números de schema que
+esta documentação afirma, medidos contra o banco.
+
+```bash
+python3 scripts/conferir-numeros.py   # depois de npm run db:validate
+```
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
 **com um papel sem `BYPASSRLS`**. Testar isolamento como superusuário passaria
@@ -196,7 +203,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 15 migrações
+  migrations/         # 28 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -226,10 +233,16 @@ Cada uma tem justificativa e alternativas rejeitadas em
 
 ## Estado atual e próximos passos
 
-Verificado nesta entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 210 testes unitários e 365 asserções de banco passando — incluindo
-a aritmética de horário útil conferida contra 8 cenários (almoço, fim de semana,
-feriado, fora de expediente).
+Verificado na última entrega: build de produção limpo, `tsc` e `eslint` sem
+apontamentos, 321 testes unitários e 397 asserções de banco passando, mais 44
+asserções no protótipo e 17 na aplicação, em navegador — incluindo a aritmética
+de horário útil conferida contra 8 cenários (almoço, fim de semana, feriado,
+fora de expediente).
+
+Os números de schema desta documentação são conferidos contra o banco por
+`scripts/conferir-numeros.py`, e não escritos à mão: quatro vezes nesta auditoria
+um número envelheceu em silêncio, e documentação que descreve um sistema que não
+existe mais é pior que documentação ausente, porque ninguém desconfia dela.
 
 **Ainda não implementado** (schema pronto, interface pendente):
 

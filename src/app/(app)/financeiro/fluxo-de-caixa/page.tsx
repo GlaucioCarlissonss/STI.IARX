@@ -122,7 +122,7 @@ export default async function FluxoDeCaixaPage({
         <div className="mb-6">
           <EmptyState
             title="Não foi possível montar a projeção"
-            description={error.message}
+            description="Tente de novo em instantes. Se continuar, avise o suporte."
           />
         </div>
       )}

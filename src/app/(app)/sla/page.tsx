@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { escopoDeCliente, porCliente, porClienteOuGeral } from '@/lib/data/escopo'
+import { agruparCompliance, type LinhaDeCompliance } from '@/lib/data/compliance'
 import { requireScreen, allowed } from '@/lib/session'
 import { getBranches, getBusinessHours, getCategories, getClients, getPriorities } from '@/lib/data/lookups'
 import { formatDate, formatMinutes } from '@/lib/format'
@@ -14,17 +15,6 @@ import { EditSlaContractForm, NewSlaContractForm } from './sla-contract-forms'
 import { EditSlaDefinitionForm, NewSlaDefinitionForm, type SlaDefinitionDefaults } from './sla-definition-forms'
 
 export const metadata: Metadata = { title: 'SLA' }
-
-interface ComplianceRow {
-  period: string
-  queue_name: string
-  tickets_total: number
-  tickets_with_sla: number
-  response_breaches: number
-  resolution_breaches: number
-  resolution_compliance_pct: number | null
-  response_compliance_pct: number | null
-}
 
 interface DefinitionRow extends SlaDefinitionDefaults {
   priority: { label: string; color: string } | null
@@ -85,6 +75,14 @@ export default async function SlaPage() {
   const supabase = await createClient()
   const escopo = await escopoDeCliente()
 
+  /* Doze meses, contados do primeiro dia do mês de onze meses atrás: o mês
+     corrente mais onze completos. Janela em vez de número de linhas — ver o
+     comentário da consulta. */
+  const janela = new Date()
+  janela.setDate(1)
+  janela.setMonth(janela.getMonth() - 11)
+  const inicioDaJanela = janela.toISOString().slice(0, 10)
+
   const [
     { data: compliance },
     { data: definitions },
@@ -99,17 +97,23 @@ export default async function SlaPage() {
     activePriorities,
   ] = await Promise.all([
     /* A view já agrupa por `client_id` (0011:304), então filtrar por cliente
-       não altera a granularidade das linhas — só escolhe quais voltam. */
+       não altera a granularidade das linhas — só escolhe quais voltam.
+
+       O recorte é por JANELA DE TEMPO, e não por número de linhas, e isso
+       conserta um defeito: `vw_sla_compliance` agrupa por período, fila,
+       ATENDENTE e cliente, então um mês com cinco filas e dez atendentes rende
+       dezenas de linhas. O `.limit(40)` que estava aqui podia cortar antes de
+       terminar o primeiro mês — numa tabela cujo título diz "por mês e fila". */
     porClienteOuGeral(
       supabase
         .from('vw_sla_compliance')
         .select(
-          'period, queue_name, tickets_total, tickets_with_sla, response_breaches, resolution_breaches, resolution_compliance_pct, response_compliance_pct',
+          'period, queue_name, tickets_total, tickets_with_sla, response_breaches, resolution_breaches',
         )
-        .order('period', { ascending: false })
-        .limit(40),
+        .gte('period', inicioDaJanela)
+        .order('period', { ascending: false }),
       escopo,
-    ).returns<ComplianceRow[]>(),
+    ).returns<LinhaDeCompliance[]>(),
     supabase
       .from('sla_definitions')
       .select(
@@ -153,6 +157,7 @@ export default async function SlaPage() {
   // total no campo `count`, IRMÃO de `data` — não dentro dele. Ler de `data`
   // (como estava antes) sempre dava `undefined`, e o card de "tickets sem
   // SLA aplicável" nunca aparecia, mesmo com cobertura furada de verdade.
+  const linhasCompliance = agruparCompliance(compliance ?? [])
   const semSla = uncoveredCount ?? 0
 
   const categories = allCategories ?? []
@@ -193,13 +198,17 @@ export default async function SlaPage() {
         <h2 className="mb-3 text-lg font-semibold text-[var(--color-ink)]">
           Compliance por mês e fila
         </h2>
-        {compliance && compliance.length > 0 ? (
+        <p className="mb-2 text-sm text-[var(--color-ink-2)]">
+          Últimos 12 meses. O percentual é sobre os tickets cobertos por uma definição de SLA —
+          ticket sem prazo definido não tem o que cumprir.
+        </p>
+        {linhasCompliance.length > 0 ? (
           <Table
             label="Compliance de SLA por período"
             head={['Período', 'Fila', 'Tickets', 'Com SLA', 'Resolução', 'Resposta', 'Violações']}
           >
-            {compliance.map((row, i) => (
-              <tr key={`${row.period}-${row.queue_name}-${i}`}>
+            {linhasCompliance.map((row) => (
+              <tr key={`${row.period}-${row.queue_name}`}>
                 <Td className="tabular-nums text-[var(--color-ink-2)]">{formatDate(row.period)}</Td>
                 <Td className="font-medium text-[var(--color-ink)]">{row.queue_name}</Td>
                 <Td className="tabular-nums">{row.tickets_total}</Td>

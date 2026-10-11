@@ -1004,8 +1004,151 @@ ambiente onde ninguém tocou em permissão nenhuma.
   em cinco limites de Suspense acrescentaria estados de carregamento parcial
   piscando sem reduzir espera nenhuma.
 
-## Próximo passo
+---
 
-Entrega 7: revisão final de consistência — varrer o que as seis entregas
-deixaram divergente entre si, conferir os números que a documentação afirma
-contra o que as ferramentas medem, e fechar o comparativo de ponta a ponta.
+# Entrega 7 — Revisão de consistência (executada)
+
+As seis entregas anteriores estabeleceram regras. Esta foi atrás de onde o
+código **não as seguia** — e a resposta mais útil veio da primeira varredura.
+
+## 1. A regra existia, a ferramenta existia, e cinco de cada seis ações não a usavam
+
+A Entrega 5 corrigiu `mensagemDeErro` e a tela de erro para que detalhe técnico
+interno nunca chegasse à tela. Varrendo o código:
+
+> **63 lugares devolviam `error.message` cru. 12 usavam o tradutor.**
+
+Consertar o tradutor tinha consertado o tradutor. Os chamadores continuavam
+devolvendo `duplicate key value violates unique constraint "uq_area_name"` para
+quem tentava cadastrar uma área com nome repetido — e
+`could not connect to server: ECONNREFUSED` para quem lançava uma despesa num
+momento ruim.
+
+Os 63 passaram pelo tradutor. Para quem errou um nome repetido, a tela agora diz
+*"Já existe um registro com estes dados"*; o texto cru vai para o log.
+
+**Três eram de autenticação, não de banco.** `auth.updateUser()` devolve
+*"New password should be different from the old password"* — não é vazamento de
+esquema, mas é inglês técnico no meio de uma aplicação em português, numa tela
+que qualquer pessoa usa no primeiro dia. Ganharam `mensagemDeAuth`, que traduz os
+quatro casos que acontecem de verdade (senha igual, senha curta, limite de envio,
+sessão expirada) e manda o resto para o log.
+
+**E a regra ganhou uma guarda.** `erros.usage.test.ts` varre `src/app` e falha se
+`error.message` reaparecer dentro de um `return` ou de um campo `error:`. Não
+marca `console.error` (o log é onde o texto cru serve) nem
+`/regex/.test(error.message)` (ali a mensagem está sendo inspecionada para
+escolher uma frase em português). O teste tem uma segunda asserção que confere se
+a varredura leu mesmo os arquivos: varredura vazia que passa é pior que teste
+nenhum, porque dá impressão de cobertura.
+
+## 2. A tabela de SLA mostrava o mesmo mês várias vezes
+
+`vw_sla_compliance` agrupa por período, fila, **atendente** e cliente. A tabela
+de `/sla` tem as colunas "Período" e "Fila" — então ela repetia *"março /
+Suporte"* uma vez por atendente, cada linha com uma fatia dos tickets, e quem
+lesse pegava a primeira.
+
+A chave do React carregava um índice no fim (`${period}-${queue}-${i}`)
+justamente para sobreviver às repetições: **o problema tinha sido visto e
+contornado, não resolvido.**
+
+E o `.limit(40)` piorava: num tenant com cinco filas e dez atendentes, quarenta
+linhas da view podem não cobrir nem o primeiro mês — numa tabela cujo título diz
+"por mês e fila".
+
+O recorte virou **janela de tempo** (12 meses) em vez de número de linhas, e as
+linhas são somadas por (período, fila). Os dois percentuais saíram do `select`:
+**percentual não se soma**. Eles são recalculados a partir dos totais, porque
+dois atendentes — um com 90 cobertos e 9 violações, outro com 10 e 9 — dão 82%
+juntos, e a média dos percentuais daria 50%. A diferença entre os dois números é
+a conversa inteira numa reunião de SLA.
+
+A função foi para `src/lib/data/compliance.ts`, com oito asserções próprias.
+Aritmética que decide um percentual exibido merece teste, e um módulo de página
+cheio de `createClient` não deixaria escrever um.
+
+## 3. Números que envelheceram em silêncio
+
+Esta auditoria corrigiu o mesmo tipo de defeito **quatro vezes**: o instalador
+anunciando 18 views onde havia 17; três tabelas dizendo "30 rotas" quando o build
+imprimia 32; `docs/06` com 377 asserções depois de virarem 397; e agora "trigger
+de auditoria em 18 tabelas", quando já são **34**.
+
+Nenhum deles quebrou nada. É esse o problema: documentação que descreve um
+sistema que não existe mais é pior que documentação ausente, porque ninguém
+desconfia dela.
+
+O conserto não foi corrigir mais uma vez — foi **tornar a conferência barata**.
+`scripts/conferir-numeros.py` mede tabelas, views, policies, tabelas auditadas,
+chaves do catálogo e migrações no banco de validação, e compara com as frases da
+documentação que afirmam esses números. Sai com código 1 quando divergem, e
+também quando **não encontra a frase**: texto reescrito que escapa da
+conferência é a mesma falha por outro caminho.
+
+Quatro divergências corrigidas na primeira execução.
+
+As tabelas "Verificação desta entrega" ficam de fora de propósito: são registro
+datado de uma execução passada, e reescrevê-las seria reescrever história.
+
+## 4. O resto da varredura
+
+| O que procurei | O que achei |
+|---|---|
+| Entidade com escopo consultada sem escopo | Uma: `branch_areas` em `/clientes`. A página filtrava as filiais em memória e continuava trazendo do banco as áreas de todas as empresas |
+| Lista com teto sem dizer que tem teto | Uma: o histórico de `/tickets/[id]`, cortado em 60 com ordem decrescente — o que o corte esconde num ticket longo é a abertura, que é o que se procura ao voltar lá. Agora ele avisa. `/financeiro/contas-bancarias` já dizia "Últimas 60 movimentações"; `/integracoes/[id]` já se chama "Eventos recentes" |
+| Tabela sem nome acessível | Nenhuma — as 20 receberam o seu na Entrega 5 |
+| Tela sem estado vazio | Nenhuma das que têm lista |
+| Página paginável sem paginação | Nenhuma, dentro do critério da Entrega 6 |
+| Chave de permissão que não governa nada | Nenhuma — `permissions.usage.test.ts` já cobre |
+
+### Uma divergência que decidi NÃO corrigir
+
+`src/lib/data/` tem `lookups.ts` em inglês ao lado de `escopo.ts`,
+`agrupar.ts`, `paginacao.ts` e `compliance.ts` em português. A convenção que a
+base de fato segue é: **módulo que carrega política de domínio em português,
+módulo que embrulha infraestrutura em inglês** (`session`, `navigation`,
+`permissions`, `format`, `storage`, `supabase/`). `lookups` é o caso de
+fronteira — e renomeá-lo tocaria 16 arquivos para trocar um nome que ninguém
+entende errado. A convenção fica escrita aqui; o arquivo fica como está.
+
+## 5. Comparativo de ponta a ponta
+
+Da primeira linha da auditoria até aqui:
+
+| | Antes da Entrega 1 | Agora |
+|---|---|---|
+| Testes unitários | 210 | **321** |
+| Asserções de banco | 365 | **397** |
+| Asserções em navegador | 44 (só protótipo) | **61** (44 protótipo + 17 aplicação) |
+| Arquivos de teste | 11 | **17** |
+| Views no banco | 18 | **19** (uma removida por duplicação, duas criadas, duas órfãs ganharam leitor) |
+| Tokens de cor | 29, um tema | **37, dois temas** (25 redefinidos no escuro), com contraste AA medido |
+| `loading.tsx` / `error.tsx` | 0 / 0 | **cobrindo as 25 telas** |
+| Telas que truncavam em silêncio | 3 | **0** |
+| Telas que traziam a tabela inteira | 5 | **0** |
+| `error.message` cru na tela | 63 lugares | **0**, com guarda automática |
+| Fontes | pilha do sistema | **Space Grotesk + IBM Plex Sans** |
+| Tema escuro | nenhum | **três estados**, com as 4 combinações verificadas |
+
+### O que NÃO mudou, e é o ponto
+
+Nenhuma regra de negócio, cálculo, policy de RLS ou fluxo foi alterado nas sete
+entregas. As 365 asserções de banco que existiam no começo continuam passando —
+nenhuma foi editada para acomodar refatoração. As 32 novas cobrem o que as
+entregas acrescentaram.
+
+Três regras com as quais eu discordo continuam valendo, cada uma com o motivo
+registrado onde alguém vai ler: o aviso de contrato de link sem piso em
+`current_date`, `vw_dashboard_metrics` fora do foco por empresa, e o protótipo
+sem a repaginada. Discordar é uma coisa; trocar sozinho um número que alguém lê
+todo dia é outra.
+
+## Pendências que não são minhas
+
+Os três passos de [docs/09](09-conectar-no-supabase.md) continuam do lado de
+quem opera: liberar `supabase.iartech.cloud` na política de rede, pôr as quatro
+variáveis na configuração do ambiente e rodar
+`entrega/instalar-banco-completo.sql`. Depois deles eu valido contra o Supabase
+real as duas coisas que nenhuma asserção local prova — upload de anexo no
+Storage e recuperação de senha.

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { NAO_AFETADO } from '@/lib/actions/erros'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
 import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/lib/actions/estado'
 import {
@@ -37,7 +37,7 @@ export async function createCategory(_prev: ActionState, formData: FormData): Pr
     if (error.code === '23514') {
       return { error: 'Categorias suportam no máximo 2 níveis (categoria → subcategoria).' }
     }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
 
   revalidatePath('/sla')
@@ -66,7 +66,7 @@ export async function updateCategory(_prev: ActionState, formData: FormData): Pr
     if (error.code === '23514') {
       return { error: 'Categorias suportam no máximo 2 níveis (categoria → subcategoria).' }
     }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
   if (!updated?.length) return { error: NAO_AFETADO }
 
@@ -92,7 +92,7 @@ export async function setCategoryActive(_prev: ActionState, formData: FormData):
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
@@ -134,7 +134,7 @@ export async function createPriority(_prev: ActionState, formData: FormData): Pr
     if (error.code === '23505') {
       return { error: 'Já existe uma prioridade com esse nome (ou equivalente).' }
     }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
 
   revalidatePath('/sla')
@@ -159,7 +159,7 @@ export async function updatePriority(_prev: ActionState, formData: FormData): Pr
     .eq('id', id.data)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
@@ -184,7 +184,7 @@ export async function setPriorityActive(_prev: ActionState, formData: FormData):
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
@@ -206,7 +206,7 @@ export async function createSlaContract(_prev: ActionState, formData: FormData):
     .from('sla_contracts')
     .insert({ ...parsed.data, tenant_id: profile.tenant_id })
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/sla')
   return { success: 'Contrato de SLA cadastrado.' }
@@ -229,7 +229,7 @@ export async function updateSlaContract(_prev: ActionState, formData: FormData):
     .eq('id', id.data)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
@@ -257,7 +257,7 @@ export async function setSlaContractActive(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')
@@ -288,7 +288,7 @@ export async function createSlaDefinition(
         error: 'Já existe uma definição de SLA para esta combinação de contrato, categoria e prioridade.',
       }
     }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
 
   revalidatePath('/sla')
@@ -321,7 +321,7 @@ export async function updateSlaDefinition(
         error: 'Já existe uma definição de SLA para esta combinação de contrato, categoria e prioridade.',
       }
     }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
   if (!updated?.length) return { error: NAO_AFETADO }
 
@@ -350,7 +350,7 @@ export async function setSlaDefinitionActive(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/sla')

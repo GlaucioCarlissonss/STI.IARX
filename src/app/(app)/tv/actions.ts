@@ -1,6 +1,7 @@
 'use server'
 
 import { randomBytes, createHash } from 'node:crypto'
+import { mensagemDeErro } from '@/lib/actions/erros'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { optionalUuid, uuid } from '@/lib/schemas/campos'
@@ -58,7 +59,7 @@ export async function createDashboardToken(
     created_by: profile.id,
   })
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/tv')
   return { success: 'Token emitido. Copie agora — ele não será exibido novamente.', plainToken: plain }
@@ -80,7 +81,7 @@ export async function revokeDashboardToken(
     .update({ revoked_at: new Date().toISOString() })
     .eq('id', id)
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/tv')
   return { success: 'Token revogado. O painel para de funcionar imediatamente.' }

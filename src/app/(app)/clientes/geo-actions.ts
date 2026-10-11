@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { mensagemDeErro } from '@/lib/actions/erros'
 import { z } from 'zod'
 import { uuid } from '@/lib/schemas/campos'
 import { createClient } from '@/lib/supabase/server'
@@ -82,7 +83,7 @@ export async function setBranchCoordinates(
     .eq('id', parsed.data.branch_id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: 'Filial não encontrada, ou sem permissão para alterá-la.' }
 
   // Candidatos de uma ambiguidade anterior perdem sentido: o operador acabou
@@ -148,7 +149,7 @@ export async function saveBranchAddress(
     .eq('id', d.branch_id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   // Sem isso, um branch_id de outro tenant (ou já excluído) faz 0 linhas
   // casarem no UPDATE — o Postgres não devolve erro, e a tela diria
   // "Endereço salvo" sem nada ter sido gravado.
@@ -290,7 +291,7 @@ export async function geocodeBranch(_prev: ActionState, formData: FormData): Pro
         geocode_stale: false,
       })
       .eq('id', branch.id)
-    if (error) return { error: error.message }
+    if (error) return { error: mensagemDeErro(error) }
   } else {
     // Falha NÃO apaga a coordenada anterior: perder o pino bom por causa de uma
     // cota estourada seria pior do que exibi-lo marcado como desatualizado.
@@ -368,7 +369,7 @@ export async function confirmGeocodeCandidate(
     .eq('id', parsed.data.branch_id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: 'Filial não encontrada, ou sem permissão para alterá-la.' }
 
   await supabase.from('geocode_candidates').delete().eq('branch_id', parsed.data.branch_id)

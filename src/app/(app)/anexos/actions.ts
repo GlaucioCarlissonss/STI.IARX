@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { NAO_AFETADO } from '@/lib/actions/erros'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
 import { requireSession, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/lib/actions/estado'
 import {
@@ -154,7 +154,7 @@ export async function removeAttachment(
     .eq('id', id)
     .select('storage_path')
 
-  if (error) return falha(error.message)
+  if (error) return falha(mensagemDeErro(error))
   if (!removidos || removidos.length === 0) return falha()
 
   const path = (removidos[0] as { storage_path: string }).storage_path

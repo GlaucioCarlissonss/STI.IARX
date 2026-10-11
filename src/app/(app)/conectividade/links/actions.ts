@@ -104,7 +104,7 @@ export async function setInternetLinkStatus(
     .eq('id', id.data)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath(ROTA)
@@ -162,7 +162,7 @@ export async function closeLinkOutage(_prev: ActionState, formData: FormData): P
     .is('ended_at', null)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!fechados?.length) return { error: 'Não há queda aberta para este link.' }
 
   revalidatePath(ROTA)

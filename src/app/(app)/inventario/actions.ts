@@ -34,7 +34,7 @@ export async function createAsset(_prev: ActionState, formData: FormData): Promi
     // Patrimônio e número de série são únicos por tenant — a mensagem crua do
     // Postgres não ajudaria quem está cadastrando.
     if (error.code === '23505') return { error: DUPLICATE }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
 
   revalidatePath('/inventario')
@@ -98,7 +98,7 @@ export async function changeAssetStatus(
     .eq('id', parsed.data.asset_id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/inventario')
@@ -146,7 +146,7 @@ export async function changeAssetCustody(
     if (error.code === '23514' || /area/i.test(error.message)) {
       return { error: 'A área informada pertence a outra filial.' }
     }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
   if (!data) return { error: NAO_AFETADO }
 

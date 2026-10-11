@@ -87,7 +87,7 @@ export async function setClientStatus(_prev: ActionState, formData: FormData): P
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/clientes')
@@ -109,7 +109,7 @@ export async function createBranch(_prev: ActionState, formData: FormData): Prom
     .from('branches')
     .insert({ ...parsed.data, tenant_id: profile.tenant_id })
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/clientes')
   return { success: 'Filial cadastrada.' }
@@ -132,7 +132,7 @@ export async function updateBranch(_prev: ActionState, formData: FormData): Prom
     .eq('id', id.data)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   // O endereço da filial mora em /mapas e alimenta a geolocalização: alterar
@@ -160,7 +160,7 @@ export async function setBranchActive(_prev: ActionState, formData: FormData): P
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/clientes')
@@ -199,7 +199,7 @@ export async function createBranchArea(
     // `uq_area_name` é por `lower(name)`: "Enfermagem" e "enfermagem" são a
     // mesma área, e é essa unicidade que o módulo existe para garantir.
     if (error.code === '23505') return { error: 'Já existe uma área com este nome nesta filial.' }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
 
   revalidatePath('/clientes')
@@ -254,7 +254,7 @@ export async function setBranchAreaActive(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/clientes')
@@ -284,7 +284,7 @@ export async function seedBranchAreas(
   const supabase = await createClient()
   const { data, error } = await supabase.rpc('seed_branch_areas', { p_branch_id: id.data })
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   const criadas = Number(data ?? 0)
   revalidatePath('/clientes')

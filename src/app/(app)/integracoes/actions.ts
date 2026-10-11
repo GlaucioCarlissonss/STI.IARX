@@ -1,6 +1,7 @@
 'use server'
 
 import { createHash } from 'node:crypto'
+import { mensagemDeErro } from '@/lib/actions/erros'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { uuid } from '@/lib/schemas/campos'
@@ -34,7 +35,7 @@ export async function setIntegrationStatus(
     .update({ status: parsed.data.status })
     .eq('id', parsed.data.integration_id)
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/integracoes')
   return { success: parsed.data.status === 'active' ? 'Integração ativada.' : 'Integração pausada.' }
@@ -71,7 +72,7 @@ export async function setReverseSync(
     .update({ reverse_sync_enabled: parsed.data.enabled === 'true' })
     .eq('id', parsed.data.integration_id)
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/integracoes')
   return {
@@ -116,7 +117,7 @@ export async function setInboundToken(
     .update({ inbound_token_hash: hash })
     .eq('id', parsed.data.integration_id)
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/integracoes')
   return { success: 'Token registrado. Apenas o hash foi armazenado.' }

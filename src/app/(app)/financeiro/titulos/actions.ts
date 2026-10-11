@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { NAO_AFETADO } from '@/lib/actions/erros'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
 import { requireSession, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/lib/actions/estado'
 import {
@@ -38,10 +38,10 @@ function falha(m?: string): ActionState {
 function traduz(error: { code?: string; message: string }): ActionState {
   // A trigger da máquina de estados e os CHECKs usam check_violation, e a
   // mensagem deles já foi escrita para ser lida — vale mais que a genérica.
-  if (error.code === '23514') return falha(error.message)
+  if (error.code === '23514') return falha(mensagemDeErro(error))
   if (error.code === '23505') return falha('Já existe um registro com este código.')
   if (error.code === '23503') return falha('Um dos vínculos escolhidos não existe mais.')
-  return falha(error.message)
+  return falha(mensagemDeErro(error))
 }
 
 /* ========================================================================== */

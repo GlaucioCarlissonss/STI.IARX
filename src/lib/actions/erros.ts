@@ -28,6 +28,39 @@ export interface ErroDeBanco {
 const GENERICA = 'Não foi possível concluir. Tente de novo; se continuar, avise o suporte'
 
 /**
+ * Erros da autenticação do Supabase, que não são erros de banco.
+ *
+ * `auth.updateUser()` e `resetPasswordForEmail()` devolvem texto em inglês —
+ * *"New password should be different from the old password"* — e esse texto
+ * chegava inteiro à tela de quem trocava a senha. Não é vazamento de esquema,
+ * mas é inglês técnico no meio de uma aplicação em português, e nos três casos
+ * abaixo a frase útil existe e é curta.
+ *
+ * O `code` veio nas versões recentes do supabase-js; o teste sobre a mensagem
+ * cobre as respostas antigas, que só traziam texto. Fora dessas, cai no
+ * genérico — e o original vai para o log.
+ */
+export function mensagemDeAuth(error: { code?: string; message: string }): string {
+  const codigo = error.code ?? ''
+  const texto = error.message ?? ''
+
+  if (codigo === 'same_password' || /different from the old password/i.test(texto))
+    return 'A nova senha precisa ser diferente da atual.'
+
+  if (codigo === 'weak_password' || /at least \d+ characters/i.test(texto))
+    return 'A senha é curta demais. Use pelo menos 8 caracteres.'
+
+  if (codigo.includes('rate_limit') || /rate limit/i.test(texto))
+    return 'Muitas tentativas em pouco tempo. Espere alguns minutos e tente de novo.'
+
+  if (codigo === 'session_not_found' || /session missing|session_not_found/i.test(texto))
+    return 'A sessão expirou. Entre de novo para continuar.'
+
+  console.error('[erro de autenticação]', error.code, error.message)
+  return `${GENERICA}.`
+}
+
+/**
  * A mensagem veio de uma trigger NOSSA, ou do próprio Postgres?
  *
  * Dezessete triggers desta base levantam `check_violation` **de propósito**, com

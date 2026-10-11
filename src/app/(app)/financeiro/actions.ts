@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { NAO_AFETADO } from '@/lib/actions/erros'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
 import { requireSession, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/lib/actions/estado'
 import {
@@ -38,7 +38,7 @@ export async function createCostCenter(
   if (error) {
     if (error.code === '23505') return { error: 'Já existe um centro de custo com este código.' }
     if (error.code === '23514') return { error: DEPTH }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
 
   revalidatePath('/financeiro/centros-de-custo')
@@ -74,7 +74,7 @@ export async function updateCostCenter(
     if (error.code === '23505') return { error: 'Já existe um centro de custo com este código.' }
     // A trigger cobre profundidade e ciclo com o mesmo errcode.
     if (error.code === '23514') return { error: `${DEPTH} A hierarquia também não pode formar ciclo.` }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
   if (!updated?.length) return { error: NAO_AFETADO }
 
@@ -104,7 +104,7 @@ export async function setCostCenterActive(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/financeiro/centros-de-custo')
@@ -133,7 +133,7 @@ export async function createBankAccount(
     if (error.code === '23505') {
       return { error: 'Já existe uma conta com este banco, agência e número.' }
     }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
 
   revalidatePath('/financeiro/contas-bancarias')
@@ -165,7 +165,7 @@ export async function updateBankAccount(
     if (error.code === '23505') {
       return { error: 'Já existe uma conta com este banco, agência e número.' }
     }
-    return { error: error.message }
+    return { error: mensagemDeErro(error) }
   }
   if (!updated?.length) return { error: NAO_AFETADO }
 
@@ -193,7 +193,7 @@ export async function setBankAccountStatus(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/financeiro/contas-bancarias')
@@ -220,7 +220,7 @@ export async function createBankMovement(
     created_by: profile.id,
   })
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/financeiro/contas-bancarias')
   return { success: 'Movimentação lançada.' }
@@ -273,7 +273,7 @@ export async function transferBetweenAccounts(
     },
   ])
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/financeiro/contas-bancarias')
   return { success: 'Transferência registrada nas duas contas.' }
@@ -302,7 +302,7 @@ export async function toggleMovementReconciled(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/financeiro/contas-bancarias')

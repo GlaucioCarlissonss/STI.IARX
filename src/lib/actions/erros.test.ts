@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mensagemDeErro, NAO_AFETADO } from './erros'
+import { mensagemDeAuth, mensagemDeErro, NAO_AFETADO } from './erros'
 
 /**
  * A regra que este arquivo protege está no briefing, em uma linha: "mensagens de
@@ -85,6 +85,46 @@ describe('mensagemDeErro', () => {
       const m = mensagemDeErro({ message: 'TypeError: fetch failed' })
       expect(m).not.toContain('fetch')
       expect(m).not.toContain('código')
+      log.mockRestore()
+    })
+  })
+
+  describe('mensagemDeAuth — o outro caminho, que não passa pelo Postgres', () => {
+    /*
+     * `auth.updateUser()` devolve inglês: "New password should be different
+     * from the old password". Não é vazamento de esquema, mas é inglês técnico
+     * no meio de uma aplicação em português, e nos casos abaixo a frase útil
+     * existe e é curta.
+     */
+    it('traduz pelo código, quando o supabase-js o envia', () => {
+      expect(mensagemDeAuth({ code: 'same_password', message: 'whatever' })).toContain(
+        'diferente da atual',
+      )
+    })
+
+    it('e pelo texto, para as respostas antigas que só traziam mensagem', () => {
+      expect(
+        mensagemDeAuth({ message: 'New password should be different from the old password' }),
+      ).toContain('diferente da atual')
+    })
+
+    it('senha curta vira a frase com o número que o formulário exige', () => {
+      const m = mensagemDeAuth({ message: 'Password should be at least 6 characters' })
+      expect(m).toContain('8 caracteres')
+      expect(m).not.toMatch(/Password|characters/)
+    })
+
+    it('limite de envio é acionável: diz para esperar, não "erro 429"', () => {
+      expect(mensagemDeAuth({ code: 'over_email_send_rate_limit', message: 'x' })).toContain(
+        'Espere alguns minutos',
+      )
+    })
+
+    it('o que não é reconhecido cai no genérico, sem o inglês junto', () => {
+      const log = silenciar()
+      const m = mensagemDeAuth({ code: 'unexpected_failure', message: 'Database error granting user' })
+      expect(m).not.toMatch(/Database|granting/)
+      expect(log).toHaveBeenCalled()
       log.mockRestore()
     })
   })

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { NAO_AFETADO } from '@/lib/actions/erros'
+import { NAO_AFETADO, mensagemDeErro } from '@/lib/actions/erros'
 import { permitirEscrita } from '@/lib/actions/guarda'
 import type { ActionState } from '@/lib/actions/estado'
 import { queueRuleSchema, queueSchema, recordId } from '@/lib/schemas/cadastros'
@@ -25,7 +25,7 @@ export async function createQueueRule(
     .from('queue_rules')
     .insert({ ...parsed.data, tenant_id: profile.tenant_id })
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath('/filas')
   return { success: 'Regra cadastrada. Ela passa a valer para os próximos tickets.' }
@@ -51,7 +51,7 @@ export async function updateQueueRule(
     .eq('id', id.data)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/filas')
@@ -86,7 +86,7 @@ export async function setQueueRuleActive(
     .eq('id', parsed.data.id)
     .select('id')
 
-  if (error) return { error: error.message }
+  if (error) return { error: mensagemDeErro(error) }
   if (!updated?.length) return { error: NAO_AFETADO }
 
   revalidatePath('/filas')
@@ -106,9 +106,14 @@ export async function setQueueRuleActive(
  */
 function erroDeFila(error: { code?: string; message: string }): string {
   if (error.code === '23505') return 'Já existe uma fila com este identificador.'
-  // `restrict_violation` é o código que a trigger usa para as quatro proteções.
-  if (error.code === '2BP01' || /fila padrão/i.test(error.message)) return error.message
-  return error.message
+  /*
+   * O resto delega a `mensagemDeErro`, que já sabe repassar a frase das NOSSAS
+   * triggers — `restrict_violation` é o código que `trg_protect_default_queue`
+   * usa para as quatro proteções, e a frase dela já vem em português — e já
+   * sabe engolir a do Postgres. Antes havia aqui um `return error.message` solto
+   * no fim: qualquer erro imprevisto saía cru na tela.
+   */
+  return mensagemDeErro(error)
 }
 
 export async function createQueue(_prev: ActionState, formData: FormData): Promise<ActionState> {
