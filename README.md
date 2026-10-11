@@ -297,3 +297,5 @@ aceitável. A resolução depende de uma atualização do Next.
 | [07 — Financeiro e Permissões](docs/07-financeiro-e-permissoes.md) | Permissões granulares, financeiro (contas a pagar/receber, fluxo de caixa) e controle de despesas: 9 módulos no template, matriz de permissões e 15 lacunas |
 | [08 — Arquitetura de informação](docs/08-arquitetura-de-informacao.md) | Agrupamento do menu, nomenclatura e as decisões de usabilidade |
 | [09 — Conectar no Supabase](docs/09-conectar-no-supabase.md) | Passo a passo para ligar a plataforma no Supabase auto-hospedado do cliente, e as duas regras de chave que não podem ser quebradas |
+| [10 — Auditoria e repaginação](docs/10-auditoria-e-repaginacao.md) | As sete entregas de revisão do código e da identidade visual, com o que mudou, o que não mudou e por quê |
+| [11 — Plano de comercialização](docs/11-plano-de-comercializacao.md) | O que falta para virar MicroSaaS vendável: diagnóstico com evidência, plano em fases e a recomendação sobre web, desktop e mobile |
