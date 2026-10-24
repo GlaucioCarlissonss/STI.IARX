@@ -16,7 +16,7 @@
 -- primeira deixou pronto.
 --
 -- O QUE ELE CRIA
---   58 tabelas e 19 views em `public`, além das policies de RLS, das
+--   62 tabelas e 19 views em `public`, além das policies de RLS, das
 --   funções em `app`, dos 9 perfis de acesso do sistema, do bucket privado
 --   `anexos` e dos dados de exemplo.
 --
@@ -35,7 +35,7 @@ begin;
 
 
 -- =============================================================================
--- ARQUIVO 1 de 29: 0001_foundation.sql
+-- ARQUIVO 1 de 31: 0001_foundation.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -146,7 +146,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 2 de 29: 0002_core.sql
+-- ARQUIVO 2 de 31: 0002_core.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -376,7 +376,7 @@ select app.harden_table('public.user_branches');
 
 
 -- =============================================================================
--- ARQUIVO 3 de 29: 0003_business_hours.sql
+-- ARQUIVO 3 de 31: 0003_business_hours.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -615,7 +615,7 @@ select app.harden_table('public.business_hours_holidays');
 
 
 -- =============================================================================
--- ARQUIVO 4 de 29: 0004_taxonomy_queues.sql
+-- ARQUIVO 4 de 31: 0004_taxonomy_queues.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -802,7 +802,7 @@ select app.harden_table('public.queue_rules');
 
 
 -- =============================================================================
--- ARQUIVO 5 de 29: 0005_tickets.sql
+-- ARQUIVO 5 de 31: 0005_tickets.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -1201,7 +1201,7 @@ select app.harden_table('public.ticket_status_transitions');
 
 
 -- =============================================================================
--- ARQUIVO 6 de 29: 0006_sla.sql
+-- ARQUIVO 6 de 31: 0006_sla.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -1564,7 +1564,7 @@ select app.harden_table('public.sla_pauses');
 
 
 -- =============================================================================
--- ARQUIVO 7 de 29: 0007_inventory.sql
+-- ARQUIVO 7 de 31: 0007_inventory.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -1783,7 +1783,7 @@ select app.harden_table('public.ticket_telecom_lines');
 
 
 -- =============================================================================
--- ARQUIVO 8 de 29: 0008_suppliers.sql
+-- ARQUIVO 8 de 31: 0008_suppliers.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -1860,7 +1860,7 @@ select app.harden_table('public.supplier_contracts');
 
 
 -- =============================================================================
--- ARQUIVO 9 de 29: 0009_integrations.sql
+-- ARQUIVO 9 de 31: 0009_integrations.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -2084,7 +2084,7 @@ select app.harden_table('public.integration_sync_state');
 
 
 -- =============================================================================
--- ARQUIVO 10 de 29: 0010_audit.sql
+-- ARQUIVO 10 de 31: 0010_audit.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -2219,7 +2219,7 @@ select app.harden_table('public.audit_log');
 
 
 -- =============================================================================
--- ARQUIVO 11 de 29: 0011_dashboard.sql
+-- ARQUIVO 11 de 31: 0011_dashboard.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -2559,7 +2559,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 12 de 29: 0012_rls_policies.sql
+-- ARQUIVO 12 de 31: 0012_rls_policies.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -2947,7 +2947,7 @@ grant usage on all sequences in schema public to authenticated;
 
 
 -- =============================================================================
--- ARQUIVO 13 de 29: 0013_areas_anexos_links.sql
+-- ARQUIVO 13 de 31: 0013_areas_anexos_links.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -3919,7 +3919,7 @@ select app.attach_audit('public.internet_link_attachments');
 
 
 -- =============================================================================
--- ARQUIVO 14 de 29: 0014_geocode_precision.sql
+-- ARQUIVO 14 de 31: 0014_geocode_precision.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -4060,7 +4060,7 @@ grant select on public.vw_map_tickets, public.vw_map_assets,
 
 
 -- =============================================================================
--- ARQUIVO 15 de 29: 0015_endereco_estruturado.sql
+-- ARQUIVO 15 de 31: 0015_endereco_estruturado.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -4465,7 +4465,7 @@ grant select on public.vw_map_tickets, public.vw_map_assets,
 
 
 -- =============================================================================
--- ARQUIVO 16 de 29: 0016_ultimo_log_geocode.sql
+-- ARQUIVO 16 de 31: 0016_ultimo_log_geocode.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -4490,7 +4490,7 @@ grant select on public.vw_branch_last_geocode_log to authenticated;
 
 
 -- =============================================================================
--- ARQUIVO 17 de 29: 0017_perfis_e_permissoes.sql
+-- ARQUIVO 17 de 31: 0017_perfis_e_permissoes.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -5239,7 +5239,7 @@ where ap.tenant_id = p.tenant_id
 
 
 -- =============================================================================
--- ARQUIVO 18 de 29: 0018_financeiro_base.sql
+-- ARQUIVO 18 de 31: 0018_financeiro_base.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -5533,7 +5533,7 @@ grant select on public.vw_bank_account_balances to authenticated;
 
 
 -- =============================================================================
--- ARQUIVO 19 de 29: 0019_storage_anexos.sql
+-- ARQUIVO 19 de 31: 0019_storage_anexos.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -5797,7 +5797,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 20 de 29: 0020_titulos_e_alcadas.sql
+-- ARQUIVO 20 de 31: 0020_titulos_e_alcadas.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -6585,7 +6585,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 21 de 29: 0021_fluxo_de_caixa.sql
+-- ARQUIVO 21 de 31: 0021_fluxo_de_caixa.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -6866,7 +6866,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 22 de 29: 0022_conectividade_links.sql
+-- ARQUIVO 22 de 31: 0022_conectividade_links.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -7142,7 +7142,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 23 de 29: 0023_areas_e_custodia.sql
+-- ARQUIVO 23 de 31: 0023_areas_e_custodia.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -7378,7 +7378,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 24 de 29: 0024_roteamento_de_fila.sql
+-- ARQUIVO 24 de 31: 0024_roteamento_de_fila.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -7599,7 +7599,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 25 de 29: 0025_filas_e_dashboard.sql
+-- ARQUIVO 25 de 31: 0025_filas_e_dashboard.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -7657,7 +7657,7 @@ $$;
 
 
 -- =============================================================================
--- ARQUIVO 26 de 29: 0026_remove_view_duplicada.sql
+-- ARQUIVO 26 de 31: 0026_remove_view_duplicada.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -7691,7 +7691,7 @@ drop view if exists public.vw_telecom_costs;
 
 
 -- =============================================================================
--- ARQUIVO 27 de 29: 0027_escopo_de_cliente.sql
+-- ARQUIVO 27 de 31: 0027_escopo_de_cliente.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -7944,7 +7944,7 @@ comment on function public.cash_flow_projection(integer, numeric, uuid, uuid, uu
 
 
 -- =============================================================================
--- ARQUIVO 28 de 29: 0028_agregados_e_paginacao.sql
+-- ARQUIVO 28 de 31: 0028_agregados_e_paginacao.sql
 -- =============================================================================
 
 -- =============================================================================
@@ -8174,7 +8174,686 @@ create index if not exists idx_links_pagina
 
 
 -- =============================================================================
--- ARQUIVO 29 de 29: seed.sql — dados de exemplo
+-- ARQUIVO 29 de 31: 0029_notificacoes_e_satisfacao.sql
+-- =============================================================================
+
+-- =============================================================================
+-- 0029 — Canal de notificação, fila de trabalhos e pesquisa de satisfação
+-- =============================================================================
+-- Onda 1 do plano de paridade (docs/12). Fecha a promessa que o produto já faz
+-- e não cumpre.
+--
+-- O QUE ESTAVA ERRADO
+-- -------------------
+-- `tenants.auto_close_after_days` existe desde a migração 0002, é lido pela
+-- sessão (`src/lib/session.ts`) e **nunca foi executado por ninguém**. Não há
+-- nenhum processo agendado nesta plataforma. O SLA é medido, o semáforo pinta a
+-- tela — e ninguém é avisado. Numa demonstração isso aparece em cinco minutos, e
+-- aparece como defeito, não como roadmap.
+--
+-- AS TRÊS DECISÕES DE ARQUITETURA
+-- -------------------------------
+-- **1. Caixa de saída, não envio em linha.** Nenhuma trigger e nenhuma ação
+-- manda e-mail direto. Elas ESCREVEM numa fila (`email_outbox`), e um trabalho
+-- separado a esvazia. Três motivos, nessa ordem de importância: provedor fora do
+-- ar não pode derrubar a transação de negócio; nova tentativa precisa de estado
+-- em algum lugar; e sobra o registro do que foi mandado, que é a primeira coisa
+-- que o suporte pede.
+--
+-- **2. A regra fica no SQL, a rede fica no TypeScript.** Quem decide QUEM avisar
+-- e QUANDO são funções neste arquivo — onde os dados estão, e onde as asserções
+-- de schema conseguem provar a regra. Quem fala com o provedor de e-mail é a
+-- aplicação, porque o banco não faz chamada de rede. A fronteira é a tabela.
+--
+-- **3. Idempotência por chave, não por esperança.** Cada mensagem carrega uma
+-- `dedupe_key` com índice único. O trabalho pode rodar duas vezes no mesmo
+-- minuto, o cron pode sobrepor, a chamada pode ser repetida — e ninguém recebe
+-- o mesmo aviso duas vezes. "O cliente recebeu quarenta e-mails" é a falha
+-- clássica deste tipo de recurso, e ela é barata de evitar antes e cara depois.
+--
+-- EMENDA AO ADR-011
+-- -----------------
+-- O ADR-011 diz que `service_role` tem exatamente DOIS usos: a rota `/tv/[token]`
+-- e o provisionamento de usuário. Este arquivo cria o **terceiro**, e o declara
+-- em vez de abrir a exceção em silêncio:
+--
+--   · as três funções de trabalho abaixo são `security definer` e têm execução
+--     concedida APENAS a `service_role`;
+--   · elas precisam disso pelo mesmo motivo do painel de TV: **um trabalho
+--     agendado não tem sessão de usuário por definição**. Não existe `auth.uid()`
+--     às três da manhã.
+--
+-- O que limita o estrago: as funções não aceitam parâmetro de tenant, não
+-- devolvem dado nenhum além de uma contagem, e a única porta que as alcança é um
+-- endpoint protegido por segredo próprio (`JOBS_SECRET`), separado de tudo.
+-- =============================================================================
+
+
+-- -----------------------------------------------------------------------------
+-- 1. Caixa de saída de e-mail
+-- -----------------------------------------------------------------------------
+-- `to_email` é copiado e não referenciado: o endereço no momento do envio é um
+-- fato histórico. Se a pessoa trocar de e-mail depois, o registro tem de
+-- continuar dizendo para onde foi — senão o log de "mandamos sim" vira ficção.
+create table public.email_outbox (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references public.tenants(id) on delete cascade,
+  to_email        text not null check (to_email like '%@%'),
+  to_name         text,
+  subject         text not null check (length(subject) between 1 and 200),
+  body_text       text not null,
+
+  /* De onde veio. Serve para filtrar no suporte e para a preferência do
+     destinatário — ver `app.quer_notificacao()`. */
+  kind            text not null check (kind in (
+                    'sla_warning','sla_critical','sla_breach',
+                    'satisfaction_invite','ticket_assigned','test')),
+  ticket_id       uuid,
+
+  /* A chave da idempotência. Nula é permitida para mensagem avulsa (um teste de
+     configuração, por exemplo), e nesse caso não há proteção — de propósito:
+     mensagem sem chave é mensagem que alguém pediu explicitamente. */
+  dedupe_key      text,
+
+  status          text not null default 'pending'
+                    check (status in ('pending','sent','failed','skipped')),
+  attempts        integer not null default 0 check (attempts >= 0),
+  last_error      text,
+  scheduled_for   timestamptz not null default now(),
+  sent_at         timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+
+  constraint email_outbox_sent_has_date
+    check (status <> 'sent' or sent_at is not null)
+);
+
+create unique index uq_email_outbox_dedupe
+  on public.email_outbox (tenant_id, dedupe_key)
+  where dedupe_key is not null;
+
+-- O índice que o esvaziamento usa: pendente, na ordem em que venceu.
+create index idx_email_outbox_fila
+  on public.email_outbox (scheduled_for)
+  where status = 'pending';
+
+comment on table public.email_outbox is
+  'Fila de e-mail. Escrita pelas regras em SQL, esvaziada pela aplicação. A dedupe_key é o que impede o mesmo aviso sair duas vezes.';
+
+-- -----------------------------------------------------------------------------
+-- 2. Preferência de notificação, por pessoa
+-- -----------------------------------------------------------------------------
+-- **O padrão é receber.** A ausência de linha significa "sim", e a linha com
+-- `enabled = false` é o silêncio pedido. É o inverso da regra de permissão desta
+-- base ("negação herda, liberação é explícita") e o inverso é certo aqui:
+-- permissão protege dado, notificação é serviço. Quem acabou de entrar no
+-- sistema precisa ser avisado do SLA estourando sem ter de descobrir uma tela de
+-- configuração primeiro.
+create table public.notification_preferences (
+  tenant_id   uuid not null references public.tenants(id) on delete cascade,
+  user_id     uuid not null,
+  kind        text not null,
+  enabled     boolean not null,
+  updated_at  timestamptz not null default now(),
+
+  primary key (tenant_id, user_id, kind),
+  constraint fk_notif_pref_profile
+    foreign key (user_id, tenant_id)
+    references public.profiles (id, tenant_id) on delete cascade
+);
+
+comment on table public.notification_preferences is
+  'Opt-out por pessoa e por tipo. Sem linha = recebe: notificação é serviço, não permissão.';
+
+create or replace function app.quer_notificacao(p_user_id uuid, p_kind text)
+returns boolean
+language sql
+stable
+as $$
+  select coalesce(
+    (select enabled from public.notification_preferences
+      where user_id = p_user_id and kind = p_kind),
+    true);
+$$;
+
+comment on function app.quer_notificacao(uuid, text) is
+  'True quando não há opt-out. Centraliza o padrão para nenhuma regra decidir isso por conta própria.';
+
+-- -----------------------------------------------------------------------------
+-- 3. Pesquisa de satisfação
+-- -----------------------------------------------------------------------------
+-- RESPONDIDA SEM LOGIN, e isso não é descuido: quem abriu o chamado muitas vezes
+-- não tem conta — é o funcionário da empresa-cliente que ligou para o suporte.
+-- Exigir login aqui derrubaria a taxa de resposta a quase zero, que é o mesmo
+-- que não ter a pesquisa.
+--
+-- O token segue o modelo do painel de TV: guardado como HASH, nunca em claro.
+-- Vazamento do banco não entrega os links de avaliação.
+--
+-- Escala de 1 a 5, e não 0 a 10 (NPS): a pergunta aqui é "este atendimento foi
+-- bom?", que é CSAT. NPS pergunta outra coisa ("você recomendaria a empresa?") e
+-- misturar as duas dá um número que não responde nenhuma das duas.
+create table public.ticket_satisfaction (
+  ticket_id     uuid primary key,
+  tenant_id     uuid not null references public.tenants(id) on delete cascade,
+  token_hash    text not null unique,
+  score         smallint check (score between 1 and 5),
+  comment       text check (comment is null or length(comment) <= 2000),
+  sent_at       timestamptz not null default now(),
+  answered_at   timestamptz,
+  expires_at    timestamptz not null,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+
+  constraint fk_satisfaction_ticket
+    foreign key (ticket_id, tenant_id)
+    references public.tickets (id, tenant_id) on delete cascade,
+
+  -- Respondida exige nota. Comentário sem nota seria uma avaliação que não
+  -- avalia nada, e entraria na média como zero ou como nulo, dependendo de quem
+  -- escrevesse a consulta.
+  constraint satisfaction_answered_has_score
+    check (answered_at is null or score is not null)
+);
+
+comment on table public.ticket_satisfaction is
+  'CSAT de 1 a 5 por ticket, respondida por link com token (sem login). Token guardado como hash.';
+
+-- -----------------------------------------------------------------------------
+-- 4. Registro das execuções
+-- -----------------------------------------------------------------------------
+-- Sem isto, um trabalho que parou de rodar é invisível: não há erro, não há
+-- alerta, simplesmente nada acontece — e o primeiro a perceber é o cliente que
+-- não recebeu o aviso. A tabela é o que permite perguntar "quando foi a última
+-- vez que o SLA foi verificado?".
+--
+-- Sem `tenant_id`: é execução da PLATAFORMA, não de um cliente. Por isso também
+-- não tem policy para `authenticated` — ninguém de dentro de um tenant tem o que
+-- fazer com ela.
+create table public.job_runs (
+  id          bigserial primary key,
+  job         text not null,
+  started_at  timestamptz not null default now(),
+  finished_at timestamptz,
+  ok          boolean,
+  affected    integer,
+  detail      text
+);
+
+create index idx_job_runs_recentes on public.job_runs (job, started_at desc);
+
+comment on table public.job_runs is
+  'Uma linha por execução de trabalho agendado. Existe para que trabalho parado seja perceptível.';
+
+-- -----------------------------------------------------------------------------
+-- 5. RLS
+-- -----------------------------------------------------------------------------
+select app.harden_table('public.email_outbox');
+select app.harden_table('public.notification_preferences');
+select app.harden_table('public.ticket_satisfaction');
+select app.harden_table('public.job_runs');
+
+select app.attach_audit('public.ticket_satisfaction');
+
+-- A caixa de saída contém o e-mail de outras pessoas. Só administrador lê, e
+-- ninguém escreve pela interface: quem escreve são as funções de trabalho, que
+-- rodam como `service_role` e não passam por policy.
+create policy email_outbox_select on public.email_outbox
+  for select to authenticated
+  using (tenant_id = app.current_tenant_id() and app.can_manage_config());
+
+-- Cada pessoa gerencia a PRÓPRIA preferência, e mais nada. Administrador não
+-- entra aqui de propósito: "o admin desligou meu aviso" é um problema de suporte
+-- que não precisa existir.
+create policy notification_preferences_own on public.notification_preferences
+  for all to authenticated
+  using (tenant_id = app.current_tenant_id() and user_id = app.current_user_id())
+  with check (tenant_id = app.current_tenant_id() and user_id = app.current_user_id());
+
+-- A avaliação é lida por quem já enxerga o ticket; o `token_hash` fica de fora da
+-- interface porque a aplicação nunca precisa dele (quem resolve o token é a
+-- função abaixo).
+create policy ticket_satisfaction_select on public.ticket_satisfaction
+  for select to authenticated
+  using (tenant_id = app.current_tenant_id());
+
+grant select on public.email_outbox to authenticated;
+grant select, insert, update, delete on public.notification_preferences to authenticated;
+grant select on public.ticket_satisfaction to authenticated;
+
+-- `job_runs` é da operação da PLATAFORMA, não de um tenant: quem lê é o
+-- `super_admin`.
+--
+-- A primeira versão deste arquivo não dava policy nenhuma a ela, com o
+-- argumento de que "sem GRANT a tabela não existe para quem está num tenant".
+-- A asserção da seção 1 do `schema_test.sql` recusou, e está certa: tabela com
+-- RLS e sem policy nega tudo em silêncio, e no dia em que alguém acrescentar um
+-- GRANT o sintoma é "a consulta volta vazia", não "falta permissão". Duas
+-- camadas dizendo a mesma coisa é redundância; uma camada muda e a outra
+-- esquecida é defeito.
+create policy job_runs_super_admin on public.job_runs
+  for select to authenticated
+  using (app.is_super_admin());
+
+grant select on public.job_runs to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- 6. Responder a pesquisa, sem login
+-- -----------------------------------------------------------------------------
+-- `security definer` em vez de `service_role`: esta função é a ÚNICA porta, ela
+-- só aceita o token, e não devolve nada além de verdadeiro ou falso. Dar a chave
+-- mestra para a aplicação só para gravar uma nota de 1 a 5 seria desproporcional.
+--
+-- `search_path` fixo é obrigatório numa função `security definer`: sem ele, quem
+-- conseguisse manipular o `search_path` da sessão apontaria `public.` para um
+-- esquema próprio e a função executaria código de outra pessoa com privilégio de
+-- dono.
+create or replace function public.submit_satisfaction(
+  p_token   text,
+  p_score   smallint,
+  p_comment text default null
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hash text := encode(digest(p_token, 'sha256'), 'hex');
+  v_id   uuid;
+begin
+  if p_score is null or p_score < 1 or p_score > 5 then
+    return false;
+  end if;
+
+  /* Só grava se: o token existe, ainda não foi respondido e não expirou. As três
+     condições juntas num único UPDATE — checar antes e gravar depois abriria a
+     janela em que duas respostas simultâneas passam as duas. */
+  update public.ticket_satisfaction
+     set score       = p_score,
+         comment     = nullif(btrim(coalesce(p_comment, '')), ''),
+         answered_at = now()
+   where token_hash = v_hash
+     and answered_at is null
+     and expires_at > now()
+  returning ticket_id into v_id;
+
+  return v_id is not null;
+end;
+$$;
+
+revoke all on function public.submit_satisfaction(text, smallint, text) from public;
+grant execute on function public.submit_satisfaction(text, smallint, text) to anon, authenticated;
+
+comment on function public.submit_satisfaction(text, smallint, text) is
+  'Grava a nota de satisfação a partir do token do link. Única porta sem login; devolve apenas sucesso ou falha.';
+
+-- E a leitura do convite, para a página saber o que mostrar antes de responder.
+create or replace function public.satisfaction_invite(p_token text)
+returns table (ticket_number bigint, ticket_title text, already_answered boolean, expired boolean)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_hash text := encode(digest(p_token, 'sha256'), 'hex');
+begin
+  return query
+  select t.ticket_number, t.title,
+         s.answered_at is not null,
+         s.expires_at <= now()
+    from public.ticket_satisfaction s
+    join public.tickets t on t.id = s.ticket_id
+   where s.token_hash = v_hash;
+end;
+$$;
+
+revoke all on function public.satisfaction_invite(text) from public;
+grant execute on function public.satisfaction_invite(text) to anon, authenticated;
+
+comment on function public.satisfaction_invite(text) is
+  'Dados mínimos do convite de avaliação: número, título e se já foi respondido ou expirou.';
+
+
+
+-- =============================================================================
+-- ARQUIVO 30 de 31: 0030_trabalhos_agendados.sql
+-- =============================================================================
+
+-- =============================================================================
+-- 0030 — Os três trabalhos agendados
+-- =============================================================================
+-- A regra de QUEM avisar e QUANDO mora aqui, no SQL, pelo motivo dito na 0029:
+-- é onde os dados estão, e é onde as asserções de schema conseguem provar a
+-- regra. A aplicação só esvazia a caixa de saída.
+--
+-- As três funções são `security definer` com execução concedida apenas a
+-- `service_role`, e `set search_path` fixo. Um trabalho agendado não tem sessão
+-- de usuário por definição — não existe `auth.uid()` às três da manhã.
+-- =============================================================================
+
+
+-- -----------------------------------------------------------------------------
+-- 1. Alerta de SLA
+-- -----------------------------------------------------------------------------
+-- **Quem recebe.** O responsável pelo ticket. Quando não há responsável — que é
+-- justamente o caso perigoso — o aviso vai para quem pode fazer alguma coisa a
+-- respeito: os papéis `gestor` e `admin` ativos do tenant. Ticket sem dono
+-- estourando SLA em silêncio é a pior combinação possível.
+--
+-- **Quantas vezes.** Uma por pessoa, por estado, por vida do ticket. A chave de
+-- idempotência inclui `reopened_count`: ticket reaberto é um novo ciclo de
+-- atendimento e merece novo aviso, mas ticket parado em `critical` por três dias
+-- não gera três avisos por dia.
+--
+-- **O que NÃO entra.** `coverage <> 'covered'` fica de fora: ticket que nenhuma
+-- definição de SLA alcançou não tem prazo para estourar. Avisar sobre ele seria
+-- cobrar uma promessa que ninguém fez — e esconderia os que têm prazo de
+-- verdade no meio do ruído.
+create or replace function app.job_sla_alerts()
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_run_id bigint;
+  v_count  integer := 0;
+begin
+  insert into public.job_runs (job) values ('sla_alerts') returning id into v_run_id;
+
+  with candidatos as (
+    select
+      t.id            as ticket_id,
+      t.tenant_id,
+      t.ticket_number,
+      t.title,
+      t.assignee_id,
+      t.reopened_count,
+      app.sla_state(st.resolution_due_at, st.resolved_at, st.resolution_breached,
+                    tn.sla_warning_pct, tn.sla_critical_pct, st.started_at) as estado
+    from public.tickets t
+    join public.sla_tracking st on st.ticket_id = t.id
+    join public.tenants tn      on tn.id = t.tenant_id
+    where t.deleted_at is null
+      and tn.deleted_at is null
+      and t.status not in ('resolved', 'closed')
+      and st.coverage = 'covered'
+      and not st.is_paused
+  ),
+  alvos as (
+    select c.*, p.id as user_id, p.email, p.full_name
+    from candidatos c
+    join public.profiles p
+      on p.tenant_id = c.tenant_id
+     and p.is_active
+     and (
+       -- com responsável: só ele
+       (c.assignee_id is not null and p.id = c.assignee_id)
+       -- sem responsável: quem pode agir
+       or (c.assignee_id is null and p.role in ('gestor', 'admin'))
+     )
+    where c.estado in ('warning', 'critical', 'breached')
+      and p.email is not null
+  ),
+  gravadas as (
+    insert into public.email_outbox
+      (tenant_id, to_email, to_name, subject, body_text, kind, ticket_id, dedupe_key)
+    select
+      a.tenant_id,
+      a.email,
+      a.full_name,
+      case a.estado
+        when 'warning'  then format('[SLA] Prazo se aproximando — chamado #%s', a.ticket_number)
+        when 'critical' then format('[SLA] Prazo crítico — chamado #%s', a.ticket_number)
+        else                 format('[SLA] Prazo ESTOURADO — chamado #%s', a.ticket_number)
+      end,
+      format(
+        E'Chamado #%s — %s\n\n%s\n\nAbra o chamado em /tickets/%s',
+        a.ticket_number, a.title,
+        case a.estado
+          when 'warning'  then 'O prazo de resolução está se aproximando.'
+          when 'critical' then 'O prazo de resolução está perto de estourar.'
+          else                 'O prazo de resolução foi ultrapassado.'
+        end,
+        a.ticket_id),
+      case a.estado
+        when 'warning'  then 'sla_warning'
+        when 'critical' then 'sla_critical'
+        else                 'sla_breach'
+      end,
+      a.ticket_id,
+      format('sla:%s:%s:%s:%s', a.ticket_id, a.reopened_count, a.estado, a.user_id)
+    from alvos a
+    where app.quer_notificacao(
+            a.user_id,
+            case a.estado
+              when 'warning'  then 'sla_warning'
+              when 'critical' then 'sla_critical'
+              else                 'sla_breach'
+            end)
+    -- A chave única faz o resto: o que já foi enfileirado não entra de novo.
+    on conflict do nothing
+    returning 1
+  )
+  select count(*) into v_count from gravadas;
+
+  update public.job_runs
+     set finished_at = now(), ok = true, affected = v_count
+   where id = v_run_id;
+
+  return v_count;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 2. Fechamento automático
+-- -----------------------------------------------------------------------------
+-- `tenants.auto_close_after_days` existe desde a migração 0002 e **nunca foi
+-- executado**. Esta função é o que faltava.
+--
+-- `0` desliga o recurso para aquele tenant — e por isso o filtro é `> 0`, não
+-- `>= 0`: com zero, todo ticket resolvido fecharia no mesmo instante em que foi
+-- resolvido, e a pessoa perderia a janela para dizer "não resolveu, não".
+--
+-- A transição `resolved → closed` já existe em `ticket_status_transitions`
+-- (migração 0005), então a trigger de máquina de estados aceita. Não há regra
+-- nova aqui: há a execução da regra que já estava declarada.
+--
+-- `change_source = 'system'` distingue o fechamento automático do manual no
+-- histórico — e é o que a sincronização reversa usa para não ecoar de volta para
+-- a integração (ADR-008).
+create or replace function app.job_auto_close()
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_run_id bigint;
+  v_count  integer := 0;
+begin
+  insert into public.job_runs (job) values ('auto_close') returning id into v_run_id;
+
+  with fechados as (
+    update public.tickets t
+       set status = 'closed',
+           closed_at = now(),
+           change_source = 'system'
+      from public.tenants tn
+     where tn.id = t.tenant_id
+       and t.deleted_at is null
+       and tn.deleted_at is null
+       and t.status = 'resolved'
+       and t.resolved_at is not null
+       and tn.auto_close_after_days > 0
+       and t.resolved_at < now() - make_interval(days => tn.auto_close_after_days)
+    returning 1
+  )
+  select count(*) into v_count from fechados;
+
+  update public.job_runs
+     set finished_at = now(), ok = true, affected = v_count
+   where id = v_run_id;
+
+  return v_count;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 3. Convite de avaliação
+-- -----------------------------------------------------------------------------
+-- Vai para quem ABRIU o chamado, e só depois de ele estar fechado.
+--
+-- **Por que no fechamento e não na resolução:** entre resolvido e fechado a
+-- pessoa ainda pode reabrir. Perguntar "como foi o atendimento?" para quem está
+-- prestes a dizer "não resolveu" é a pior hora possível para perguntar.
+--
+-- **O token.** Gerado aqui em claro, guardado só como hash, e escrito no corpo
+-- da mensagem como caminho relativo (`/avaliar/<token>`). Quem completa o
+-- endereço é a aplicação, no momento do envio — o banco não conhece o domínio
+-- público, e inventá-lo numa coluna seria a terceira cópia de uma configuração
+-- que já vive em `NEXT_PUBLIC_SITE_URL`.
+--
+-- O corpo da mensagem carrega o token em claro até o envio. É o mesmo nível de
+-- exposição do próprio e-mail, a caixa de saída só é legível por administrador, e
+-- a aplicação apaga o corpo depois de enviar — ver `drenarCaixaDeSaida`.
+--
+-- **Validade de 30 dias:** avaliação de um atendimento de dois meses atrás não
+-- mede atendimento, mede memória.
+create or replace function app.job_satisfaction_invites()
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_run_id bigint;
+  v_count  integer := 0;
+  v_t      record;
+  v_token  text;
+begin
+  insert into public.job_runs (job) values ('satisfaction_invites') returning id into v_run_id;
+
+  for v_t in
+    select t.id, t.tenant_id, t.ticket_number, t.title, p.id as user_id, p.email, p.full_name
+      from public.tickets t
+      join public.profiles p on p.id = t.requester_id and p.tenant_id = t.tenant_id
+      join public.tenants tn on tn.id = t.tenant_id
+     where t.deleted_at is null
+       and tn.deleted_at is null
+       and t.status = 'closed'
+       and t.closed_at is not null
+       -- Janela de 7 dias: o trabalho não vai varrer o histórico inteiro toda
+       -- noite procurando chamado fechado em 2024.
+       and t.closed_at > now() - interval '7 days'
+       and p.email is not null
+       and p.is_active
+       and not exists (select 1 from public.ticket_satisfaction s where s.ticket_id = t.id)
+       and app.quer_notificacao(p.id, 'satisfaction_invite')
+  loop
+    v_token := encode(gen_random_bytes(24), 'hex');
+
+    insert into public.ticket_satisfaction (ticket_id, tenant_id, token_hash, expires_at)
+    values (v_t.id, v_t.tenant_id,
+            encode(digest(v_token, 'sha256'), 'hex'),
+            now() + interval '30 days')
+    on conflict (ticket_id) do nothing;
+
+    if found then
+      insert into public.email_outbox
+        (tenant_id, to_email, to_name, subject, body_text, kind, ticket_id, dedupe_key)
+      values (
+        v_t.tenant_id, v_t.email, v_t.full_name,
+        format('Como foi o atendimento do chamado #%s?', v_t.ticket_number),
+        format(
+          E'Olá, %s.\n\nO chamado #%s — %s — foi encerrado.\n\n'
+          'Responda em menos de um minuto, clicando na nota de 1 a 5:\n'
+          '/avaliar/%s\n\nO link vale por 30 dias.',
+          coalesce(v_t.full_name, 'tudo bem'), v_t.ticket_number, v_t.title, v_token),
+        'satisfaction_invite', v_t.id,
+        format('csat:%s', v_t.id))
+      on conflict do nothing;
+
+      v_count := v_count + 1;
+    end if;
+  end loop;
+
+  update public.job_runs
+     set finished_at = now(), ok = true, affected = v_count
+   where id = v_run_id;
+
+  return v_count;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 4. Quem pode executar
+-- -----------------------------------------------------------------------------
+-- Só `service_role`. `authenticated` NÃO recebe: as três funções leem e escrevem
+-- atravessando tenants, e é exatamente por isso que elas são o terceiro uso
+-- declarado da chave de serviço (ver o cabeçalho da 0029). Conceder a
+-- `authenticated` transformaria qualquer pessoa logada num disparador de e-mail
+-- para a base inteira.
+revoke all on function app.job_sla_alerts() from public;
+revoke all on function app.job_auto_close() from public;
+revoke all on function app.job_satisfaction_invites() from public;
+
+grant execute on function app.job_sla_alerts() to service_role;
+grant execute on function app.job_auto_close() to service_role;
+grant execute on function app.job_satisfaction_invites() to service_role;
+
+comment on function app.job_sla_alerts() is
+  'Enfileira avisos de SLA (warning/critical/breach). Uma vez por pessoa, estado e vida do ticket.';
+comment on function app.job_auto_close() is
+  'Fecha ticket resolvido há mais de tenants.auto_close_after_days. Executa a regra que existia desde a 0002 e nunca rodou.';
+comment on function app.job_satisfaction_invites() is
+  'Cria o convite de CSAT dos chamados fechados nos últimos 7 dias e enfileira o e-mail com o link de token.';
+
+-- -----------------------------------------------------------------------------
+-- 5. A tela de satisfação no catálogo
+-- -----------------------------------------------------------------------------
+-- Duas chaves, dentro de `helpdesk` — e ficar dentro dele não é detalhe: é o que
+-- faz `app.seed_system_access_profiles()` conceder a tela ao Gestor de TI e ao
+-- Operador de TI automaticamente (regra `c.module = 'helpdesk'`), e o `.ver` à
+-- Diretoria e ao Visualizador, sem tocar na função. Módulo novo escaparia da
+-- função — foi o que aconteceu com `conectividade` na 0022.
+--
+-- `sort_order` 136-137: logo depois de `helpdesk.filas.configurar_regras` (135),
+-- que é a última chave do módulo.
+--
+-- **Não existe chave para RESPONDER a pesquisa.** Quem responde é o solicitante,
+-- por link com token, muitas vezes sem conta nenhuma no sistema. Permissão para
+-- isso não governaria nada — e chave que não governa nada é configuração morta,
+-- defeito já corrigido seis vezes nesta base.
+insert into public.permission_catalog
+  (key, module, screen, action, label, min_base_role, sort_order)
+values
+  ('helpdesk.satisfacao', 'helpdesk', 'satisfacao', null,
+   'Satisfação', 'atendente', 136),
+  ('helpdesk.satisfacao.ver', 'helpdesk', 'satisfacao', 'ver',
+   'Consultar as avaliações', 'atendente', 137)
+on conflict (key) do update
+  set label         = excluded.label,
+      min_base_role = excluded.min_base_role,
+      sort_order    = excluded.sort_order;
+
+-- Os perfis de sistema dos tenants que já existem precisam receber as chaves
+-- novas: a função é idempotente e só acrescenta.
+do $$
+declare
+  v_tenant uuid;
+begin
+  for v_tenant in select id from public.tenants loop
+    perform app.seed_system_access_profiles(v_tenant);
+  end loop;
+end
+$$;
+
+
+
+-- =============================================================================
+-- ARQUIVO 31 de 31: seed.sql — dados de exemplo
 -- =============================================================================
 -- Só faz sentido em banco novo ou de teste: cria 7 usuários em auth.users. Num
 -- banco com dado real, apague daqui para baixo antes de rodar.

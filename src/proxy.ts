@@ -17,7 +17,27 @@ import { NextResponse, type NextRequest } from 'next/server'
  * sessão de recuperação. Deixá-la pública mostraria um formulário de troca de
  * senha a qualquer visitante — que não trocaria nada, mas convidaria a tentar.
  */
-const PUBLIC_PREFIXES = ['/login', '/recuperar-senha', '/tv', '/api/health', '/auth']
+/*
+ * `/avaliar` é público pelo mesmo motivo do painel de TV: quem responde a
+ * pesquisa de satisfação é o solicitante, que muitas vezes NÃO tem conta — é o
+ * funcionário da empresa-cliente que ligou para o suporte. Exigir login ali
+ * derrubaria a taxa de resposta a quase zero, que é o mesmo que não ter a
+ * pesquisa. O escopo vem do token do link, e a única porta é uma função
+ * `security definer` que só aceita esse token e só devolve sucesso ou falha.
+ *
+ * `/api/jobs` NÃO entra: ele tem o próprio segredo (`JOBS_SECRET`), e deixá-lo
+ * sob a guarda de sessão não atrapalha — o agendador não manda cookie, mas
+ * também não é redirecionado, porque a rota responde 401 antes disso.
+ */
+const PUBLIC_PREFIXES = [
+  '/login',
+  '/recuperar-senha',
+  '/tv',
+  '/avaliar',
+  '/api/health',
+  '/api/jobs',
+  '/auth',
+]
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })

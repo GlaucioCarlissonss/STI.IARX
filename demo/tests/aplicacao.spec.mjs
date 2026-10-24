@@ -244,6 +244,41 @@ try {
     await ctx.close()
   }
 
+  // ---------------------------------------------------------------------------
+  console.log('\n=== 8. A pesquisa de satisfação abre sem login ===')
+  /*
+   * `/avaliar/<token>` é pública de propósito: quem responde é o solicitante, que
+   * muitas vezes não tem conta — é o funcionário da empresa-cliente que ligou
+   * para o suporte. Se o proxy a tratasse como rota protegida, ela redirecionaria
+   * para o login e a taxa de resposta seria zero.
+   *
+   * Com token inválido ela mostra a mesma frase que mostraria para um token
+   * adulterado. Distinguir os dois diria a quem estivesse adivinhando que chegou
+   * perto.
+   */
+  {
+    const ctx = await b.newContext()
+    const p = await ctx.newPage()
+    const r = await p.goto(`${BASE}/avaliar/token-que-nao-existe`, { waitUntil: 'networkidle' })
+
+    ok(r.status() === 200, 'responde 200 em vez de redirecionar para o login')
+    ok(!p.url().includes('/login'), `não passou pelo login (${p.url()})`)
+
+    /*
+     * `innerText`, e não `textContent`: o segundo inclui o conteúdo das tags
+     * `<script>`, e o payload do React Server Components traz `null` e
+     * `undefined` como parte da própria serialização. A primeira versão desta
+     * asserção falhou medindo as entranhas do framework em vez do texto da tela.
+     */
+    const visivel = await p.locator('body').innerText()
+    ok(visivel.includes('Este link não é válido'), 'mostra a recusa em português')
+    ok(
+      !/does not exist|not found|null|undefined|Error/i.test(visivel),
+      'e não vaza detalhe técnico na recusa',
+    )
+    await ctx.close()
+  }
+
   await b.close()
 } finally {
   servidor.kill('SIGTERM')

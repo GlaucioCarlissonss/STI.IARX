@@ -31,7 +31,7 @@ Você pediu para remodelar tudo. Eu discordo, e vou dizer por quê antes de
 executar — se depois de ler você mantiver, eu faço.
 
 O que o STI.IARX tem de mais caro é exatamente o que **não** se vê na tela:
-multi-tenancy com RLS forçado (162 policies validadas com papel sem `BYPASSRLS`),
+multi-tenancy com RLS forçado (166 policies validadas com papel sem `BYPASSRLS`),
 permissões granulares módulo → tela → ação, auditoria em 34 tabelas, isolamento
 provado em CI. Isso leva meses para refazer e é a parte que quebra silenciosamente
 quando malfeita.
@@ -237,16 +237,38 @@ paridade onde ela pesa na venda.
 
 ## 5. O plano
 
-### Onda 1 — Fechar a promessa atual (3–4 semanas)
+### Onda 1 — Fechar a promessa atual ✅ **executada**
 
-Nada aqui é do Milvus: é o que o STI já diz que faz e ainda não faz.
+Nada aqui era do Milvus: era o que o STI já dizia que faz e não fazia.
 
-1. **Canal de e-mail** (Resend ou similar) — destrava quatro módulos.
-2. **Job agendado** — destrava `auto_close_after_days`, que está na tabela, é
-   lido pela sessão e **não é executado por ninguém**.
-3. **Alertas de SLA** — o cliente compra "me avise antes de estourar".
-4. **Pesquisa de satisfação (CSAT)** — barata, e é o número que o cliente mostra
-   para o chefe dele.
+1. ✅ **Canal de e-mail** — `src/lib/mail/`, com caixa de saída e nova tentativa.
+2. ✅ **Trabalho agendado** — `POST /api/jobs/run` e as três funções da migração
+   0030. `auto_close_after_days` estava na tabela desde a 0002, era lido pela
+   sessão e **nunca tinha sido executado por ninguém**.
+3. ✅ **Alertas de SLA** — atenção, crítico e estourado.
+4. ✅ **Pesquisa de satisfação (CSAT)** — convite por link sem login, tela de
+   resultados em `/satisfacao`.
+
+Como ligar: [docs/13](13-notificacoes-e-trabalhos.md). Três variáveis e um
+agendador, e os três dependem de você.
+
+**Quatro decisões que valem registro:**
+
+- **Caixa de saída, não envio em linha.** Nenhuma trigger manda e-mail: elas
+  escrevem numa fila e um trabalho a esvazia. Provedor fora do ar não pode
+  derrubar a transação de negócio, nova tentativa precisa de estado, e sobra o
+  registro do que foi mandado — que é a primeira coisa que o suporte pede.
+- **A regra no SQL, a rede no TypeScript.** Quem decide a quem avisar são
+  funções no banco, onde os dados estão e onde as asserções de schema provam a
+  regra — 37 delas, na seção 34. Quem fala com o provedor é a aplicação.
+- **Idempotência por chave, não por esperança.** Cada mensagem carrega uma
+  `dedupe_key` com índice único, e a chave inclui o ciclo de reabertura do
+  chamado. Rodar o trabalho três vezes seguidas continua sendo um aviso;
+  chamado reaberto ganha um novo. "O cliente recebeu quarenta e-mails" é a falha
+  clássica deste recurso.
+- **Sem provedor configurado, a fila não é consumida.** Ausência de chave não é
+  erro — o sistema roda sem canal de e-mail, como rodou até agora. O que não
+  pode é fingir que enviou.
 
 ### Onda 2 — O agente, parte 1: inventário (6–8 semanas)
 

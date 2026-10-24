@@ -23,7 +23,7 @@ Vale listar antes, porque é o que normalmente custa caro e aqui já está pago:
 
 | O que | Por que importa comercialmente |
 |---|---|
-| **Multi-tenancy com RLS forçado**: 162 policies, `FORCE ROW LEVEL SECURITY`, validadas com papel **sem `BYPASSRLS`** | É a parte que quase todo MicroSaaS erra e que fica impossível de consertar depois do primeiro cliente. Aqui ela foi feita certo desde o começo, e é testada |
+| **Multi-tenancy com RLS forçado**: 166 policies, `FORCE ROW LEVEL SECURITY`, validadas com papel **sem `BYPASSRLS`** | É a parte que quase todo MicroSaaS erra e que fica impossível de consertar depois do primeiro cliente. Aqui ela foi feita certo desde o começo, e é testada |
 | **Isolamento provado em CI** (`.github/workflows/ci.yml`, job `database`) | "Nosso sistema isola os dados" deixa de ser promessa comercial e vira coisa demonstrável numa auditoria de cliente |
 | **Permissões granulares** módulo → tela → ação, 151 chaves, com teste que proíbe chave inerte | Vende sozinho em B2B: o cliente corporativo pergunta isso na segunda reunião |
 | **Auditoria em 34 tabelas** + histórico dedicado de ticket | Idem. E é requisito em qualquer cliente com processo interno |

@@ -252,9 +252,33 @@ e trilha completa em `integration_logs`.
 naturalmente). Escritas em Server Actions que validam com Zod, executam com o JWT do usuário
 (nunca `service_role`) e revalidam o cache.
 
-**Consequências.** `service_role` fica restrito às Edge Functions e à rota de TV — dois pontos
+**Consequências.** `service_role` fica restrito às Edge Functions e à rota de TV — pontos
 auditáveis, em vez de espalhado pela aplicação. Cada Server Action é um ponto natural para
 registrar `change_source = 'ui'` (ADR-008).
+
+**Emenda (migração 0030) — o terceiro uso, declarado.** Os trabalhos agendados
+(`app.job_sla_alerts`, `app.job_auto_close`, `app.job_satisfaction_invites`) são
+`security definer` com execução concedida **apenas a `service_role`**, e são
+chamados pela rota `POST /api/jobs/run`.
+
+O motivo é o mesmo do painel de TV: **um trabalho agendado não tem sessão de
+usuário por definição** — não existe `auth.uid()` às três da manhã.
+
+O que mantém o uso auditável, e por que isto é emenda e não exceção aberta em
+silêncio:
+
+- as três funções **não aceitam parâmetro de tenant** e devolvem apenas uma
+  contagem; não há como pedir a elas o dado de um cliente específico;
+- a única porta que as alcança tem **segredo próprio** (`JOBS_SECRET`), separado
+  de qualquer outra credencial, e a rota responde 503 quando ele não está
+  configurado — fechada, nunca aberta por esquecimento de variável;
+- `authenticated` **não** recebe execução, e há asserção de schema provando isso
+  (seção 34 de `supabase/tests/schema_test.sql`).
+
+**O que NÃO virou `service_role`:** responder à pesquisa de satisfação. Ela é
+feita por quem não tem login, e usa duas funções `security definer` com
+`search_path` fixo que aceitam só o token e devolvem só sucesso ou falha. Dar a
+chave mestra à aplicação para gravar uma nota de 1 a 5 seria desproporcional.
 
 ---
 

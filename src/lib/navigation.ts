@@ -92,6 +92,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: '/tickets/novo', label: 'Abrir ticket', permission: 'helpdesk.tickets.criar' },
       { href: '/filas', label: 'Filas', permission: 'helpdesk.filas.ver' },
       { href: '/sla', label: 'SLA e prazos', permission: 'sla.compliance.ver' },
+      /* "Satisfação" e não "CSAT": a sigla é jargão de quem mede, e quem abre a
+         tela quer saber se as pessoas gostaram do atendimento. */
+      { href: '/satisfacao', label: 'Satisfação', permission: 'helpdesk.satisfacao.ver' },
     ],
   },
   {

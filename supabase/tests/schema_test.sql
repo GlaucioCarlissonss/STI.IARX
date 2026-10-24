@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 151,
-    'catálogo de permissões tem as 151 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 153,
+    'catálogo de permissões tem as 153 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 151,
+  perform app.assert((select count(*) from public.permission_catalog) = 153,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -3510,6 +3510,328 @@ begin
     'nem o do inventário');
   perform app.assert((select count(*) from public.vw_internet_dashboard) = 0,
     'nem o dos links');
+end
+$$;
+reset role;
+
+-- =============================================================================
+\echo '=== 34. Notificação, trabalhos agendados e satisfação (0029/0030) ==='
+-- =============================================================================
+reset role;
+
+-- Estas asserções existem porque as três funções de trabalho decidem QUEM é
+-- avisado e QUANDO. Errar aqui não dá erro: dá silêncio quando devia avisar, ou
+-- quarenta e-mails quando devia avisar uma vez. Nenhum dos dois aparece em teste
+-- de tela.
+
+-- -----------------------------------------------------------------------------
+-- Alerta de SLA
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_dono   uuid := '22220000-0000-4000-8000-000000000002';  -- gestor de TI
+  v_fila   uuid;
+  v_prio   uuid;
+  v_ticket uuid;
+  v_antes  integer;
+begin
+  delete from public.email_outbox;
+
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+
+  insert into public.tickets (tenant_id, title, status, priority_id, queue_id, requester_id, assignee_id)
+  values (v_t, 'Estourado para teste de alerta', 'open', v_prio, v_fila, v_dono, v_dono)
+  returning id into v_ticket;
+
+  -- Força o estado: prazo no passado, nada resolvido. `app.sla_state` devolve
+  -- 'breached' por `now() > p_due`, sem depender dos percentuais do tenant.
+  update public.sla_tracking
+     set resolution_due_at = now() - interval '1 hour',
+         resolved_at = null, resolution_breached = false,
+         coverage = 'covered', is_paused = false
+   where ticket_id = v_ticket;
+
+  perform app.job_sla_alerts();
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where ticket_id = v_ticket and kind = 'sla_breach') = 1,
+    'prazo estourado enfileira UM aviso para o responsável');
+
+  -- A asserção que mais importa: rodar de novo não duplica. O cron pode
+  -- sobrepor, a chamada pode ser repetida, e ninguém recebe duas vezes.
+  perform app.job_sla_alerts();
+  perform app.job_sla_alerts();
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where ticket_id = v_ticket and kind = 'sla_breach') = 1,
+    'rodar três vezes continua sendo UM aviso — a chave de idempotência segura');
+
+  -- Ticket reaberto é novo ciclo de atendimento: merece novo aviso.
+  update public.tickets set reopened_count = reopened_count + 1 where id = v_ticket;
+  perform app.job_sla_alerts();
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where ticket_id = v_ticket and kind = 'sla_breach') = 2,
+    'mas ticket reaberto gera um novo, porque a chave inclui o ciclo');
+
+  -- Quem pediu silêncio recebe silêncio.
+  delete from public.email_outbox;
+  update public.tickets set reopened_count = reopened_count + 1 where id = v_ticket;
+  insert into public.notification_preferences (tenant_id, user_id, kind, enabled)
+  values (v_t, v_dono, 'sla_breach', false);
+  perform app.job_sla_alerts();
+  perform app.assert(
+    (select count(*) from public.email_outbox where ticket_id = v_ticket) = 0,
+    'opt-out silencia o aviso daquele tipo');
+  delete from public.notification_preferences where user_id = v_dono;
+
+  -- Ticket sem cobertura de SLA não tem prazo para estourar: avisar sobre ele
+  -- seria cobrar uma promessa que ninguém fez.
+  delete from public.email_outbox;
+  update public.tickets set reopened_count = reopened_count + 1 where id = v_ticket;
+  update public.sla_tracking set coverage = 'uncovered' where ticket_id = v_ticket;
+  perform app.job_sla_alerts();
+  perform app.assert(
+    (select count(*) from public.email_outbox where ticket_id = v_ticket) = 0,
+    'ticket sem cobertura de SLA não gera aviso');
+
+  -- Pausado: o relógio parou, o aviso também.
+  update public.sla_tracking set coverage = 'covered', is_paused = true where ticket_id = v_ticket;
+  perform app.job_sla_alerts();
+  perform app.assert(
+    (select count(*) from public.email_outbox where ticket_id = v_ticket) = 0,
+    'ticket com SLA pausado não gera aviso');
+
+  -- Sem responsável, o aviso vai para quem pode agir. É o caso perigoso: ticket
+  -- sem dono estourando em silêncio é a pior combinação possível.
+  update public.sla_tracking set is_paused = false where ticket_id = v_ticket;
+  update public.tickets set assignee_id = null, reopened_count = reopened_count + 1
+   where id = v_ticket;
+  perform app.job_sla_alerts();
+
+  select count(*) into v_antes from public.profiles
+   where tenant_id = v_t and is_active and role in ('gestor', 'admin') and email is not null;
+  perform app.assert(
+    (select count(*) from public.email_outbox where ticket_id = v_ticket) = v_antes,
+    'ticket sem responsável avisa todos os gestores e admins ativos');
+
+  delete from public.tickets where id = v_ticket;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Fechamento automático — a regra que existia desde a 0002 e nunca rodou
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_dono   uuid := '22220000-0000-4000-8000-000000000002';
+  v_fila   uuid;
+  v_prio   uuid;
+  v_ticket uuid;
+begin
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+
+  insert into public.tickets (tenant_id, title, status, priority_id, queue_id, requester_id, assignee_id)
+  values (v_t, 'Resolvido ontem', 'open', v_prio, v_fila, v_dono, v_dono)
+  returning id into v_ticket;
+
+  -- O caminho válido da máquina de estados: open → assigned → in_progress →
+  -- resolved. Pular etapa é recusado pela trigger `tickets_before_update`, e o
+  -- teste passa pelo mesmo caminho que a interface percorre.
+  update public.tickets set status = 'assigned' where id = v_ticket;
+  update public.tickets set status = 'in_progress' where id = v_ticket;
+  update public.tickets set status = 'resolved', resolved_at = now() - interval '10 days'
+   where id = v_ticket;
+
+  -- Com 0, o recurso está DESLIGADO para o tenant. Sem o filtro `> 0`, todo
+  -- ticket resolvido fecharia no mesmo instante em que foi resolvido, e a pessoa
+  -- perderia a janela para dizer "não resolveu, não".
+  update public.tenants set auto_close_after_days = 0 where id = v_t;
+  perform app.job_auto_close();
+  perform app.assert(
+    (select status from public.tickets where id = v_ticket) = 'resolved',
+    'auto_close_after_days = 0 desliga o fechamento automático');
+
+  update public.tenants set auto_close_after_days = 3 where id = v_t;
+  perform app.job_auto_close();
+  perform app.assert(
+    (select status from public.tickets where id = v_ticket) = 'closed',
+    'resolvido há 10 dias com prazo de 3 é fechado');
+  perform app.assert(
+    (select change_source from public.tickets where id = v_ticket) = 'system',
+    'e o fechamento fica marcado como do sistema, não como da interface');
+
+  -- Resolvido agora NÃO fecha: o prazo é a janela da pessoa para reabrir.
+  update public.tickets set status = 'in_progress' where id = v_ticket;
+  update public.tickets set status = 'resolved', resolved_at = now() where id = v_ticket;
+  perform app.job_auto_close();
+  perform app.assert(
+    (select status from public.tickets where id = v_ticket) = 'resolved',
+    'resolvido agora não é fechado — a janela de reabertura é respeitada');
+
+  delete from public.tickets where id = v_ticket;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Pesquisa de satisfação
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t       uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_quem    uuid := '22220000-0000-4000-8000-000000000004';  -- solicitante
+  v_dono    uuid := '22220000-0000-4000-8000-000000000002';
+  v_fila    uuid;
+  v_prio    uuid;
+  v_ticket  uuid;
+  v_corpo   text;
+  v_token   text;
+begin
+  delete from public.email_outbox;
+
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+
+  insert into public.tickets (tenant_id, title, status, priority_id, queue_id, requester_id, assignee_id)
+  values (v_t, 'Para avaliar', 'open', v_prio, v_fila, v_quem, v_dono)
+  returning id into v_ticket;
+
+  -- Resolvido ainda NÃO convida: entre resolvido e fechado a pessoa pode
+  -- reabrir, e perguntar "como foi?" para quem está prestes a dizer "não
+  -- resolveu" é a pior hora de perguntar.
+  update public.tickets set status = 'assigned' where id = v_ticket;
+  update public.tickets set status = 'in_progress' where id = v_ticket;
+  update public.tickets set status = 'resolved', resolved_at = now() where id = v_ticket;
+  perform app.job_satisfaction_invites();
+  perform app.assert(
+    not exists (select 1 from public.ticket_satisfaction where ticket_id = v_ticket),
+    'chamado resolvido ainda não recebe convite de avaliação');
+
+  update public.tickets set status = 'closed', closed_at = now() where id = v_ticket;
+  perform app.job_satisfaction_invites();
+  perform app.assert(
+    exists (select 1 from public.ticket_satisfaction where ticket_id = v_ticket),
+    'chamado encerrado recebe o convite');
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where ticket_id = v_ticket and kind = 'satisfaction_invite') = 1,
+    'e o e-mail vai para quem ABRIU o chamado');
+  perform app.assert(
+    (select to_email from public.email_outbox where ticket_id = v_ticket)
+      = (select email from public.profiles where id = v_quem),
+    'o destinatário é o solicitante, não o responsável');
+
+  perform app.job_satisfaction_invites();
+  perform app.assert(
+    (select count(*) from public.email_outbox where ticket_id = v_ticket) = 1,
+    'rodar de novo não convida duas vezes');
+
+  -- O token vai NO CORPO em claro e no banco só como hash. Vazamento do banco
+  -- não entrega os links de avaliação.
+  select body_text into v_corpo from public.email_outbox where ticket_id = v_ticket;
+  v_token := substring(v_corpo from '/avaliar/([0-9a-f]+)');
+  perform app.assert(v_token is not null and length(v_token) = 48,
+    'o corpo carrega o link com o token em claro');
+  perform app.assert(
+    (select token_hash from public.ticket_satisfaction where ticket_id = v_ticket)
+      = encode(digest(v_token, 'sha256'), 'hex'),
+    'e a tabela guarda só o hash dele');
+  perform app.assert(
+    not exists (select 1 from public.ticket_satisfaction where token_hash = v_token),
+    'o token em claro NÃO está na tabela');
+
+  -- Responder: nota fora da escala é recusada antes de qualquer gravação.
+  perform app.assert(public.submit_satisfaction(v_token, 6::smallint) = false,
+    'nota 6 é recusada — a escala é de 1 a 5');
+  perform app.assert(public.submit_satisfaction(v_token, 0::smallint) = false,
+    'nota 0 também');
+  perform app.assert(public.submit_satisfaction('token-inventado', 5::smallint) = false,
+    'token inexistente é recusado');
+
+  perform app.assert(public.submit_satisfaction(v_token, 4::smallint, '  ótimo  ') = true,
+    'o token certo grava a nota');
+  perform app.assert(
+    (select score from public.ticket_satisfaction where ticket_id = v_ticket) = 4,
+    'a nota gravada é a que foi enviada');
+  perform app.assert(
+    (select comment from public.ticket_satisfaction where ticket_id = v_ticket) = 'ótimo',
+    'e o comentário chega aparado');
+
+  -- Uma vez só. Sem isto, quem tivesse o link mudaria a nota quantas vezes
+  -- quisesse — e a média viraria a opinião de quem clica mais.
+  perform app.assert(public.submit_satisfaction(v_token, 1::smallint) = false,
+    'o mesmo token não responde duas vezes');
+  perform app.assert(
+    (select score from public.ticket_satisfaction where ticket_id = v_ticket) = 4,
+    'e a nota original não é sobrescrita');
+
+  -- Expirado: avaliação de dois meses atrás mede memória, não atendimento.
+  update public.ticket_satisfaction
+     set answered_at = null, score = null, expires_at = now() - interval '1 day'
+   where ticket_id = v_ticket;
+  perform app.assert(public.submit_satisfaction(v_token, 5::smallint) = false,
+    'link expirado não grava');
+
+  -- A leitura do convite devolve o que a tela precisa, e nada além.
+  update public.ticket_satisfaction set expires_at = now() + interval '30 days'
+   where ticket_id = v_ticket;
+  perform app.assert(
+    (select count(*) from public.satisfaction_invite(v_token)) = 1,
+    'satisfaction_invite encontra o convite pelo token');
+  perform app.assert(
+    (select count(*) from public.satisfaction_invite('nao-existe')) = 0,
+    'e não encontra nada com token inventado');
+
+  delete from public.tickets where id = v_ticket;
+  delete from public.email_outbox;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Quem pode disparar os trabalhos
+-- -----------------------------------------------------------------------------
+-- As três funções atravessam tenants por necessidade. Conceder execução a
+-- `authenticated` transformaria qualquer pessoa logada num disparador de e-mail
+-- para a base inteira — e essa é a diferença entre o terceiro uso DECLARADO da
+-- chave de serviço e um buraco.
+do $$
+begin
+  perform app.assert(
+    not has_function_privilege('authenticated', 'app.job_sla_alerts()', 'execute'),
+    'authenticated NÃO executa o trabalho de alerta de SLA');
+  perform app.assert(
+    not has_function_privilege('authenticated', 'app.job_auto_close()', 'execute'),
+    'nem o de fechamento automático');
+  perform app.assert(
+    not has_function_privilege('authenticated', 'app.job_satisfaction_invites()', 'execute'),
+    'nem o de convite de avaliação');
+  perform app.assert(
+    has_function_privilege('service_role', 'app.job_sla_alerts()', 'execute'),
+    'e service_role executa — é o terceiro uso declarado no ADR-011');
+
+  -- A resposta da pesquisa, ao contrário, é feita por quem não tem login.
+  perform app.assert(
+    has_function_privilege('anon', 'public.submit_satisfaction(text, smallint, text)', 'execute'),
+    'responder a pesquisa é permitido a quem não tem conta — é o ponto dela');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Quem pode LER a caixa de saída
+-- -----------------------------------------------------------------------------
+-- Ela contém o e-mail de outras pessoas.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000004","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.email_outbox) = 0,
+    'solicitante não lê a caixa de saída');
+  perform app.assert((select count(*) from public.job_runs) = 0,
+    'nem o registro de execuções, que é da plataforma');
 end
 $$;
 reset role;

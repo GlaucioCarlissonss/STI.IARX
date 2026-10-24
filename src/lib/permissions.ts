@@ -136,6 +136,15 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
      `atendente`, e o teto da chave é maior. */
   act('helpdesk', 'filas', 'configurar_regras', 'Configurar regras de roteamento', 'gestor'),
 
+  /* Satisfação (migração 0030). Teto `atendente`: quem atende precisa ver a nota
+     do próprio atendimento — esconder isso de quem fez o trabalho transformaria a
+     pesquisa em instrumento de cobrança em vez de retorno.
+
+     Não existe chave para RESPONDER: quem responde é o solicitante, por link com
+     token, muitas vezes sem conta no sistema. */
+  scr('helpdesk', 'satisfacao', 'Satisfação', 'atendente'),
+  act('helpdesk', 'satisfacao', 'ver', 'Consultar as avaliações', 'atendente'),
+
   /* --- SLA e filas (configuração) ---------------------------------------- */
   mod('sla', 'gestor'),
   scr('sla', 'compliance', 'Compliance de SLA', 'gestor'),
