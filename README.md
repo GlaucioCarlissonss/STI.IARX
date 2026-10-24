@@ -299,3 +299,4 @@ aceitável. A resolução depende de uma atualização do Next.
 | [09 — Conectar no Supabase](docs/09-conectar-no-supabase.md) | Passo a passo para ligar a plataforma no Supabase auto-hospedado do cliente, e as duas regras de chave que não podem ser quebradas |
 | [10 — Auditoria e repaginação](docs/10-auditoria-e-repaginacao.md) | As sete entregas de revisão do código e da identidade visual, com o que mudou, o que não mudou e por quê |
 | [11 — Plano de comercialização](docs/11-plano-de-comercializacao.md) | O que falta para virar MicroSaaS vendável: diagnóstico com evidência, plano em fases e a recomendação sobre web, desktop e mobile |
+| [12 — Paridade com o Milvus](docs/12-paridade-milvus.md) | Inventário do concorrente com fonte, mapa de lacunas, especificação do agente de inventário e plano em seis ondas |
