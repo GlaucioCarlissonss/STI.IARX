@@ -184,6 +184,17 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('inventario', 'ativos', 'anexar', 'Anexar nota ou foto', 'gestor'),
   act('inventario', 'ativos', 'remover_anexo', 'Remover anexo do ativo', 'gestor'),
 
+  /* Tela própria, e não uma ação dentro de `ativos`: a frota com agente responde
+     outra pergunta. `ativos` é o patrimônio — o que a empresa comprou; `agentes`
+     é o que está ligado e falando agora, com máquina muda e divergência entre o
+     que foi digitado e o que a máquina diz. Quem faz inventário patrimonial e
+     quem cuida do parque em operação não são sempre a mesma pessoa. */
+  scr('inventario', 'agentes', 'Agentes nas máquinas', 'visualizador'),
+  act('inventario', 'agentes', 'ver', 'Consultar a frota com agente', 'visualizador'),
+  /* `gerenciar` cobre inscrever e revogar porque as duas são a mesma decisão
+     vista dos dois lados: quem pode pôr uma máquina na frota pode tirá-la. */
+  act('inventario', 'agentes', 'gerenciar', 'Inscrever e revogar máquinas', 'gestor'),
+
   /* --- Telefonia --------------------------------------------------------- */
   mod('telefonia', 'visualizador'),
   scr('telefonia', 'linhas', 'Linhas telefônicas', 'visualizador'),

@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  O instalador do agente para Windows.
+
+  ============================================================================
+  POR QUE TAREFA AGENDADA, E NÃO SERVIÇO DO WINDOWS
+  ============================================================================
+  Um serviço do Windows precisa falar o protocolo do Service Control Manager:
+  reportar "estou subindo", "estou no ar", responder a parada dentro do prazo.
+  Um executável comum colocado como serviço é MORTO pelo SCM por não reportar, e
+  o sintoma é "o serviço iniciou e parou imediatamente" — uma das mensagens mais
+  inúteis que o Windows produz.
+
+  Falar esse protocolo em Go exige `golang.org/x/sys/windows/svc`. É um módulo
+  de terceiro num programa que roda como SYSTEM na máquina do cliente, e o
+  `go.mod` deste projeto explica por que a conta de dependências é zero.
+
+  Duas tarefas agendadas resolvem o mesmo problema e são melhores em um ponto
+  que importa: **uma execução que falha é repetida pela próxima**. Um serviço que
+  morre precisa de uma política de reinício que alguém tem de configurar — e que
+  ninguém configura.
+
+  A contrapartida honesta: o agente aparece no Agendador de Tarefas e não em
+  services.msc. Para quem administra o parque, isso é transparência, não perda.
+
+  ============================================================================
+  INSTALAÇÃO SILENCIOSA (GPO)
+  ============================================================================
+    msiexec /i sti-agente.msi /qn SERVIDOR="https://sti.iartech.cloud" TOKEN="inv_..."
+
+  Sem instalação silenciosa o cliente corporativo não instala em escala, e sem
+  isso o módulo de agente não existe na prática. É por isso que as duas
+  propriedades são parâmetros e não perguntas numa tela.
+
+  ============================================================================
+  ESTE ARQUIVO PRECISA DO WiX DE VERDADE (candle + light), EM WINDOWS
+  ============================================================================
+  Tentei construí-lo com `wixl`, do msitools, que roda em Linux. Ele PRODUZ um
+  .msi — e **descarta as ações personalizadas em silêncio**, porque não
+  implementa `SetProperty` nem `CustomAction/@Directory`. O resultado é um
+  instalador que copia o executável e não grava a configuração, não cria as
+  tarefas e não coleta nada: um MSI que parece correto e não faz o trabalho.
+
+  Isso está escrito aqui porque descobrir em implantação é diferente de descobrir
+  lendo. O caminho verificável hoje é `instalar.ps1`, ao lado deste arquivo, que
+  faz exatamente o mesmo e roda num script de inicialização de GPO. O MSI é o
+  degrau seguinte, e de qualquer forma precisa de uma máquina Windows — a
+  assinatura Authenticode, sem a qual o SmartScreen barra, também exige.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="STI — Agente de Inventário"
+           Language="1046"
+           Version="$(var.Versao)"
+           Manufacturer="IAR Technology"
+           UpgradeCode="7F3C2A10-6B4E-4F8A-9D21-5C7E8B9A1D40">
+
+    <Package InstallerVersion="300"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="Agente de inventário do STI"
+             Comments="Coleta inventário de hardware e software. Não captura tela, arquivo nem navegação." />
+
+    <MajorUpgrade
+      DowngradeErrorMessage="Já existe uma versão mais nova do agente nesta máquina."
+      Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!--
+      As duas propriedades que a GPO passa. Sem valor padrão de propósito: um
+      padrão apontando para um servidor de exemplo seria o valor que fica em
+      produção.
+    -->
+    <Property Id="SERVIDOR" Secure="yes" />
+    <Property Id="TOKEN" Secure="yes" />
+
+    <!--
+      Instalar sem as duas é instalar um agente que nunca vai falar com ninguém.
+      Falhar aqui, com mensagem, é melhor que instalar calado e deixar o técnico
+      descobrir dali a uma semana que 30 máquinas não aparecem na tela.
+    -->
+    <Condition Message="Faltam os parâmetros SERVIDOR e TOKEN. Use: msiexec /i sti-agente.msi /qn SERVIDOR=&quot;https://seu-servidor&quot; TOKEN=&quot;inv_...&quot;">
+      <![CDATA[Installed OR (SERVIDOR AND TOKEN)]]>
+    </Condition>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="DirFabricante" Name="STI">
+          <Directory Id="INSTALLFOLDER" Name="Agente" />
+        </Directory>
+      </Directory>
+      <!--
+        O estado fica em ProgramData, e não em Arquivos de Programas: o agente
+        escreve a identidade e a fila, e um diretório sob Arquivos de Programas é
+        somente leitura para tudo que não seja instalador. Agente que precisa de
+        permissão de escrita em Arquivos de Programas é agente que pede elevação
+        em cada coleta.
+      -->
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="DadosFabricante" Name="STI">
+          <Directory Id="DADOSFOLDER" Name="agente" />
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="CompBinario" Guid="*">
+        <File Id="FileAgente"
+              Name="sti-agente.exe"
+              Source="$(var.Binario)"
+              KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="DADOSFOLDER">
+      <Component Id="CompConfig" Guid="*">
+        <CreateFolder />
+        <!--
+          O arquivo de configuração é escrito pelo instalador com os parâmetros da
+          GPO. Ele NÃO contém a credencial da máquina: contém o token do lote, que
+          tem validade, teto de uso e revogação, e serve só para a máquina trocar
+          por um token próprio na primeira execução.
+
+          A credencial de verdade (identidade.json) é escrita pelo agente, com
+          permissão restrita, e nunca passa pelo instalador nem pela GPO.
+        -->
+        <IniFile Id="MarcadorConfig"
+                 Action="createLine"
+                 Directory="DADOSFOLDER"
+                 Name="instalado.ini"
+                 Section="agente"
+                 Key="versao"
+                 Value="$(var.Versao)" />
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\STI\Agente"
+                       Name="Instalado"
+                       Type="string"
+                       Value="$(var.Versao)"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!--
+      Escreve agente.json com os parâmetros recebidos.
+
+      Em PowerShell e não em XML do WiX porque o arquivo é JSON, e montar JSON
+      com substituição de texto num `IniFile` produziria um arquivo malformado no
+      dia em que um token contivesse uma aspa. `ConvertTo-Json` escapa.
+    -->
+    <SetProperty Id="GravarConfig"
+                 Value="&quot;powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$c=@{servidor='[SERVIDOR]';token_inscricao='[TOKEN]';intervalo_coleta_min=1440;intervalo_envio_min=10;auto_atualizar=$false}; $c | ConvertTo-Json -Compress | Set-Content -Path '[DADOSFOLDER]agente.json' -Encoding UTF8&quot;"
+                 Before="GravarConfig"
+                 Sequence="execute" />
+    <CustomAction Id="GravarConfig"
+                  BinaryKey="WixCA"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Return="check"
+                  Impersonate="no" />
+
+    <!--
+      As duas tarefas agendadas.
+
+      · Batimento, de 10 em 10 minutos: esvazia a fila e diz "estou viva". É
+        barato — algumas centenas de bytes — e é o que mantém a tela de frota
+        sabendo quem está mudo.
+
+      · Inventário, uma vez por dia às 3h, com início atrasado aleatório de até
+        uma hora: a coleta varre o registro em busca de programas instalados, e
+        fazer isso 144 vezes por dia seria CPU que o usuário sente para produzir
+        143 vezes o mesmo inventário. O atraso aleatório existe porque 200
+        máquinas da mesma GPO coletariam no mesmo minuto, e o servidor receberia
+        200 inventários de uma vez.
+
+      `/RU SYSTEM` porque a coleta precisa ler o registro da máquina inteira, não
+      o do usuário que estiver logado — e porque a tarefa tem de rodar com
+      ninguém logado.
+    -->
+    <SetProperty Id="CriarTarefaBatimento"
+                 Value="&quot;schtasks.exe&quot; /Create /F /TN &quot;STI\Agente - batimento&quot; /SC MINUTE /MO 10 /RU SYSTEM /RL HIGHEST /TR &quot;\&quot;[INSTALLFOLDER]sti-agente.exe\&quot; --batimento&quot;"
+                 Before="CriarTarefaBatimento"
+                 Sequence="execute" />
+    <CustomAction Id="CriarTarefaBatimento"
+                  BinaryKey="WixCA"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Return="check"
+                  Impersonate="no" />
+
+    <SetProperty Id="CriarTarefaInventario"
+                 Value="&quot;schtasks.exe&quot; /Create /F /TN &quot;STI\Agente - inventario&quot; /SC DAILY /ST 03:00 /RI 0 /RU SYSTEM /RL HIGHEST /TR &quot;\&quot;[INSTALLFOLDER]sti-agente.exe\&quot; --uma-vez&quot;"
+                 Before="CriarTarefaInventario"
+                 Sequence="execute" />
+    <CustomAction Id="CriarTarefaInventario"
+                  BinaryKey="WixCA"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Return="check"
+                  Impersonate="no" />
+
+    <!--
+      A primeira coleta sai na hora da instalação.
+
+      É decisão de produto, não de engenharia: quem acabou de instalar abre a tela
+      para ver se funcionou. Esperar as 3h da manhã faria a tela ficar vazia por
+      um dia, e um recurso que parece quebrado no primeiro minuto não ganha uma
+      segunda chance. `Return="ignore"` porque a máquina pode estar sem rede
+      justamente durante a instalação — e isso não pode fazer a instalação falhar.
+    -->
+    <SetProperty Id="PrimeiraColeta"
+                 Value="&quot;[INSTALLFOLDER]sti-agente.exe&quot; --uma-vez"
+                 Before="PrimeiraColeta"
+                 Sequence="execute" />
+    <CustomAction Id="PrimeiraColeta"
+                  BinaryKey="WixCA"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Return="ignore"
+                  Impersonate="no" />
+
+    <!-- Na desinstalação as tarefas saem. `Return="ignore"`: tarefa já removida
+         à mão não pode impedir a desinstalação. -->
+    <SetProperty Id="RemoverTarefas"
+                 Value="&quot;cmd.exe&quot; /c schtasks /Delete /F /TN &quot;STI\Agente - batimento&quot; &amp; schtasks /Delete /F /TN &quot;STI\Agente - inventario&quot;"
+                 Before="RemoverTarefas"
+                 Sequence="execute" />
+    <CustomAction Id="RemoverTarefas"
+                  BinaryKey="WixCA"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Return="ignore"
+                  Impersonate="no" />
+
+    <Feature Id="Principal" Title="Agente de Inventário" Level="1">
+      <ComponentRef Id="CompBinario" />
+      <ComponentRef Id="CompConfig" />
+    </Feature>
+
+    <InstallExecuteSequence>
+      <Custom Action="RemoverTarefas" Before="RemoveFiles">REMOVE="ALL"</Custom>
+      <Custom Action="GravarConfig" After="InstallFiles">NOT Installed</Custom>
+      <Custom Action="CriarTarefaBatimento" After="GravarConfig">NOT Installed</Custom>
+      <Custom Action="CriarTarefaInventario" After="CriarTarefaBatimento">NOT Installed</Custom>
+      <Custom Action="PrimeiraColeta" After="CriarTarefaInventario">NOT Installed</Custom>
+    </InstallExecuteSequence>
+  </Product>
+</Wix>

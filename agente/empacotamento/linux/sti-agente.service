@@ -1,0 +1,68 @@
+# Unidade do systemd para o agente de inventário do STI.
+#
+# Em Linux e macOS o agente roda como processo contínuo (o laço de `--servico`),
+# e não como tarefa agendada: systemd e launchd sabem supervisionar processo —
+# reiniciar, limitar, registrar — e é o que eles fazem melhor que um agendador.
+# No Windows a escolha é a oposta, e o porquê está em `empacotamento/windows/`.
+
+[Unit]
+Description=STI — Agente de Inventário
+Documentation=https://github.com/GlaucioCarlissonss/STI.IARX/blob/main/agente/README.md
+# Depois da rede, mas sem exigir que ela esteja no ar: a máquina pode subir sem
+# rede, e o agente tem de subir junto e esperar. `After` sem `Requires` é
+# exatamente isso.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sti-agente
+Restart=always
+# Dez segundos entre tentativas. Sem isso, um agente que falha ao subir (disco
+# cheio, configuração malformada) entraria num laço de reinício que enche o
+# journal mais rápido que o disco aguenta.
+RestartSec=10
+
+# --- O que este serviço NÃO pode fazer ---------------------------------------
+# Ele roda como root porque precisa ler o DMI e a lista de pacotes. Rodar como
+# root é o que torna o resto desta seção obrigatório, e não opcional: um agente
+# comprometido com root e sem limite nenhum é a máquina inteira.
+#
+# `ProtectSystem=strict` deixa todo o sistema de arquivos somente leitura; o
+# único lugar onde ele escreve é o diretório de estado, liberado logo abaixo.
+ProtectSystem=strict
+StateDirectory=sti-agente
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/sti-agente
+
+ProtectHome=yes
+PrivateTmp=yes
+# Sem acesso a dispositivo nenhum: a coleta lê /sys e /proc, que não são
+# dispositivos. Um agente de inventário que precisasse de /dev estaria fazendo
+# outra coisa.
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+NoNewPrivileges=yes
+# Só IPv4/IPv6: o agente fala HTTPS e mais nada.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Teto de memória. A lista de pacotes de uma estação de desenvolvimento chega a
+# milhares de entradas, e 256 MB é folgado para isso — e é um teto que impede um
+# defeito de consumir a máquina do usuário.
+MemoryMax=256M
+# Peso baixo de CPU: a coleta nunca deve competir com o que a pessoa está fazendo.
+CPUWeight=20
+IOWeight=20
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-62 tabelas e 19 views em `public`, com 166 policies de RLS, mais 3 policies em
+66 tabelas e 20 views em `public`, com 171 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
@@ -171,7 +171,7 @@ um ticket era impossível. A 0019 acrescenta o bucket e a autorização.
 
 A convenção de caminho é `{tenant_id}/{entidade}/{entity_id}/{arquivo}`, e não é
 nova: `supabase/seed.sql` já gravava assim. O primeiro segmento ser o tenant é o
-que dá ao Storage a mesma fronteira de isolamento das 162 policies de `public`
+que dá ao Storage a mesma fronteira de isolamento das policies de `public`
 (ADR-002), em vez de uma paralela.
 
 O bucket **não** usa `service_role`: o upload sai pelo cliente da sessão, então as
@@ -257,6 +257,64 @@ Entram junto cinco índices parciais `(tenant_id, <ordem>, id) where deleted_at 
 null`, um por tabela paginada: `.range()` com `order by` sem índice obriga o
 Postgres a ordenar a tabela inteira para devolver 50 linhas.
 
+### Notificação, trabalhos e satisfação (0029–0030)
+Quatro tabelas, e a divisão que elas materializam.
+
+| Tabela | Papel |
+|---|---|
+| `email_outbox` | A fila. Escrita pelas regras em SQL, esvaziada pela aplicação. |
+| `notification_preferences` | Quem pediu silêncio, e de quê. Legível **só pela própria pessoa**. |
+| `ticket_satisfaction` | Nota de 1 a 5, comentário, e o token do convite (só o hash). |
+| `job_runs` | Uma linha por execução de trabalho agendado. É da plataforma, não do tenant. |
+
+A fronteira entre SQL e TypeScript é `email_outbox`: a regra de QUEM avisar vive
+nas funções `app.job_*`, onde os dados estão e onde as asserções de schema
+conseguem prová-la; a conversa com o provedor vive na aplicação, porque o banco
+não faz chamada de rede.
+
+A `dedupe_key` com índice único é o que impede "o cliente recebeu quarenta
+e-mails" — o trabalho pode rodar duas vezes no mesmo minuto.
+
+### O agente nas máquinas (0031)
+Quatro tabelas e uma view, e a decisão que mais importa é sobre o que **não** está
+aqui.
+
+| Tabela | Papel |
+|---|---|
+| `agent_enrollments` | Token do lote: prazo, teto de máquinas, filial padrão. |
+| `agent_devices` | Uma linha por máquina. `device_uuid` é a identidade estável; `token_hash` é a credencial dela. |
+| `agent_inventory_snapshots` | Inventário completo em `jsonb`, **uma linha por mudança** — não por coleta. |
+| `agent_software` | Software instalado, normalizado. Desinstalado não é apagado. |
+| `vw_agent_fleet` | A frota conciliada, com `branch_id` e o limiar de "silencioso". |
+
+**Não existe `agent_metrics_raw` nem `agent_metrics_hourly`.** Métrica de
+desempenho é série temporal e não cabe na linha do ativo: 200 máquinas × 1
+amostra por minuto são 288 mil linhas por dia, e todo `update` de métrica
+dispararia a trigger de auditoria. Elas são da Onda 3, e não foram criadas
+vazias "para já deixar prontas" — a forma certa de uma série temporal depende de
+como o gráfico vai lê-la.
+
+Três coisas desta migração valem registro:
+
+1. **`app.audit_ignored_columns()` ganhou `last_seen_at`, `last_snapshot_hash` e
+   `last_snapshot_at`.** São carimbos de contato mecânico, da mesma natureza de
+   `updated_at`, que já estava na lista. Sem isso, 200 máquinas batendo de 10 em
+   10 minutos produziriam 28.800 linhas de auditoria por dia dizendo "o relógio
+   andou", e a trilha passaria a ter 99,9% de ruído. O que o agente faz de
+   relevante — inscrever, revogar, conciliar, trocar de versão — continua
+   auditado, porque são colunas diferentes.
+
+2. **`app.agent_serial_utilizavel()` filtra o número de série antes de ele virar
+   chave.** Placa de montagem branca e máquina virtual vêm com texto de fábrica
+   no lugar do serial; casar por esse valor juntaria as 80 máquinas do mesmo lote
+   num ativo só.
+
+3. **Nenhum quarto uso de `service_role`.** As três funções que o agente alcança
+   (`agent_enroll`, `agent_ingest_inventory`, `agent_heartbeat`) são
+   `security definer` concedidas a `anon`, pelo mesmo raciocínio de
+   `submit_satisfaction`: a função é a única porta, só aceita o token, e **não
+   existe parâmetro de tenant para falsificar** — o tenant é derivado do token.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -339,7 +397,7 @@ em alguns perfis e fosse esquecida em outros.
 | `trg_protect_default_queue` | `queues` | protege a fila padrão |
 | `trg_assets_history` | `it_assets` | gera eventos de lifecycle |
 | `trg_profiles_no_escalation` | `profiles` | bloqueia auto-promoção de papel |
-| `trg_*_audit` | 35 tabelas | auditoria global |
+| `trg_*_audit` | 37 tabelas | auditoria global |
 | `trg_branches_geocode_staleness` | `branches` | invalida a coordenada quando o endereço muda |
 | `trg_tenants_seed_access_profiles` | `tenants` | cria os 9 perfis do sistema no nascimento do tenant |
 | `trg_profiles_default_access_profile` | `profiles` | atribui o perfil correspondente ao papel |

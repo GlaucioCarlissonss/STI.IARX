@@ -270,16 +270,48 @@ agendador, e os três dependem de você.
   erro — o sistema roda sem canal de e-mail, como rodou até agora. O que não
   pode é fingir que enviou.
 
-### Onda 2 — O agente, parte 1: inventário (6–8 semanas)
+### Onda 2 — O agente, parte 1: inventário ✅ **executada**
 
-5. Tabelas, RLS, *enrollment* e endpoint de ingestão.
-6. Agente em Go: coleta de inventário, fila local, autoatualização.
-7. Conciliação com `it_assets` — **sem duplicar nada**.
-8. Telas: máquinas vistas, o que mudou, agente mudo.
-9. Instalador MSI com GPO. **Sem isto o cliente corporativo não instala.**
+Guia de uso em [docs/14](14-agente-de-inventario.md); o agente em
+[`agente/README.md`](../agente/README.md).
+
+5. ✅ Tabelas, RLS, *enrollment* e endpoint de ingestão (migração 0031).
+6. ✅ Agente em Go: coleta de inventário, fila local, autoatualização assinada.
+7. ✅ Conciliação com `it_assets` — **sem duplicar nada**.
+8. ✅ Telas: `/inventario/agentes` e o detalhe da máquina.
+9. ⚠️ Instalador: **PowerShell pronto e verificado**; MSI com a fonte escrita e
+   dependente de uma máquina Windows com WiX.
 
 > Fim da Onda 2 é o momento em que o discurso comercial muda: o inventário deixa
 > de ser digitado.
+
+**O que mudou em relação ao que estava planejado aqui, e por quê:**
+
+- **Nenhum quarto uso de `service_role`.** O esboço previa "uma Edge Function de
+  ingestão", que naturalmente usaria a chave de serviço. As duas funções de
+  ingestão são `security definer` concedidas a `anon`, pelo mesmo raciocínio da
+  pesquisa de satisfação: a função é a única porta, só aceita o token da máquina,
+  e **não existe parâmetro de tenant para alguém falsificar**. Dar a chave mestra
+  a um serviço que roda em 200 computadores de cliente seria desproporcional.
+
+- **O batimento é uma rota separada da ingestão.** Não estava no esboço, e sem ele
+  a conta não fecha: 200 máquinas × 144 contatos por dia × meio megabyte de lista
+  de software seriam **14 GB por dia** para transportar um dado que não mudou.
+
+- **`agent_metrics_*` e `agent_alerts` NÃO foram criadas.** Elas são da Onda 3, e
+  criar tabela vazia uma onda antes não adianta: a forma certa de uma série
+  temporal depende de como o gráfico vai lê-la.
+
+- **Tarefa agendada no Windows, serviço no Linux e no macOS.** Falar o protocolo do
+  Service Control Manager em Go exige um módulo de terceiro, num programa que roda
+  como SYSTEM na máquina do cliente. Duas tarefas fazem o mesmo trabalho, sem
+  dependência, e **uma execução que falha é repetida pela próxima** — enquanto um
+  serviço que morre precisa de uma política de reinício que ninguém configura.
+
+- **O filtro de número de série de fábrica.** Não estava previsto e é a asserção
+  mais importante do arquivo de testes: placa de montagem branca vem com *"To Be
+  Filled By O.E.M."* no lugar do serial, e casar por esse valor juntaria as 80
+  máquinas do lote num ativo só.
 
 ### Onda 3 — O agente, parte 2: desempenho e alertas (4–5 semanas)
 

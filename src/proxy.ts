@@ -28,6 +28,16 @@ import { NextResponse, type NextRequest } from 'next/server'
  * `/api/jobs` NÃO entra: ele tem o próprio segredo (`JOBS_SECRET`), e deixá-lo
  * sob a guarda de sessão não atrapalha — o agendador não manda cookie, mas
  * também não é redirecionado, porque a rota responde 401 antes disso.
+ *
+ * `/api/agent` entra, e precisa entrar: quem chama é o agente de inventário
+ * rodando como serviço em computador de cliente. Ele não tem navegador, não tem
+ * cookie e não segue redirecionamento — se esta rota fosse guardada pela sessão,
+ * a resposta seria um 307 para `/login` que o agente registraria como "servidor
+ * respondeu algo estranho" e repetiria para sempre.
+ *
+ * O que autoriza ali é o token DA MÁQUINA, conferido por função `security
+ * definer` no banco. É o mesmo desenho de `/avaliar`, e pelo mesmo motivo: quem
+ * chama não é uma pessoa com conta.
  */
 const PUBLIC_PREFIXES = [
   '/login',
@@ -36,6 +46,7 @@ const PUBLIC_PREFIXES = [
   '/avaliar',
   '/api/health',
   '/api/jobs',
+  '/api/agent',
   '/auth',
 ]
 

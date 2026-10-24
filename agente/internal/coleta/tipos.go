@@ -1,0 +1,128 @@
+// Package coleta monta o inventário da máquina.
+package coleta
+
+// As estruturas abaixo são o contrato com o servidor. Ele está escrito duas
+// vezes — aqui e em `src/lib/agent/inventario.ts` — porque as duas pontas não
+// compartilham código, e vão ter de ser mudadas juntas. O arquivo TypeScript é o
+// documento normativo: ele é quem recusa um inventário malformado.
+//
+// Todo campo leva `omitempty`. Não é economia de bytes: o servidor calcula o
+// hash do conteúdo para decidir se o inventário mudou, e um campo presente com
+// valor vazio num dia e ausente no outro mudaria o hash sem nada ter mudado na
+// máquina — gerando uma linha de histórico por dia com a mesma informação, que é
+// o defeito que o hash existe para evitar.
+//
+// Pela mesma razão, NADA aqui carrega carimbo de hora. A hora da coleta viaja
+// fora do objeto hasheado, em `coletado_em`.
+
+type Sistema struct {
+	Hostname      string `json:"hostname"`
+	OS            string `json:"os,omitempty"`
+	OSVersion     string `json:"os_version,omitempty"`
+	OSBuild       string `json:"os_build,omitempty"`
+	Chassi        string `json:"chassi,omitempty"`
+	Fabricante    string `json:"fabricante,omitempty"`
+	Modelo        string `json:"modelo,omitempty"`
+	NumeroSerie   string `json:"numero_serie,omitempty"`
+	ServiceTag    string `json:"service_tag,omitempty"`
+	Dominio       string `json:"dominio,omitempty"`
+	UsuarioLogado string `json:"usuario_logado,omitempty"`
+	TempoLigadoS  int64  `json:"tempo_ligado_s,omitempty"`
+}
+
+type Processador struct {
+	Modelo        string `json:"modelo,omitempty"`
+	Nucleos       int    `json:"nucleos,omitempty"`
+	Threads       int    `json:"threads,omitempty"`
+	FrequenciaMHz int    `json:"frequencia_mhz,omitempty"`
+	Arquitetura   string `json:"arquitetura,omitempty"`
+}
+
+type Pente struct {
+	Slot          string `json:"slot,omitempty"`
+	TamanhoBytes  int64  `json:"tamanho_bytes,omitempty"`
+	Tipo          string `json:"tipo,omitempty"`
+	VelocidadeMHz int    `json:"velocidade_mhz,omitempty"`
+	Fabricante    string `json:"fabricante,omitempty"`
+}
+
+type Memoria struct {
+	TotalBytes int64   `json:"total_bytes,omitempty"`
+	Pentes     []Pente `json:"pentes,omitempty"`
+}
+
+type Disco struct {
+	Dispositivo  string `json:"dispositivo,omitempty"`
+	Modelo       string `json:"modelo,omitempty"`
+	TamanhoBytes int64  `json:"tamanho_bytes,omitempty"`
+	Tipo         string `json:"tipo,omitempty"`
+	// Saude resume o SMART em três estados. Os 30 atributos crus não respondem
+	// "preciso trocar este disco?" para ninguém que não seja especialista, e é
+	// essa a pergunta que a tela faz.
+	Saude string `json:"saude,omitempty"`
+}
+
+// Volume NÃO carrega o espaço livre no inventário.
+//
+// Espaço livre é métrica, não configuração: muda a cada hora, e guardá-lo aqui
+// faria o hash do inventário mudar a cada coleta — 365 linhas de histórico por
+// ano, por máquina, todas dizendo "o disco está um pouco mais cheio". O tamanho
+// total fica, porque esse é configuração. O livre entra na Onda 3, na série
+// temporal, que é onde ele pertence.
+type Volume struct {
+	Ponto           string `json:"ponto,omitempty"`
+	SistemaArquivos string `json:"sistema_arquivos,omitempty"`
+	TotalBytes      int64  `json:"total_bytes,omitempty"`
+}
+
+type Rede struct {
+	Nome string   `json:"nome,omitempty"`
+	MAC  string   `json:"mac,omitempty"`
+	IPs  []string `json:"ips,omitempty"`
+	Tipo string   `json:"tipo,omitempty"`
+}
+
+type Video struct {
+	Modelo       string `json:"modelo,omitempty"`
+	MemoriaBytes int64  `json:"memoria_bytes,omitempty"`
+	Driver       string `json:"driver,omitempty"`
+}
+
+type BIOS struct {
+	Fabricante string `json:"fabricante,omitempty"`
+	Versao     string `json:"versao,omitempty"`
+	Data       string `json:"data,omitempty"`
+	Modo       string `json:"modo,omitempty"`
+	SecureBoot *bool  `json:"secure_boot,omitempty"`
+}
+
+type Programa struct {
+	Nome        string `json:"nome"`
+	Versao      string `json:"versao,omitempty"`
+	Fabricante  string `json:"fabricante,omitempty"`
+	InstaladoEm string `json:"instalado_em,omitempty"`
+}
+
+type Agente struct {
+	Versao     string `json:"versao,omitempty"`
+	Plataforma string `json:"plataforma,omitempty"`
+}
+
+type Inventario struct {
+	Sistema     Sistema      `json:"sistema"`
+	Processador *Processador `json:"processador,omitempty"`
+	Memoria     *Memoria     `json:"memoria,omitempty"`
+	Discos      []Disco      `json:"discos,omitempty"`
+	Volumes     []Volume     `json:"volumes,omitempty"`
+	Rede        []Rede       `json:"rede,omitempty"`
+	Video       []Video      `json:"video,omitempty"`
+	BIOS        *BIOS        `json:"bios,omitempty"`
+	Software    []Programa   `json:"software,omitempty"`
+	Agente      *Agente      `json:"agente,omitempty"`
+}
+
+// Envelope é o que vai no corpo da requisição.
+type Envelope struct {
+	ColetadoEm string     `json:"coletado_em"`
+	Inventario Inventario `json:"inventario"`
+}

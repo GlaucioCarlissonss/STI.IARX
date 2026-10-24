@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 153,
-    'catálogo de permissões tem as 153 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 156,
+    'catálogo de permissões tem as 156 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 153,
+  perform app.assert((select count(*) from public.permission_catalog) = 156,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -3832,6 +3832,706 @@ begin
     'solicitante não lê a caixa de saída');
   perform app.assert((select count(*) from public.job_runs) = 0,
     'nem o registro de execuções, que é da plataforma');
+end
+$$;
+reset role;
+
+-- =============================================================================
+\echo '=== 35. O agente de inventário: inscrição, ingestão e conciliação (0031) ==='
+-- =============================================================================
+reset role;
+
+-- Estas asserções existem porque a conciliação é a única parte deste sistema cujo
+-- erro é SILENCIOSO E CARO ao mesmo tempo: casar errado não dá exceção, não enche
+-- log e não aparece em teste de tela — aparece como "meu computador está duas
+-- vezes no inventário", dito pelo cliente, depois de 200 máquinas instaladas.
+
+-- -----------------------------------------------------------------------------
+-- 35.1 O filtro de número de série de fábrica
+-- -----------------------------------------------------------------------------
+-- É a asserção mais importante do arquivo. Placa-mãe de montagem branca e máquina
+-- virtual vêm com texto de preenchimento no lugar do serial, e casar por esse
+-- valor juntaria o lote inteiro num ativo só.
+do $$
+begin
+  perform app.assert(app.agent_serial_utilizavel('5CG9274QXZ'),
+    'serial de verdade passa');
+  perform app.assert(app.agent_serial_utilizavel('VMware-42 3f 1a'),
+    'serial de máquina virtual com formato próprio também passa');
+
+  perform app.assert(not app.agent_serial_utilizavel(null),
+    'nulo não serve de chave');
+  perform app.assert(not app.agent_serial_utilizavel('   '),
+    'nem espaço em branco');
+  perform app.assert(not app.agent_serial_utilizavel('123'),
+    'nem três caracteres — curto demais para identificar máquina');
+  perform app.assert(not app.agent_serial_utilizavel('To Be Filled By O.E.M.'),
+    'o texto da Dell/AMI não é número de série');
+  perform app.assert(not app.agent_serial_utilizavel('to be filled by o.e.m.'),
+    'e o filtro não depende de caixa');
+  perform app.assert(not app.agent_serial_utilizavel('Default string'),
+    'nem o da Supermicro');
+  perform app.assert(not app.agent_serial_utilizavel('System Serial Number'),
+    'nem o texto genérico do SMBIOS');
+  perform app.assert(not app.agent_serial_utilizavel('N/A'),
+    'nem N/A');
+  perform app.assert(not app.agent_serial_utilizavel('0000000000'),
+    'nem um caractere repetido — não identifica nada');
+  perform app.assert(not app.agent_serial_utilizavel('--------'),
+    'inclusive quando o caractere é traço');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.2 Inscrição: o token do tenant vira token da máquina
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_fil    uuid := '11110000-0000-4000-8000-000000000002';
+  v_enr    uuid;
+  v_dev1   uuid;
+  v_tok1   text;
+  v_dev1b  uuid;
+  v_tok1b  text;
+  v_usos   integer;
+  v_u1     uuid := '77770000-0000-4000-8000-000000000001';
+begin
+  delete from public.agent_devices where tenant_id = v_t;
+  delete from public.agent_enrollments where tenant_id = v_t;
+
+  insert into public.agent_enrollments (tenant_id, name, token_hash, branch_id, max_uses)
+  values (v_t, 'Lote de teste', encode(digest('inv_token_bom', 'sha256'), 'hex'), v_fil, 2)
+  returning id into v_enr;
+
+  -- Token errado não diz por que está errado: devolve zero linha.
+  perform app.assert(
+    not exists (select 1 from public.agent_enroll('inv_token_errado',
+      jsonb_build_object('device_uuid', v_u1::text))),
+    'token de inscrição errado devolve zero linha, sem dizer o motivo');
+
+  perform app.assert(
+    not exists (select 1 from public.agent_enroll('inv_token_bom', '{}'::jsonb)),
+    'e inscrição sem device_uuid também — é a identidade da máquina');
+
+  select device_id, device_token into v_dev1, v_tok1
+    from public.agent_enroll('inv_token_bom',
+      jsonb_build_object('device_uuid', v_u1::text, 'hostname', 'NOTE-TESTE-1',
+                         'os', 'windows', 'chassis', 'notebook', 'agent_version', '1.0.0'));
+
+  perform app.assert(v_dev1 is not null, 'token bom inscreve a máquina');
+  perform app.assert(v_tok1 like 'ag\_%', 'e devolve um token da máquina');
+  perform app.assert(length(v_tok1) = 67,
+    'de 32 bytes em hexa mais o prefixo — comprimento fixo, sem segredo curto');
+
+  perform app.assert(
+    (select token_hash from public.agent_devices where id = v_dev1)
+      = encode(digest(v_tok1, 'sha256'), 'hex'),
+    'e guarda o HASH, nunca o token em claro');
+
+  perform app.assert(
+    (select branch_id from public.agent_devices where id = v_dev1) = v_fil,
+    'a filial vem do token: o técnico que instala na filial não classifica nada depois');
+
+  select uses_count into v_usos from public.agent_enrollments where id = v_enr;
+  perform app.assert(v_usos = 1, 'a inscrição consumiu uma vaga');
+
+  -- Reinstalar o agente na mesma máquina: mesma linha, token novo, vaga intacta.
+  select device_id, device_token into v_dev1b, v_tok1b
+    from public.agent_enroll('inv_token_bom',
+      jsonb_build_object('device_uuid', v_u1::text, 'hostname', 'NOTE-TESTE-1',
+                         'agent_version', '1.1.0'));
+
+  perform app.assert(v_dev1b = v_dev1,
+    'reinstalar o agente na mesma máquina NÃO cria uma segunda linha');
+  perform app.assert(v_tok1b <> v_tok1,
+    'mas rotaciona o token — o antigo pode ter vazado no reinstalar');
+  perform app.assert(
+    (select uses_count from public.agent_enrollments where id = v_enr) = 1,
+    'e não consome outra vaga: senão reinstalar 30 agentes gastaria o lote duas vezes');
+  perform app.assert(
+    (select agent_version from public.agent_devices where id = v_dev1) = '1.1.0',
+    'a versão do agente é atualizada na reinscrição');
+
+  -- O token antigo morre na hora.
+  perform app.assert(
+    (select status from public.agent_ingest_inventory(v_tok1, '{}'::jsonb)) = 'unauthorized',
+    'o token antigo para de valer no instante da rotação');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.3 Os limites do token de inscrição
+-- -----------------------------------------------------------------------------
+-- Se eles não valessem, o token vazado seria acesso de escrita permanente.
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_e1  uuid;
+begin
+  -- Esgotado
+  insert into public.agent_enrollments (tenant_id, name, token_hash, max_uses)
+  values (v_t, 'Esgotado', encode(digest('inv_esgotado', 'sha256'), 'hex'), 1)
+  returning id into v_e1;
+  perform public.agent_enroll('inv_esgotado',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000011'));
+  perform app.assert(
+    not exists (select 1 from public.agent_enroll('inv_esgotado',
+      jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000012'))),
+    'token com max_uses esgotado recusa a máquina seguinte');
+
+  -- Vencido
+  insert into public.agent_enrollments (tenant_id, name, token_hash, expires_at)
+  values (v_t, 'Vencido', encode(digest('inv_vencido', 'sha256'), 'hex'),
+          now() - interval '1 day');
+  perform app.assert(
+    not exists (select 1 from public.agent_enroll('inv_vencido',
+      jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000013'))),
+    'token vencido não inscreve');
+
+  -- Revogado
+  insert into public.agent_enrollments (tenant_id, name, token_hash, revoked_at)
+  values (v_t, 'Revogado', encode(digest('inv_revogado', 'sha256'), 'hex'), now());
+  perform app.assert(
+    not exists (select 1 from public.agent_enroll('inv_revogado',
+      jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000014'))),
+    'nem token revogado');
+
+  -- E a máquina revogada não volta sozinha. Se voltasse, revogar não serviria de
+  -- nada: bastaria reinstalar o agente para desfazer a decisão.
+  update public.agent_devices set revoked_at = now()
+   where device_uuid = '77770000-0000-4000-8000-000000000011';
+  insert into public.agent_enrollments (tenant_id, name, token_hash)
+  values (v_t, 'Aberto', encode(digest('inv_aberto', 'sha256'), 'hex'));
+  perform app.assert(
+    not exists (select 1 from public.agent_enroll('inv_aberto',
+      jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000011'))),
+    'máquina revogada não se reinscreve: reinstalar o agente não desfaz a revogação');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.4 Ingestão: inventário igual não vira linha nova
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t     uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tok   text;
+  v_dev   uuid;
+  v_p     jsonb;
+  v_r     record;
+  v_visto timestamptz;
+begin
+  select device_id, device_token into v_dev, v_tok
+    from public.agent_enroll('inv_aberto',
+      jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000020',
+                         'hostname', 'NOTE-INGEST', 'chassis', 'notebook'));
+
+  v_p := jsonb_build_object(
+    'sistema', jsonb_build_object(
+      'hostname', 'NOTE-INGEST', 'os', 'windows', 'os_version', '10.0.19045',
+      'chassi', 'notebook', 'fabricante', 'Dell Inc.', 'modelo', 'Latitude 5420',
+      'numero_serie', '5CG9274QXZ'),
+    'memoria', jsonb_build_object('total_bytes', 17179869184),
+    'software', jsonb_build_array(
+      jsonb_build_object('nome', 'Google Chrome', 'versao', '120.0', 'fabricante', 'Google LLC'),
+      jsonb_build_object('nome', '7-Zip', 'versao', '23.01')),
+    'agente', jsonb_build_object('versao', '1.0.0'));
+
+  perform app.assert(
+    (select status from public.agent_ingest_inventory('ag_token_que_nao_existe', v_p)) = 'unauthorized',
+    'token de máquina desconhecido é recusado');
+
+  select * into v_r from public.agent_ingest_inventory(v_tok, v_p);
+  perform app.assert(v_r.status = 'stored', 'o primeiro inventário é guardado');
+  perform app.assert(v_r.snapshot_id is not null, 'e gera um snapshot');
+  perform app.assert(v_r.asset_id is not null, 'e já sai conciliado com um ativo');
+
+  -- O MESMO inventário de novo: só o contato, sem linha nova.
+  select last_seen_at into v_visto from public.agent_devices where id = v_dev;
+  select * into v_r from public.agent_ingest_inventory(v_tok, v_p);
+  perform app.assert(v_r.status = 'unchanged',
+    'inventário idêntico devolve "unchanged"');
+  perform app.assert(v_r.snapshot_id is null, 'e NÃO gera snapshot');
+  perform app.assert(
+    (select count(*) from public.agent_inventory_snapshots where device_id = v_dev) = 1,
+    'o histórico continua com uma linha só — é o que o torna legível');
+  perform app.assert(
+    (select last_seen_at from public.agent_devices where id = v_dev) >= v_visto,
+    'mas o contato É registrado: é assim que se distingue máquina parada de máquina igual');
+
+  -- O carimbo da coleta chega separado justamente para não entrar no hash.
+  select * into v_r from public.agent_ingest_inventory(v_tok, v_p, now() + interval '1 day');
+  perform app.assert(v_r.status = 'unchanged',
+    'coletar de novo uma hora depois não é uma mudança — o hash é só do conteúdo');
+
+  -- Agora um pente de memória a menos. ISTO é uma mudança, e é a pergunta que
+  -- paga o módulo: memória que some ou é defeito ou é furto.
+  select * into v_r from public.agent_ingest_inventory(
+    v_tok, jsonb_set(v_p, '{memoria,total_bytes}', '8589934592'::jsonb));
+  perform app.assert(v_r.status = 'stored', 'metade da memória a menos é mudança');
+  perform app.assert(
+    (select count(*) from public.agent_inventory_snapshots where device_id = v_dev) = 2,
+    'e vira a segunda linha do histórico, comparável com a primeira');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.5 Software: o desinstalado não é apagado
+-- -----------------------------------------------------------------------------
+-- "Quem desinstalou o antivírus?" é pergunta de segurança, não de inventário.
+-- Apagar a linha apagaria junto a resposta.
+do $$
+declare
+  v_dev uuid;
+  v_tok text;
+  v_p   jsonb;
+begin
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000020';
+
+  perform app.assert(
+    (select count(*) from public.agent_software where device_id = v_dev) = 2,
+    'os dois programas do inventário viraram linha');
+  perform app.assert(
+    exists (select 1 from public.agent_software
+             where device_id = v_dev and name = 'Google Chrome' and version = '120.0'),
+    'com nome e versão');
+
+  select device_token into v_tok from public.agent_enroll('inv_aberto',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000020'));
+
+  -- Novo inventário SEM o 7-Zip e com o Chrome atualizado.
+  v_p := jsonb_build_object(
+    'sistema', jsonb_build_object('hostname', 'NOTE-INGEST', 'numero_serie', '5CG9274QXZ'),
+    'software', jsonb_build_array(
+      jsonb_build_object('nome', 'Google Chrome', 'versao', '121.0')),
+    'agente', jsonb_build_object('versao', '1.0.0'));
+  perform public.agent_ingest_inventory(v_tok, v_p);
+
+  perform app.assert(
+    exists (select 1 from public.agent_software
+             where device_id = v_dev and name = '7-Zip'),
+    'o programa desinstalado NÃO é apagado');
+  perform app.assert(
+    (select count(*) from public.agent_software
+      where device_id = v_dev and name = 'Google Chrome') = 2,
+    'e a atualização vira outra linha: 120 e 121 são fatos diferentes');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.6 Conciliação: nunca duplicar
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_ativo  uuid;
+  v_antes  integer;
+  v_tok    text;
+  v_dev    uuid;
+  v_r      record;
+begin
+  select count(*) into v_antes from public.it_assets where tenant_id = v_t;
+
+  -- (a) Casa por número de série com um ativo digitado à mão.
+  insert into public.it_assets (tenant_id, asset_type, serial_number, asset_tag)
+  values (v_t, 'notebook', 'SERIAL-CADASTRADO-1', 'PAT-9001')
+  returning id into v_ativo;
+
+  select device_id, device_token into v_dev, v_tok
+    from public.agent_enroll('inv_aberto',
+      jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000030',
+                         'hostname', 'MAQ-SERIAL'));
+  select * into v_r from public.agent_ingest_inventory(v_tok,
+    jsonb_build_object('sistema', jsonb_build_object(
+      'numero_serie', 'serial-cadastrado-1', 'fabricante', 'Lenovo')));
+
+  perform app.assert(v_r.asset_id = v_ativo,
+    'casa pelo número de série com o ativo que já existia');
+  perform app.assert(
+    (select match_method from public.agent_devices where id = v_dev) = 'serial',
+    'e registra COMO casou — ativo casado por serial não precisa de olhar humano');
+  perform app.assert(
+    (select count(*) from public.it_assets where tenant_id = v_t) = v_antes + 1,
+    'e NÃO criou um segundo ativo');
+
+  -- (b) Casa pelo UUID já gravado, mesmo que alguém edite o serial no cadastro.
+  update public.it_assets set serial_number = 'ALGUEM-CORRIGIU-A-MAO'
+   where id = v_ativo;
+  update public.agent_devices set it_asset_id = null, match_method = null
+   where id = v_dev;
+  select device_token into v_tok from public.agent_enroll('inv_aberto',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000030'));
+  select * into v_r from public.agent_ingest_inventory(v_tok,
+    jsonb_build_object('sistema', jsonb_build_object(
+      'numero_serie', 'serial-cadastrado-1', 'memo', 'muda o hash')));
+
+  perform app.assert(v_r.asset_id = v_ativo,
+    'o vínculo sobrevive a alguém editar o serial: o UUID da máquina é a segunda chave');
+  perform app.assert(
+    (select match_method from public.agent_devices where id = v_dev) = 'device_uuid',
+    'e o método registrado passa a ser device_uuid');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.7 Hostname só casa com ativo SEM número de série
+-- -----------------------------------------------------------------------------
+-- É a restrição mais delicada da conciliação. Nome de máquina se repete entre
+-- equipamentos trocados — "NOTE-FISCAL" é o notebook do setor, não aquele
+-- notebook. Sem a restrição, o inventário casaria o substituto com o substituído
+-- e perderia os dois.
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_sem    uuid;
+  v_com    uuid;
+  v_tok    text;
+  v_dev    uuid;
+  v_r      record;
+begin
+  -- Ativo sem serial, identificado só pelo patrimônio = nome da máquina.
+  insert into public.it_assets (tenant_id, asset_type, asset_tag)
+  values (v_t, 'desktop', 'PC-RECEPCAO')
+  returning id into v_sem;
+
+  select device_id, device_token into v_dev, v_tok
+    from public.agent_enroll('inv_aberto',
+      jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000040',
+                         'hostname', 'pc-recepcao', 'chassis', 'desktop'));
+  select * into v_r from public.agent_ingest_inventory(v_tok,
+    jsonb_build_object('sistema', jsonb_build_object('hostname', 'pc-recepcao')));
+
+  perform app.assert(v_r.asset_id = v_sem,
+    'casa por hostname com ativo que não tem serial nenhum');
+  perform app.assert(
+    (select match_method from public.agent_devices where id = v_dev) = 'hostname',
+    'e marca hostname — que é o método que a tela destaca para revisão');
+
+  -- Agora o oposto: ativo COM serial e mesmo nome. Não é a mesma máquina.
+  insert into public.it_assets (tenant_id, asset_type, asset_tag, serial_number)
+  values (v_t, 'desktop', 'PC-TROCADO', 'SERIAL-DO-ANTIGO')
+  returning id into v_com;
+
+  select device_id, device_token into v_dev, v_tok
+    from public.agent_enroll('inv_aberto',
+      jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000041',
+                         'hostname', 'PC-TROCADO', 'chassis', 'desktop'));
+  select * into v_r from public.agent_ingest_inventory(v_tok,
+    jsonb_build_object('sistema', jsonb_build_object(
+      'hostname', 'PC-TROCADO', 'numero_serie', 'SERIAL-DO-NOVO')));
+
+  perform app.assert(v_r.asset_id <> v_com,
+    'mas NÃO casa com ativo que tem outro serial, por mais que o nome bata');
+  perform app.assert(
+    (select match_method from public.agent_devices where id = v_dev) = 'created',
+    'cria um ativo novo — o substituto não é o substituído');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.8 Duas máquinas com o MESMO serial de fábrica viram DOIS ativos
+-- -----------------------------------------------------------------------------
+-- É o 35.1 provado de ponta a ponta. Sem o filtro, as 80 máquinas montadas do
+-- mesmo lote casariam todas no mesmo ativo e o inventário mostraria 1 computador
+-- onde há 80.
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tk1  text;
+  v_tk2  text;
+  v_a1   uuid;
+  v_a2   uuid;
+begin
+  select device_token into v_tk1 from public.agent_enroll('inv_aberto',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000050',
+                       'hostname', 'MONTADA-01', 'chassis', 'desktop'));
+  select device_token into v_tk2 from public.agent_enroll('inv_aberto',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000051',
+                       'hostname', 'MONTADA-02', 'chassis', 'desktop'));
+
+  select asset_id into v_a1 from public.agent_ingest_inventory(v_tk1,
+    jsonb_build_object('sistema', jsonb_build_object(
+      'hostname', 'MONTADA-01', 'numero_serie', 'To Be Filled By O.E.M.')));
+  select asset_id into v_a2 from public.agent_ingest_inventory(v_tk2,
+    jsonb_build_object('sistema', jsonb_build_object(
+      'hostname', 'MONTADA-02', 'numero_serie', 'To Be Filled By O.E.M.')));
+
+  perform app.assert(v_a1 is not null and v_a2 is not null, 'as duas entram no inventário');
+  perform app.assert(v_a1 <> v_a2,
+    'duas máquinas com o mesmo texto de fábrica no serial viram DOIS ativos');
+  perform app.assert(
+    (select serial_number from public.it_assets where id = v_a1) is null,
+    'e o texto de fábrica não é gravado como se fosse número de série');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.9 O agente preenche o que está em branco; não discute com gente
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t     uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_ativo uuid;
+  v_tok   text;
+  v_dev   uuid;
+begin
+  -- Alguém digitou o serial e o modelo; a marca ficou em branco.
+  insert into public.it_assets (tenant_id, asset_type, serial_number, model)
+  values (v_t, 'notebook', 'DIGITADO-PELA-PESSOA', 'Latitude 5420')
+  returning id into v_ativo;
+
+  select device_id, device_token into v_dev, v_tok
+    from public.agent_enroll('inv_aberto',
+      jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000060',
+                         'hostname', 'MAQ-DIVERGENTE'));
+  -- O agente liga por UUID depois de um primeiro casamento forçado, para o teste
+  -- medir a divergência e não a criação.
+  update public.agent_devices set it_asset_id = v_ativo, match_method = 'serial'
+   where id = v_dev;
+
+  perform public.agent_ingest_inventory(v_tok,
+    jsonb_build_object('sistema', jsonb_build_object(
+      'numero_serie', 'LIDO-PELO-AGENTE', 'fabricante', 'Dell Inc.',
+      'modelo', 'Latitude 5430')));
+
+  perform app.assert(
+    (select serial_number from public.it_assets where id = v_ativo) = 'DIGITADO-PELA-PESSOA',
+    'o agente NÃO sobrescreve o número de série que uma pessoa digitou');
+  perform app.assert(
+    (select brand from public.it_assets where id = v_ativo) = 'Dell Inc.',
+    'mas preenche a marca, que estava em branco');
+  perform app.assert(
+    (select model from public.it_assets where id = v_ativo) = 'Latitude 5420',
+    'e o modelo digitado continua valendo');
+
+  perform app.assert(
+    (select divergences -> 'serial_number' ->> 'cadastrado'
+       from public.agent_devices where id = v_dev) = 'DIGITADO-PELA-PESSOA',
+    'a divergência de serial fica registrada, com o lado do cadastro');
+  perform app.assert(
+    (select divergences -> 'serial_number' ->> 'agente'
+       from public.agent_devices where id = v_dev) = 'LIDO-PELO-AGENTE',
+    'e com o lado do agente — sobrescrever apagaria a correção, ignorar deixaria o erro');
+  perform app.assert(
+    (select divergences -> 'model' ->> 'agente'
+       from public.agent_devices where id = v_dev) = 'Latitude 5430',
+    'a divergência de modelo também');
+
+  -- E o que é território do agente é dele: `specs -> 'agente'` é sobrescrito.
+  perform app.assert(
+    (select specs -> 'agente' ->> 'device_uuid' from public.it_assets where id = v_ativo)
+      = '77770000-0000-4000-8000-000000000060',
+    'o UUID da máquina fica gravado no ativo — é a segunda chave da conciliação');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.10 O batimento não enche a trilha de auditoria
+-- -----------------------------------------------------------------------------
+-- 200 máquinas a cada 10 minutos são 28.800 contatos por dia. Auditado, cada um
+-- viraria uma linha dizendo "o relógio andou", e a trilha — que existe para
+-- responder "quem mexeu nisto?" — passaria a ter 99,9% de ruído.
+do $$
+declare
+  v_dev   uuid;
+  v_tok   text;
+  v_antes bigint;
+begin
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000020';
+  select device_token into v_tok from public.agent_enroll('inv_aberto',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000020'));
+
+  -- Um inventário igual ao último: só o contato muda.
+  perform public.agent_ingest_inventory(v_tok, jsonb_build_object(
+    'sistema', jsonb_build_object('hostname', 'NOTE-INGEST', 'numero_serie', '5CG9274QXZ'),
+    'software', jsonb_build_array(jsonb_build_object('nome', 'Google Chrome', 'versao', '121.0')),
+    'agente', jsonb_build_object('versao', '1.0.0')));
+
+  select count(*) into v_antes from public.audit_log
+   where entity_type = 'agent_devices' and entity_id = v_dev::text;
+
+  perform public.agent_ingest_inventory(v_tok, jsonb_build_object(
+    'sistema', jsonb_build_object('hostname', 'NOTE-INGEST', 'numero_serie', '5CG9274QXZ'),
+    'software', jsonb_build_array(jsonb_build_object('nome', 'Google Chrome', 'versao', '121.0')),
+    'agente', jsonb_build_object('versao', '1.0.0')));
+
+  perform app.assert(
+    (select count(*) from public.audit_log
+      where entity_type = 'agent_devices' and entity_id = v_dev::text) = v_antes,
+    'contato de agente sem mudança NÃO vira linha de auditoria');
+
+  -- Revogar, sim: é decisão de gente.
+  update public.agent_devices set revoked_at = now() where id = v_dev;
+  perform app.assert(
+    (select count(*) from public.audit_log
+      where entity_type = 'agent_devices' and entity_id = v_dev::text) > v_antes,
+    'mas revogar vira: é decisão de gente, e é o que a trilha existe para registrar');
+  update public.agent_devices set revoked_at = null where id = v_dev;
+
+  -- O batimento é o mesmo sinal custando algumas centenas de bytes em vez de
+  -- meio megabyte. Ele também não vira auditoria, pela mesma regra.
+  select device_token into v_tok from public.agent_enroll('inv_aberto',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000020'));
+  perform app.assert(public.agent_heartbeat(v_tok, '1.4.0'),
+    'o batimento aceita o token da máquina');
+  perform app.assert(
+    (select agent_version from public.agent_devices where id = v_dev) = '1.4.0',
+    'e aproveita para registrar a versão do agente');
+  perform app.assert(not public.agent_heartbeat('ag_token_inventado'),
+    'e recusa token que não existe');
+
+  update public.agent_devices set revoked_at = now() where id = v_dev;
+  perform app.assert(not public.agent_heartbeat(v_tok),
+    'máquina revogada não dá mais sinal de vida');
+  update public.agent_devices set revoked_at = null where id = v_dev;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.11 Um ativo tem no máximo um agente
+-- -----------------------------------------------------------------------------
+-- Dois agentes no mesmo ativo significa conciliação errada, e é melhor o banco
+-- recusar do que a tela sumir com um dos dois sem explicar.
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_a    uuid;
+  v_d1   uuid;
+  v_d2   uuid;
+  v_erro boolean := false;
+begin
+  select it_asset_id, id into v_a, v_d1 from public.agent_devices
+   where tenant_id = v_t and it_asset_id is not null and revoked_at is null limit 1;
+  select id into v_d2 from public.agent_devices
+   where tenant_id = v_t and id <> v_d1 and revoked_at is null limit 1;
+
+  begin
+    update public.agent_devices set it_asset_id = v_a where id = v_d2;
+  exception when unique_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'o banco recusa dois agentes no mesmo ativo');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.12 A visão da frota
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_dev uuid;
+begin
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000020';
+
+  perform app.assert(
+    (select silencioso from public.vw_agent_fleet where device_id = v_dev) = false,
+    'máquina que acabou de falar não está silenciosa');
+
+  update public.agent_devices set last_seen_at = now() - interval '3 days' where id = v_dev;
+  perform app.assert(
+    (select silencioso from public.vw_agent_fleet where device_id = v_dev) = true,
+    'máquina muda há três dias está silenciosa — o agente fala de 10 em 10 minutos');
+
+  perform app.assert(
+    (select count(*) from public.vw_agent_fleet f
+      where f.tenant_id = v_t and f.branch_id is not null) >= 1,
+    'a visão carrega branch_id: indicador sem a coluna do escopo conta o tenant inteiro');
+
+  perform app.assert(
+    not exists (select 1 from public.vw_agent_fleet f
+                 join public.agent_devices d on d.id = f.device_id
+                where d.revoked_at is not null),
+    'máquina revogada sai da frota');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 35.13 Quem enxerga, e quem executa
+-- -----------------------------------------------------------------------------
+do $$
+begin
+  -- O agente não tem conta e nunca vai ter: é um serviço.
+  perform app.assert(
+    has_function_privilege('anon', 'public.agent_enroll(text, jsonb)', 'execute'),
+    'anon inscreve a máquina — ela não tem como ter login');
+  perform app.assert(
+    has_function_privilege('anon',
+      'public.agent_ingest_inventory(text, jsonb, timestamptz)', 'execute'),
+    'e manda o inventário');
+
+  -- A conciliação é interna. Exposta, qualquer sessão religaria uma máquina a
+  -- outro ativo sem passar por policy nenhuma.
+  perform app.assert(
+    not has_function_privilege('authenticated', 'app.agent_reconcile(uuid)', 'execute'),
+    'mas NINGUÉM chama a conciliação de fora — nem authenticated');
+  perform app.assert(
+    not has_function_privilege('anon', 'app.agent_reconcile(uuid)', 'execute'),
+    'nem anon');
+
+  perform app.assert(
+    has_function_privilege('anon', 'public.agent_heartbeat(text, text)', 'execute'),
+    'e dá sinal de vida');
+
+  -- E o quarto uso de service_role que esta onda NÃO abriu: as funções de
+  -- ingestão são security definer justamente para não precisar dele.
+  perform app.assert(
+    (select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'agent_ingest_inventory'),
+    'a ingestão é security definer: é o que evita um quarto uso da chave de serviço');
+end
+$$;
+
+-- Isolamento entre tenants e por permissão.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.agent_devices) = 0,
+    'tenant 2 não vê máquina do tenant 1');
+  perform app.assert((select count(*) from public.agent_inventory_snapshots) = 0,
+    'nem o inventário dela');
+  perform app.assert((select count(*) from public.agent_software) = 0,
+    'nem o software instalado nela');
+  perform app.assert((select count(*) from public.agent_enrollments) = 0,
+    'nem os tokens de inscrição dela');
+  perform app.assert((select count(*) from public.vw_agent_fleet) = 0,
+    'e a visão da frota respeita o mesmo limite');
+end
+$$;
+
+-- Diego Moreira é operador financeiro: não tem `inventario.agentes.ver`.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000006","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.agent_devices) = 0,
+    'quem não tem a permissão da tela não vê a frota, mesmo no próprio tenant');
+end
+$$;
+
+-- Ana Souza é operadora de TI: vê a frota, e não revoga.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_id uuid;
+  v_n  integer;
+begin
+  perform app.assert((select count(*) from public.agent_devices) > 0,
+    'operador de TI enxerga a frota');
+  perform app.assert((select count(*) from public.agent_enrollments) = 0,
+    'mas não os tokens de inscrição: token é credencial, e credencial é do administrador');
+
+  select id into v_id from public.agent_devices limit 1;
+  update public.agent_devices set revoked_at = now() where id = v_id;
+  get diagnostics v_n = row_count;
+  -- RLS nega devolvendo ZERO LINHAS, não erro. É por isso que toda escrita desta
+  -- base confere `length` do retorno em vez de confiar na ausência de exceção.
+  perform app.assert(v_n = 0,
+    'e não revoga máquina: a negação do RLS chega como zero linhas, não como erro');
 end
 $$;
 reset role;

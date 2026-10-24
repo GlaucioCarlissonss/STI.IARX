@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LaunchDaemon do agente para macOS.
+
+  Vai em /Library/LaunchDaemons/ (daemon do sistema), e não em LaunchAgents
+  (agente do usuário): a coleta precisa rodar com ninguém logado, e precisa ler o
+  `system_profiler` da máquina, não o do usuário.
+
+  Carregar com:
+    sudo launchctl bootstrap system /Library/LaunchDaemons/br.com.iartech.sti-agente.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>br.com.iartech.sti-agente</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/sti-agente</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Mantém o processo no ar. O laço do agente é contínuo; se ele morrer, o
+       launchd sobe de novo. -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <!-- Dez segundos entre tentativas, pelo mesmo motivo do systemd: um agente que
+       falha ao subir não pode entrar num laço que enche o log do sistema. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <!-- Prioridade baixa: a coleta nunca deve competir com o que a pessoa está
+       fazendo. -->
+  <key>Nice</key>
+  <integer>10</integer>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardErrorPath</key>
+  <string>/var/log/sti-agente.log</string>
+</dict>
+</plist>

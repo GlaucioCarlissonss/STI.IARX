@@ -20,3 +20,7 @@ next-env.d.ts
 
 supabase/.branches
 supabase/.temp
+
+# Binários e pacotes do agente (agente/empacotamento/construir.sh).
+# São artefatos de publicação: versionados num release, não no repositório.
+agente/dist/

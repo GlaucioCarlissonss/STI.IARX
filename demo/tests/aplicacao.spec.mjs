@@ -39,6 +39,32 @@ const ok = (c, m) => {
   console.log(`${c ? '  ok ' : '  FALHOU '} ${m}`)
 }
 
+/*
+ * Recusa a porta ocupada ANTES de subir o servidor.
+ *
+ * Sem esta checagem, um `next start` esquecido de uma execução anterior continua
+ * atendendo em 3177 — servindo o build ANTIGO — e esta suíte o testa achando que
+ * é o novo. Aconteceu duas vezes, e nas duas o sintoma foi um conjunto de
+ * asserções falhando contra código que estava correto no disco: o tipo de pista
+ * falsa que custa meia hora.
+ */
+async function exigirPortaLivre() {
+  try {
+    await fetch(BASE, { signal: AbortSignal.timeout(1500) })
+  } catch {
+    return // ninguém atendeu: é o que queremos
+  }
+  console.error(
+    `\nA porta ${PORTA} já está ocupada — provavelmente um 'next start' de uma ` +
+      `execução anterior, servindo um build ANTIGO.\n` +
+      `Encerre-o antes de rodar esta suíte:\n` +
+      `  fuser -k ${PORTA}/tcp\n`,
+  )
+  process.exit(1)
+}
+
+await exigirPortaLivre()
+
 const servidor = spawn('npm', ['run', 'start'], {
   env: {
     ...process.env,
@@ -276,6 +302,78 @@ try {
       !/does not exist|not found|null|undefined|Error/i.test(visivel),
       'e não vaza detalhe técnico na recusa',
     )
+    await ctx.close()
+  }
+
+  // ---------------------------------------------------------------------------
+  console.log('\n=== 9. As rotas do agente: abertas à máquina, fechadas sem token ===')
+  // ---------------------------------------------------------------------------
+  /*
+   * Quem chama estas rotas é um serviço rodando em computador de cliente: sem
+   * navegador, sem cookie, e **sem seguir redirecionamento**. Se o guarda de
+   * sessão as pegasse, a resposta seria um 307 para `/login` que o agente
+   * registraria como "o servidor respondeu algo estranho" e repetiria para
+   * sempre — a máquina ficaria muda e o registro não diria por quê.
+   *
+   * O que autoriza ali é o token DA MÁQUINA, conferido no banco. Estas asserções
+   * provam as duas metades: o guarda deixa passar, e a rota recusa sozinha.
+   */
+  {
+    const ctx = await b.newContext()
+    const req = ctx.request
+
+    for (const rota of ['/api/agent/inventory', '/api/agent/heartbeat']) {
+      const r = await req.post(BASE + rota, { data: {} })
+      ok(r.status() === 401, `${rota} sem token responde 401, e não 307 para o login`)
+      const corpo = await r.text()
+      ok(
+        !corpo.includes('<!DOCTYPE') && !corpo.includes('<html'),
+        `${rota} responde JSON, e não a página de login`,
+      )
+    }
+
+    // Inscrição malformada é recusada antes de o banco ser tocado: o schema é a
+    // primeira porta, e um `device_uuid` que não é UUID jamais vira linha.
+    const malformada = await req.post(`${BASE}/api/agent/enroll`, {
+      data: { enrollment_token: 'inv_0123456789abcdef', device: { device_uuid: 'nao-e-uuid' } },
+    })
+    ok(malformada.status() === 400, 'inscrição com identidade malformada responde 400')
+
+    const vazia = await req.post(`${BASE}/api/agent/enroll`, { data: {} })
+    ok(vazia.status() === 400, 'e inscrição sem nada também')
+
+    /*
+     * A consulta de versão com as variáveis de publicação ausentes responde 204
+     * (nada a fazer), e não um erro. É o estado NORMAL de quem não ligou a
+     * autoatualização — e é o estado seguro: o inseguro seria um endpoint que,
+     * por falta de configuração, respondesse "baixe este arquivo" apontando para
+     * lugar nenhum.
+     */
+    const versao = await req.get(`${BASE}/api/agent/version`)
+    ok(
+      versao.status() === 204,
+      `sem publicação, a consulta de versão responde 204 (veio ${versao.status()})`,
+    )
+
+    // GET na ingestão não existe: ela altera dados. Um GET seria pré-buscado por
+    // navegador, por antivírus de rede ou por quem passasse o link num aplicativo
+    // de mensagem.
+    const get = await req.get(`${BASE}/api/agent/inventory`)
+    ok(get.status() === 405, `GET na ingestão responde 405 (veio ${get.status()})`)
+
+    await ctx.close()
+  }
+
+  // ---------------------------------------------------------------------------
+  console.log('\n=== 10. A tela da frota continua atrás do login ===')
+  // ---------------------------------------------------------------------------
+  // O contrário da seção 9: a ROTA do agente é pública, a TELA não é. Liberar o
+  // prefixo `/api/agent` no guarda de sessão não pode ter aberto o módulo junto.
+  {
+    const ctx = await b.newContext()
+    const p = await ctx.newPage()
+    await p.goto(`${BASE}/inventario/agentes`, { waitUntil: 'networkidle' })
+    ok(p.url().includes('/login'), `visitante é mandado para o login (${p.url()})`)
     await ctx.close()
   }
 
