@@ -17,11 +17,16 @@ import (
 )
 
 type Servico struct {
-	cfg  config.Config
-	id   config.Identidade
-	cli  *envio.Cliente
-	fila *fila.Fila
-	log  *slog.Logger
+	cfg      config.Config
+	id       config.Identidade
+	cli      *envio.Cliente
+	fila     *fila.Fila
+	metricas *fila.FilaDeMetricas
+	log      *slog.Logger
+	// remotoEnviado evita repetir o registro do id de acesso remoto a cada ciclo:
+	// ele muda quase nunca, e uma requisição por ciclo para dizer a mesma string
+	// é a soma de pequenos desperdícios que faz 200 máquinas pesarem.
+	remotoEnviado string
 }
 
 func Novo(cfg config.Config, id config.Identidade, log *slog.Logger) (*Servico, error) {
@@ -29,12 +34,17 @@ func Novo(cfg config.Config, id config.Identidade, log *slog.Logger) (*Servico, 
 	if err != nil {
 		return nil, err
 	}
+	m, err := fila.AbrirMetricas(config.DiretorioDeDados())
+	if err != nil {
+		return nil, err
+	}
 	return &Servico{
-		cfg:  cfg,
-		id:   id,
-		cli:  envio.Novo(cfg.Servidor, coleta.Versao),
-		fila: f,
-		log:  log,
+		cfg:      cfg,
+		id:       id,
+		cli:      envio.Novo(cfg.Servidor, coleta.Versao),
+		fila:     f,
+		metricas: m,
+		log:      log,
 	}, nil
 }
 
@@ -59,9 +69,11 @@ func (s *Servico) Rodar(ctx context.Context) error {
 
 	tCol := time.NewTicker(time.Duration(s.cfg.IntervaloColetaMin) * time.Minute)
 	tEnv := time.NewTicker(time.Duration(s.cfg.IntervaloEnvioMin) * time.Minute)
+	tAmo := time.NewTicker(time.Duration(s.cfg.IntervaloAmostraMin) * time.Minute)
 	tAtu := time.NewTicker(12 * time.Hour)
 	defer tCol.Stop()
 	defer tEnv.Stop()
+	defer tAmo.Stop()
 	defer tAtu.Stop()
 
 	for {
@@ -70,12 +82,95 @@ func (s *Servico) Rodar(ctx context.Context) error {
 			return ctx.Err()
 		case <-tCol.C:
 			s.ciclarColeta(ctx)
+		case <-tAmo.C:
+			s.Amostrar(ctx)
 		case <-tEnv.C:
 			s.ciclarEnvio(ctx)
 		case <-tAtu.C:
 			s.ciclarAtualizacao(ctx)
 		}
 	}
+}
+
+// Amostrar lê o desempenho da máquina e guarda na fila local.
+//
+// Guarda, e não envia: a amostragem é de 5 em 5 minutos e o envio de 10 em 10.
+// Separar os dois é o que permite ao notebook em viagem continuar medindo sem
+// rede — e, quando ela volta, entregar o que passou em vez de só o instante.
+func (s *Servico) Amostrar(ctx context.Context) {
+	a := coleta.Amostrar(ctx, s.cfg.ServicosCriticos)
+	if err := s.metricas.Anexar(a); err != nil {
+		s.log.Error("não consegui guardar a amostra", "erro", err)
+		return
+	}
+	if err := s.metricas.Podar(); err != nil {
+		s.log.Warn("não consegui podar a fila de métricas", "erro", err)
+	}
+	if len(a.ServicosFora) > 0 {
+		s.log.Warn("serviço crítico fora do ar", "servicos", a.ServicosFora)
+	}
+}
+
+// enviarMetricas esvazia a fila de amostras.
+//
+// A fila é descartada pela RESPOSTA 200, e não pelo número de amostras aceitas.
+// O servidor descarta de propósito a amostra repetida e a de relógio errado;
+// reenviar o que ele descartou de propósito seria um laço que não termina — e
+// um laço que não termina num agente é uma máquina que nunca mais entrega nada.
+func (s *Servico) enviarMetricas(ctx context.Context) {
+	const porLote = 500
+
+	for {
+		amostras, err := s.metricas.Ler(porLote)
+		if err != nil {
+			s.log.Error("fila de métricas ilegível", "erro", err)
+			return
+		}
+		if len(amostras) == 0 {
+			return
+		}
+
+		r, err := s.cli.EnviarMetricas(ctx, s.id.DeviceToken, amostras)
+		if errors.Is(err, envio.ErrCredencialMorta) {
+			s.recredenciar(ctx)
+			return
+		}
+		if err != nil {
+			s.log.Warn("envio de métricas adiado", "erro", err)
+			return
+		}
+
+		if err := s.metricas.Descartar(len(amostras)); err != nil {
+			s.log.Error("entregues mas não consegui limpar a fila", "erro", err)
+			// Para aqui: continuar reenviaria o mesmo lote para sempre.
+			return
+		}
+		s.log.Debug("métricas entregues", "enviadas", len(amostras), "aceitas", r.Aceitas)
+
+		// Lote parcial significa que a fila acabou.
+		if len(amostras) < porLote {
+			return
+		}
+	}
+}
+
+// registrarIdRemoto informa ao servidor o id desta máquina no RustDesk ou
+// equivalente, quando ele existe.
+//
+// A plataforma não implementa controle remoto — isso é um produto inteiro. O que
+// ela faz é o elo que só ela pode fazer: saber qual id pertence a qual máquina do
+// inventário. O resto é um link.
+func (s *Servico) registrarIdRemoto(ctx context.Context) {
+	id := coleta.IdDeAcessoRemoto()
+	if id == "" || id == s.remotoEnviado {
+		return
+	}
+	if err := s.cli.RegistrarIdRemoto(ctx, s.id.DeviceToken, id); err != nil {
+		s.log.Debug("não consegui registrar o id de acesso remoto", "erro", err)
+		return
+	}
+	s.remotoEnviado = id
+	s.log.Info("id de acesso remoto registrado")
 }
 
 func (s *Servico) inscrever(ctx context.Context) error {
@@ -175,6 +270,21 @@ func (s *Servico) ciclarEnvio(ctx context.Context) {
 			return
 		}
 		s.log.Info("inventário entregue", "status", r.Status)
+	}
+
+	s.enviarMetricas(ctx)
+	s.registrarIdRemoto(ctx)
+
+	/*
+	 * O batimento só sai quando a fila de métricas está vazia.
+	 *
+	 * Mandar métrica já é dar sinal de vida — a função no banco atualiza
+	 * `last_seen_at`. Chamar o batimento depois seria uma segunda requisição
+	 * dizendo o que a primeira acabou de dizer, 144 vezes por dia, em cada
+	 * máquina do parque.
+	 */
+	if s.metricas.Tamanho() > 0 {
+		return
 	}
 
 	if err := s.cli.Batimento(ctx, s.id.DeviceToken); err != nil {
@@ -285,6 +395,9 @@ func (s *Servico) Diagnostico(ctx context.Context) string {
 		"device_uuid":                   s.id.DeviceUUID,
 		"inscrita":                      s.id.DeviceToken != "",
 		"itens_na_fila":                 s.fila.Tamanho(),
+		"amostras_na_fila":              s.metricas.Tamanho(),
+		"servicos_vigiados":             s.cfg.ServicosCriticos,
+		"id_de_acesso_remoto":           coleta.IdDeAcessoRemoto(),
 		"hash_do_conteudo":              hash,
 		"hostname":                      inv.Sistema.Hostname,
 		"numero_serie":                  inv.Sistema.NumeroSerie,

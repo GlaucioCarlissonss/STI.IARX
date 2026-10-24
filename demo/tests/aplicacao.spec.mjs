@@ -349,6 +349,11 @@ try {
      * por falta de configuração, respondesse "baixe este arquivo" apontando para
      * lugar nenhum.
      */
+    for (const rota of ['/api/agent/metrics', '/api/agent/remote-id']) {
+      const r = await req.post(BASE + rota, { data: {} })
+      ok(r.status() === 401, `${rota} sem token responde 401`)
+    }
+
     const versao = await req.get(`${BASE}/api/agent/version`)
     ok(
       versao.status() === 204,
@@ -365,15 +370,18 @@ try {
   }
 
   // ---------------------------------------------------------------------------
-  console.log('\n=== 10. A tela da frota continua atrás do login ===')
+  console.log('\n=== 10. As telas do módulo continuam atrás do login ===')
   // ---------------------------------------------------------------------------
-  // O contrário da seção 9: a ROTA do agente é pública, a TELA não é. Liberar o
-  // prefixo `/api/agent` no guarda de sessão não pode ter aberto o módulo junto.
+  // O contrário da seção 9: as ROTAS do agente são públicas, as TELAS não são.
+  // Liberar o prefixo `/api/agent` no guarda de sessão não pode ter aberto o
+  // módulo junto.
   {
     const ctx = await b.newContext()
     const p = await ctx.newPage()
-    await p.goto(`${BASE}/inventario/agentes`, { waitUntil: 'networkidle' })
-    ok(p.url().includes('/login'), `visitante é mandado para o login (${p.url()})`)
+    for (const rota of ['/inventario/agentes', '/inventario/software']) {
+      await p.goto(BASE + rota, { waitUntil: 'networkidle' })
+      ok(p.url().includes('/login'), `${rota}: visitante é mandado para o login`)
+    }
     await ctx.close()
   }
 

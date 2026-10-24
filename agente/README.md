@@ -9,14 +9,23 @@ Depois dele, o inventário de TI deixa de ser digitado.
 
 É a primeira pergunta de quem autoriza a instalação, então ela vem primeiro.
 
-**Coleta:** fabricante, modelo, número de série, processador, memória (total e por
-pente), discos (modelo, tamanho, tipo, saúde SMART), placas de rede e MAC, BIOS e
-modo de inicialização, sistema operacional e build, domínio, usuário logado,
-tempo ligado, e a lista de programas instalados com versão.
+**Coleta, uma vez por dia:** fabricante, modelo, número de série, processador,
+memória (total e por pente), discos (modelo, tamanho, tipo, saúde SMART), placas
+de rede e MAC, BIOS e modo de inicialização, sistema operacional e build,
+domínio, usuário logado, tempo ligado, e a lista de programas instalados com
+versão.
+
+**Mede, a cada cinco minutos:** uso de processador, uso de memória, espaço livre
+por volume, e quais dos serviços configurados como críticos estão fora do ar.
 
 **Não coleta:** conteúdo de arquivo, histórico de navegação, tela, teclado,
 microfone, câmera, nem o que está aberto. Ele também **não abre porta nenhuma**:
 fala só de dentro para fora, para um endereço só.
+
+**Nada por processo.** "Qual programa está consumindo a CPU" é a pergunta
+seguinte e é tentadora — e a resposta carrega o nome e a linha de comando de tudo
+que a pessoa está rodando, o que é vigilância e não inventário. O recurso não
+existe, e não é esquecimento.
 
 Isso está escrito em `cmd/sti-agente/main.go` e é sustentado pelo código — não há
 nada no programa que leia qualquer dessas coisas. Limitar o escopo é mais fácil
@@ -97,6 +106,8 @@ A coleta leu alguma coisa? O servidor responde?
 | `"contato_com_o_servidor"` com erro | Rede, proxy ou certificado. O agente exige HTTPS com certificado válido. |
 | `"programas_lidos": 0` | Em Linux, nenhum gerenciador de pacotes conhecido respondeu. Em Windows, o PowerShell falhou. |
 | `"itens_na_fila"` crescendo | Está coletando e não conseguindo entregar. Olhe o contato com o servidor. |
+| `"amostras_na_fila"` crescendo | Idem, para as métricas. Ela se poda sozinha em 4.000 amostras (quase duas semanas). |
+| `"servicos_vigiados": []` | Nenhum serviço crítico configurado — o padrão. Ver a seção 4. |
 | `"numero_serie": ""` | Normal em máquina virtual e em placa de montagem branca. A conciliação cai para a identidade da máquina, que não depende disso. |
 
 ### Forçar uma coleta agora
@@ -163,6 +174,49 @@ O batimento (a cada 10 min) custa algumas centenas de bytes; a coleta (diária) 
 cara, porque varre o registro inteiro. Separar os dois é o que evita 14 GB por
 dia de tráfego numa frota de 200 máquinas para dizer "estou viva".
 
+### Desempenho, e por que medir é mais barato que coletar
+
+O agente **amostra** de cinco em cinco minutos e **coleta o inventário** uma vez
+por dia. São ciclos diferentes porque os custos são diferentes: medir CPU e disco
+leva milissegundos; varrer o registro do Windows atrás de programas instalados
+leva segundos e o usuário sente.
+
+As amostras ficam numa fila local própria — um arquivo, uma linha por amostra —
+e saem em lote a cada dez minutos. É o que permite ao notebook em viagem
+continuar medindo sem rede e entregar o que passou quando ela volta, em vez de só
+o instante.
+
+A fila se poda sozinha em 4.000 amostras (quase duas semanas), descartando **as
+mais antigas**. É o oposto da fila de inventário, e pelo motivo invertido: ali o
+que importa é o estado atual; aqui a amostra velha já não ajuda ninguém a decidir
+nada.
+
+### Serviços críticos
+
+No `agente.json`, pelo **nome curto**:
+
+```json
+{ "servicos_criticos": ["Spooler", "WinDefend"] }
+```
+
+O nome curto e não o de exibição: o de exibição muda com o idioma do sistema, e
+uma configuração que funciona no Windows em português falharia calada no mesmo
+parque com uma máquina em inglês. No Linux são unidades do systemd
+(`sshd.service` ou `sshd`); no macOS, rótulos do launchd.
+
+Serviço que não existe na máquina conta como fora do ar: ou alguém o
+desinstalou, ou a configuração tem um nome errado — e os dois precisam aparecer.
+
+### Acesso remoto
+
+O agente **lê** o id do RustDesk do arquivo de configuração dele e o informa ao
+servidor. Ele não instala, não configura e não abre conexão nenhuma: controle
+remoto de tela é um produto inteiro, e o pedaço que só esta plataforma pode fazer
+é saber qual id pertence a qual máquina do inventário.
+
+Sem RustDesk instalado, a função devolve vazio e o recurso não aparece. Nenhum
+erro, nenhum aviso — a maioria das instalações não usa acesso remoto.
+
 ### Autoatualização
 
 **Fechada por padrão, e assinada.** Sem chave pública compilada no binário, o
@@ -216,7 +270,10 @@ A coleta em **Windows** e em **macOS** compila (a compilação cruzada é parte 
 verificação) e usa as consultas documentadas pela Microsoft e pela Apple, mas
 **não foi executada nessas plataformas** — não há Windows nem Mac onde este código
 foi escrito. A primeira execução em máquina real pode exigir ajuste de nome de
-propriedade. Em Linux ela foi executada: 686 programas e 6 discos lidos.
+propriedade.
+
+Em **Linux** tudo foi executado de verdade: 693 programas e 6 discos lidos no
+inventário, e a amostragem de desempenho lendo CPU, memória e volumes reais.
 
 Está escrito aqui porque descobrir isso em implantação é diferente de descobrir
 lendo.

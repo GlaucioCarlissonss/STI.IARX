@@ -62,18 +62,19 @@ type Disco struct {
 	Saude string `json:"saude,omitempty"`
 }
 
-// Volume NÃO carrega o espaço livre no inventário.
+// O inventário NÃO tem lista de volumes, e a ausência vale uma nota.
 //
-// Espaço livre é métrica, não configuração: muda a cada hora, e guardá-lo aqui
-// faria o hash do inventário mudar a cada coleta — 365 linhas de histórico por
-// ano, por máquina, todas dizendo "o disco está um pouco mais cheio". O tamanho
-// total fica, porque esse é configuração. O livre entra na Onda 3, na série
-// temporal, que é onde ele pertence.
-type Volume struct {
-	Ponto           string `json:"ponto,omitempty"`
-	SistemaArquivos string `json:"sistema_arquivos,omitempty"`
-	TotalBytes      int64  `json:"total_bytes,omitempty"`
-}
+// A primeira versão tinha: `ponto`, `sistema_arquivos` e `total_bytes`, com o
+// espaço livre deliberadamente de fora (livre é métrica, e mudaria o hash do
+// inventário a cada coleta). Acontece que nenhum coletor chegou a preenchê-la —
+// e, quando as métricas chegaram na Onda 3, elas já carregavam ponto e tamanho
+// de cada volume a cada amostra.
+//
+// Ou seja: o campo não trazia nada que a série temporal não trouxesse, exceto o
+// tipo de sistema de arquivos, que ninguém perguntou. Campo declarado e nunca
+// preenchido é a mesma configuração morta que esta base já removeu seis vezes
+// do catálogo de permissões, então ele saiu em vez de ser renomeado para dar
+// lugar ao `Volume` das métricas.
 
 type Rede struct {
 	Nome string   `json:"nome,omitempty"`
@@ -113,7 +114,6 @@ type Inventario struct {
 	Processador *Processador `json:"processador,omitempty"`
 	Memoria     *Memoria     `json:"memoria,omitempty"`
 	Discos      []Disco      `json:"discos,omitempty"`
-	Volumes     []Volume     `json:"volumes,omitempty"`
 	Rede        []Rede       `json:"rede,omitempty"`
 	Video       []Video      `json:"video,omitempty"`
 	BIOS        *BIOS        `json:"bios,omitempty"`

@@ -97,6 +97,40 @@ func (c *Cliente) Batimento(ctx context.Context, token string) error {
 	return err
 }
 
+type RespostaDeMetricas struct {
+	Status  string `json:"status"`
+	Aceitas int    `json:"aceitas"`
+}
+
+// EnviarMetricas manda um lote de amostras já serializadas.
+//
+// `aceitas` pode voltar menor que o enviado, e isso NÃO é erro: amostra repetida
+// (reenvio do lote) e amostra com relógio errado são descartadas pelo servidor de
+// propósito. Quem chama esvazia a fila local pela resposta 200, e não pelo
+// número — reenviar o que foi legitimamente descartado seria um laço que não
+// termina.
+func (c *Cliente) EnviarMetricas(ctx context.Context, token string, amostras []json.RawMessage) (RespostaDeMetricas, error) {
+	corpo, err := json.Marshal(map[string]any{"amostras": amostras})
+	if err != nil {
+		return RespostaDeMetricas{}, err
+	}
+	resp, err := c.postBruto(ctx, "/api/agent/metrics", corpo, token)
+	if err != nil {
+		return RespostaDeMetricas{}, err
+	}
+	var r RespostaDeMetricas
+	if err := json.Unmarshal(resp, &r); err != nil {
+		return RespostaDeMetricas{}, fmt.Errorf("resposta de métricas ilegível: %w", err)
+	}
+	return r, nil
+}
+
+// RegistrarIdRemoto grava o id desta máquina no serviço de acesso remoto.
+func (c *Cliente) RegistrarIdRemoto(ctx context.Context, token, id string) error {
+	_, err := c.post(ctx, "/api/agent/remote-id", map[string]string{"remote_id": id}, token)
+	return err
+}
+
 type Publicacao struct {
 	Versao          string `json:"versao"`
 	URL             string `json:"url"`

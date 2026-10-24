@@ -313,12 +313,45 @@ Guia de uso em [docs/14](14-agente-de-inventario.md); o agente em
   Filled By O.E.M."* no lugar do serial, e casar por esse valor juntaria as 80
   máquinas do lote num ativo só.
 
-### Onda 3 — O agente, parte 2: desempenho e alertas (4–5 semanas)
+### Onda 3 — O agente, parte 2: desempenho e alertas ✅ **executada**
 
-10. Métricas, agregação por hora, retenção.
-11. Alertas: disco cheio, máquina muda, serviço fora do ar.
-12. Inventário de software e "quem ainda tem o sistema antigo".
-13. Acesso remoto **integrando** RustDesk ou MeshCentral.
+Guia de uso em [docs/14](14-agente-de-inventario.md).
+
+10. ✅ Métricas, agregação por hora, retenção (migração 0032).
+11. ✅ Alertas: disco cheio, máquina muda, serviço fora do ar — e SMART em falha,
+    que não estava no plano e é o mais acionável dos quatro.
+12. ✅ Inventário de software e "quem ainda tem o sistema antigo"
+    (`/inventario/software`).
+13. ✅ Acesso remoto **integrando**: o agente lê o id do RustDesk e a tela oferece
+    o link. A plataforma continua não implementando controle remoto.
+
+**O que mudou em relação ao que estava planejado aqui, e por quê:**
+
+- **Três camadas de retenção, não duas.** O esboço previa `agent_metrics_raw` e
+  `agent_metrics_hourly`. O disco ganhou a sua própria (`agent_volume_samples`),
+  agregada por hora **já na entrada**, guardando o **mínimo livre da hora** — que
+  é exatamente o que um alerta de disco precisa. Sem ela, a tabela crua seria
+  multiplicada pelo número de volumes de cada máquina para guardar um dado cujo
+  único uso é o pior momento.
+
+- **Amostra a cada 5 minutos, não a cada 1.** Um minuto daria 288 mil linhas por
+  dia numa frota de 200; cinco dão 57 mil. A resolução de cinco minutos responde
+  tudo que este módulo promete responder, e a de um minuto só responde o que a
+  plataforma não se propõe a investigar.
+
+- **A histerese dos alertas.** Não estava prevista e é o que separa um recurso
+  útil de um que as pessoas filtram para a lixeira: o alerta abre no limiar e
+  fecha cinco pontos abaixo, senão um disco parado em 90,1% manda e-mail oito
+  vezes por dia.
+
+- **Nenhuma métrica por processo.** "Qual programa está consumindo a CPU" é a
+  pergunta seguinte, é tentadora, e a resposta carrega o nome e a linha de comando
+  de tudo que a pessoa está rodando — que é vigilância, não inventário. O agente
+  promete não olhar o que está aberto, e a promessa vale mais que o recurso.
+
+- **A projeção de "em quantos dias este disco enche".** Não estava no plano. É a
+  informação mais acionável que a série de disco produz: "enche em quatro dias"
+  move alguém hoje, "está com 88%" não move ninguém.
 
 ### Onda 4 — Autoatendimento (4–6 semanas)
 

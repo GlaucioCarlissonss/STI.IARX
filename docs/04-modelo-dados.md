@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-66 tabelas e 20 views em `public`, com 171 policies de RLS, mais 3 policies em
+70 tabelas e 21 views em `public`, com 176 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
@@ -315,6 +315,61 @@ Três coisas desta migração valem registro:
    `submit_satisfaction`: a função é a única porta, só aceita o token, e **não
    existe parâmetro de tenant para falsificar** — o tenant é derivado do token.
 
+### Desempenho, retenção e alertas (0032)
+A Onda 2 respondeu "o que esta máquina é"; esta responde "como ela está".
+
+| Tabela | Papel | Vida |
+|---|---|---|
+| `agent_metrics_raw` | Amostra a cada 5 min: CPU, memória, serviços fora do ar | curta (7 dias, por tenant) |
+| `agent_metrics_hourly` | Média **e máximo** por hora. É o que o gráfico lê | 1 ano |
+| `agent_volume_samples` | Espaço em disco, já agregado por hora **na entrada** | 1 ano |
+| `agent_alerts` | Disco cheio, máquina muda, serviço fora, SMART em falha | 180 dias após fechar |
+
+**Três camadas, e não uma.** O detalhe responde "o que houve às 14h32 de ontem" e
+envelhece em dias; o agregado responde "esta máquina está pequena para o trabalho
+há seis meses", que é a pergunta que justifica uma compra — e que ninguém faz
+dentro de sete dias. Guardar só o detalhe perderia a segunda; guardar só o
+agregado perderia a primeira.
+
+**`agent_volume_samples` foge do padrão de propósito:** ela guarda o **mínimo de
+espaço livre da hora**, agregado já na inserção. O mínimo é exatamente o que um
+alerta de disco precisa, e agregar na entrada evita uma quarta tabela crua
+multiplicada pelo número de volumes de cada máquina.
+
+Cinco decisões que valem registro:
+
+1. **A chave primária de `agent_metrics_raw` é `(device_id, collected_at)`**, e
+   ela É a idempotência. O agente guarda amostras numa fila local e reenvia o
+   lote quando a rede volta; sem a chave, o reenvio duplicaria cada leitura e a
+   média da hora passaria a contar a mesma amostra duas vezes.
+
+2. **Índice BRIN em `collected_at`.** A tabela é escrita em ordem de tempo e
+   varrida por faixa de tempo — o caso em que o BRIN custa kilobytes onde o
+   B-tree custaria dezenas de megabytes.
+
+3. **A histerese dos alertas.** O alerta de disco **abre** no limiar do tenant e
+   **fecha cinco pontos abaixo**. Um disco parado em 90,1% com limiar de 90
+   abriria e fecharia a cada ciclo, com um e-mail por vez — e um alerta que chega
+   oito vezes por dia é um alerta que as pessoas filtram para a lixeira, levando
+   junto os que importam.
+
+4. **Alerta é estado, não evento.** Ele abre, fica aberto enquanto a condição
+   vale, e fecha. Uma linha por detecção produziria 288 linhas por dia dizendo
+   "o disco continua cheio", e "o que está errado agora?" viraria um
+   `distinct on`.
+
+5. **As três tabelas de métrica NÃO são auditadas.** São escritas por máquina, a
+   cada cinco minutos, e nunca editadas por gente: auditar gravaria uma segunda
+   cópia de tudo em `audit_log`. É a mesma aritmética que tirou `last_seen_at` da
+   trilha na 0031, em escala maior. `agent_alerts` é auditada, porque fechar um
+   alerta à mão é decisão de gente.
+
+A 0032 também corrige, em `app.agent_reconcile`, a escolha do snapshot corrente:
+ela era `order by collected_at desc limit 1`, e duas coletas com o mesmo carimbo
+de hora — relógio travado na máquina de cliente — deixavam a escolha ao acaso.
+Agora o corrente é o que o `last_snapshot_hash` do dispositivo aponta, que é a
+definição exata de "o que está instalado agora".
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -397,7 +452,7 @@ em alguns perfis e fosse esquecida em outros.
 | `trg_protect_default_queue` | `queues` | protege a fila padrão |
 | `trg_assets_history` | `it_assets` | gera eventos de lifecycle |
 | `trg_profiles_no_escalation` | `profiles` | bloqueia auto-promoção de papel |
-| `trg_*_audit` | 37 tabelas | auditoria global |
+| `trg_*_audit` | 38 tabelas | auditoria global |
 | `trg_branches_geocode_staleness` | `branches` | invalida a coordenada quando o endereço muda |
 | `trg_tenants_seed_access_profiles` | `tenants` | cria os 9 perfis do sistema no nascimento do tenant |
 | `trg_profiles_default_access_profile` | `profiles` | atribui o perfil correspondente ao papel |

@@ -155,3 +155,47 @@ export async function revogarMaquina(_prev: ActionState, formData: FormData): Pr
       'Máquina revogada. O agente dela para de ser aceito, e reinstalar não a traz de volta. O ativo e o histórico continuam no inventário.',
   }
 }
+
+/**
+ * Fecha um alerta à mão.
+ *
+ * O alerta se fecha sozinho quando a condição deixa de valer — o disco esvazia,
+ * a máquina volta a falar, o serviço sobe. Esta ação existe para o caso em que a
+ * condição foi resolvida de outro jeito, ou em que alguém quer limpar a lista
+ * enquanto trata do problema.
+ *
+ * **Ela não silencia nada.** Se a condição continuar valendo, o trabalho agendado
+ * abre o alerta de novo no ciclo seguinte — e avisa de novo, porque reabrir é um
+ * acontecimento novo. Um botão que silenciasse um problema real transformaria o
+ * módulo de alerta num módulo de esconder alerta, que é a pior coisa que se pode
+ * fazer com um recurso cujo valor inteiro é avisar.
+ */
+export async function fecharAlerta(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const gate = await permitirEscrita('inventario.agentes.gerenciar', {
+    mensagem: 'Sem permissão para fechar alertas.',
+  })
+  if ('error' in gate) return gate
+
+  const id = formData.get('alerta_id')
+  if (typeof id !== 'string' || id === '') return { error: 'Alerta inválido.' }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('agent_alerts')
+    .update({ fechado_em: new Date().toISOString() })
+    .eq('id', id)
+    .is('fechado_em', null)
+    .select('id')
+
+  if (error) return { error: mensagemDeErro(error) }
+  /*
+   * Zero linhas aqui cobre dois casos — sem permissão (negação do RLS) e alerta
+   * já fechado por outra pessoa ou pelo próprio trabalho. A mensagem genérica
+   * serve aos dois, e o segundo é o mais comum: dois técnicos olhando a mesma
+   * tela.
+   */
+  if (!data || data.length === 0) return { error: NAO_AFETADO }
+
+  revalidatePath('/inventario/agentes')
+  return { success: 'Alerta fechado. Se a condição continuar valendo, ele volta a abrir.' }
+}

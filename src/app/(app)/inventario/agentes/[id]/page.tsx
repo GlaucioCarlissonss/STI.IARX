@@ -11,8 +11,11 @@ import {
   formatarBytes,
   inventarioSchema,
 } from '@/lib/agent/inventario'
-import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { completarHoras, diasAteEncher, usoDoVolume, type PontoDoGrafico } from '@/lib/agent/metricas'
+import { GraficoHoras } from '@/components/grafico-horas'
 import { RevogarMaquina } from './revogar'
+import { FecharAlerta } from './fechar-alerta'
 
 export const metadata: Metadata = { title: 'Máquina' }
 
@@ -27,6 +30,7 @@ interface Maquina {
   it_asset_id: string | null
   match_method: string | null
   divergences: Record<string, { cadastrado?: string; agente?: string }>
+  remote_id: string | null
   last_seen_at: string | null
   last_snapshot_at: string | null
   enrollment_id: string | null
@@ -41,6 +45,24 @@ interface Snapshot {
   collected_at: string
 }
 
+interface Alerta {
+  id: string
+  kind: string
+  chave: string
+  severidade: string
+  mensagem: string
+  valor: number | null
+  aberto_em: string
+  fechado_em: string | null
+}
+
+interface AmostraDeVolume {
+  ponto: string
+  hora: string
+  total_bytes: number
+  livre_min_bytes: number
+}
+
 interface Programa {
   name: string
   version: string
@@ -52,6 +74,41 @@ interface Programa {
 const ROTULO_DE_DIVERGENCIA: Record<string, string> = {
   serial_number: 'Número de série',
   model: 'Modelo',
+}
+
+const ROTULO_DE_ALERTA: Record<string, string> = {
+  disco_cheio: 'Disco cheio',
+  maquina_muda: 'Sem contato',
+  servico_fora: 'Serviço fora do ar',
+  smart_falha: 'Disco com defeito',
+}
+
+/**
+ * As duas janelas de tempo desta tela, capturadas de uma vez.
+ *
+ * Fica fora do componente porque ler o relógio durante a renderização é impuro —
+ * o mesmo render poderia produzir resultados diferentes. É a mesma razão (e o
+ * mesmo formato) de `onlineUserIds` em `/usuarios`.
+ *
+ * As duas janelas são diferentes de propósito: 24 horas no gráfico respondem "o
+ * que houve ontem à noite?", que é a pergunta de quem chega de manhã com um
+ * chamado na mão; sete dias no disco são o mínimo para a projeção de "em quantos
+ * dias isto enche" não virar ruído.
+ */
+const HORAS_DE_GRAFICO = 24
+
+function janelas() {
+  const agora = Date.now()
+  return {
+    grafico: new Date(agora - HORAS_DE_GRAFICO * 3_600_000).toISOString(),
+    disco: new Date(agora - 7 * 86_400_000).toISOString(),
+  }
+}
+
+function tomDaSeveridade(s: string) {
+  if (s === 'critico') return 'breach' as const
+  if (s === 'alerta') return 'warn' as const
+  return 'neutral' as const
 }
 
 /**
@@ -80,11 +137,21 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
 
   const supabase = await createClient()
 
-  const [{ data: maquina }, { data: snapshots }, { data: programas }] = await Promise.all([
+  const desde = janelas()
+
+  const [
+    { data: maquina },
+    { data: snapshots },
+    { data: programas },
+    { data: horas },
+    { data: volumes },
+    { data: alertas },
+    { data: tenant },
+  ] = await Promise.all([
     supabase
       .from('agent_devices')
       .select(
-        'id, device_uuid, hostname, os, os_version, chassis, agent_version, it_asset_id, match_method, divergences, last_seen_at, last_snapshot_at, enrollment_id, created_at, branch:branches(name), asset:it_assets(asset_tag, serial_number)',
+        'id, device_uuid, hostname, os, os_version, chassis, agent_version, it_asset_id, match_method, divergences, remote_id, last_seen_at, last_snapshot_at, enrollment_id, created_at, branch:branches(name), asset:it_assets(asset_tag, serial_number)',
       )
       .eq('id', id)
       .maybeSingle<Maquina>(),
@@ -102,6 +169,35 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
       .order('name')
       .limit(500)
       .returns<Programa[]>(),
+    supabase
+      .from('agent_metrics_hourly')
+      .select('hora, cpu_avg, cpu_max, mem_avg_pct, mem_max_pct')
+      .eq('device_id', id)
+      .gte('hora', desde.grafico)
+      .order('hora')
+      .returns<PontoDoGrafico[]>(),
+    /* Sete dias de volume, e não 24 horas: a projeção de "em quantos dias este
+       disco enche" precisa de uma janela larga para não virar ruído. */
+    supabase
+      .from('agent_volume_samples')
+      .select('ponto, hora, total_bytes, livre_min_bytes')
+      .eq('device_id', id)
+      .gte('hora', desde.disco)
+      .order('hora')
+      .returns<AmostraDeVolume[]>(),
+    supabase
+      .from('agent_alerts')
+      .select('id, kind, chave, severidade, mensagem, valor, aberto_em, fechado_em')
+      .eq('device_id', id)
+      .order('fechado_em', { ascending: true, nullsFirst: true })
+      .order('aberto_em', { ascending: false })
+      .limit(50)
+      .returns<Alerta[]>(),
+    supabase
+      .from('tenants')
+      .select('agent_remote_url')
+      .limit(1)
+      .maybeSingle<{ agent_remote_url: string | null }>(),
   ])
 
   /* RLS nega devolvendo zero linhas, não erro: máquina de outro tenant e máquina
@@ -124,6 +220,39 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
   const instalados = lista.filter((p) => new Date(p.last_seen_at).getTime() >= corte)
   const sumiram = lista.filter((p) => new Date(p.last_seen_at).getTime() < corte)
 
+  const pontos = completarHoras(horas ?? [], HORAS_DE_GRAFICO)
+
+  /* Uma linha por volume, com o último estado e a projeção. A projeção usa a
+     série inteira dos sete dias; o estado, a amostra mais recente. */
+  const porVolume = new Map<string, AmostraDeVolume[]>()
+  for (const v of volumes ?? []) {
+    const lista = porVolume.get(v.ponto) ?? []
+    lista.push(v)
+    porVolume.set(v.ponto, lista)
+  }
+  const discos = [...porVolume.entries()]
+    .map(([ponto, serie]) => {
+      const ultimo = serie[serie.length - 1]!
+      return {
+        ponto,
+        total: ultimo.total_bytes,
+        livre: ultimo.livre_min_bytes,
+        uso: usoDoVolume(ultimo.total_bytes, ultimo.livre_min_bytes),
+        dias: diasAteEncher(
+          serie.map((s) => ({ hora: s.hora, total: s.total_bytes, livre: s.livre_min_bytes })),
+        ),
+      }
+    })
+    .sort((a, b) => (b.uso ?? 0) - (a.uso ?? 0))
+
+  const abertos = (alertas ?? []).filter((a) => a.fechado_em === null)
+  const fechados = (alertas ?? []).filter((a) => a.fechado_em !== null).slice(0, 10)
+
+  const urlRemota =
+    tenant?.agent_remote_url && maquina.remote_id
+      ? tenant.agent_remote_url.replace('{id}', maquina.remote_id)
+      : null
+
   const mudancas: { quando: string; frases: string[] }[] = []
   for (let i = 0; i < historico.length - 1; i += 1) {
     const frases = compararInventarios(historico[i + 1]!.payload, historico[i]!.payload)
@@ -145,6 +274,20 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
                 Ver no inventário
               </Link>
             )}
+            {urlRemota && (
+              /*
+                 A plataforma não implementa controle remoto — ela guarda o elo
+                 que só ela pode guardar: qual id do serviço pertence a qual
+                 máquina do inventário. Daqui para a frente é o RustDesk (ou o
+                 MeshCentral) que faz o trabalho.
+              */
+              <a
+                href={urlRemota}
+                className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-semibold text-[var(--color-brand-ink)] hover:bg-[var(--color-surface-2)]"
+              >
+                Acessar remotamente
+              </a>
+            )}
             {podeGerenciar && <RevogarMaquina deviceId={maquina.id} />}
           </div>
         }
@@ -165,6 +308,91 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
               </tr>
             ))}
           </Table>
+        </Card>
+      )}
+
+      {abertos.length > 0 && (
+        <Card title={`Alertas abertos (${abertos.length})`} className="mb-6">
+          <Table label="Alertas abertos" head={['O quê', 'Detalhe', 'Desde', '']}>
+            {abertos.map((a) => (
+              <tr key={a.id}>
+                <Td>
+                  <Badge tone={tomDaSeveridade(a.severidade)}>
+                    {ROTULO_DE_ALERTA[a.kind] ?? a.kind}
+                  </Badge>
+                </Td>
+                <Td className="text-[var(--color-ink-2)]">{a.mensagem}</Td>
+                <Td className="text-[var(--color-ink-2)]">{formatDateTime(a.aberto_em)}</Td>
+                <Td>{podeGerenciar && <FecharAlerta alertaId={a.id} />}</Td>
+              </tr>
+            ))}
+          </Table>
+          <p className="mt-2 text-xs text-[var(--color-ink-3)]">
+            Alerta se fecha sozinho quando a condição deixa de valer. Fechar à mão serve para o que
+            já foi resolvido de outro jeito — e, se a condição continuar, ele volta a abrir.
+          </p>
+        </Card>
+      )}
+
+      <Card title="Desempenho nas últimas 24 horas" className="mb-6">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <GraficoHoras pontos={pontos} metrica="cpu" titulo="Processador" />
+          <GraficoHoras pontos={pontos} metrica="mem" titulo="Memória" />
+        </div>
+        <p className="mt-3 text-xs text-[var(--color-ink-3)]">
+          O agente mede de cinco em cinco minutos e o servidor resume por hora. A linha grossa é a
+          média da hora; a fina, o pico — média de 40% com picos de 100% é uma máquina que trava, e
+          a média sozinha esconderia isso.
+        </p>
+      </Card>
+
+      {discos.length > 0 && (
+        <Card title="Espaço em disco" className="mb-6">
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {discos.slice(0, 4).map((d) => (
+              <StatTile
+                key={d.ponto}
+                label={d.ponto}
+                value={d.uso === null ? '—' : `${d.uso}%`}
+                hint={
+                  d.dias !== null
+                    ? `enche em ~${d.dias} dia(s)`
+                    : `${formatarBytes(d.livre)} livres`
+                }
+                tone={d.uso === null ? 'neutral' : d.uso >= 90 ? 'breach' : d.uso >= 80 ? 'warn' : 'ok'}
+              />
+            ))}
+          </div>
+          <Table label="Volumes" head={['Volume', 'Tamanho', 'Livre', 'Uso', 'Projeção']}>
+            {discos.map((d) => (
+              <tr key={d.ponto}>
+                <Td>{d.ponto}</Td>
+                <Td className="text-[var(--color-ink-2)]">{formatarBytes(d.total)}</Td>
+                <Td className="text-[var(--color-ink-2)]">{formatarBytes(d.livre)}</Td>
+                <Td>
+                  {d.uso === null ? (
+                    '—'
+                  ) : (
+                    <Badge tone={d.uso >= 90 ? 'breach' : d.uso >= 80 ? 'warn' : 'ok'}>
+                      {d.uso}%
+                    </Badge>
+                  )}
+                </Td>
+                <Td className="text-[var(--color-ink-2)]">
+                  {d.dias === null ? (
+                    <span className="text-[var(--color-ink-3)]">estável</span>
+                  ) : (
+                    `enche em ~${d.dias} dia(s)`
+                  )}
+                </Td>
+              </tr>
+            ))}
+          </Table>
+          <p className="mt-2 text-xs text-[var(--color-ink-3)]">
+            O número guardado é o <strong>mínimo livre de cada hora</strong>, que é o pior momento —
+            é ele que decide se o disco encheu. A projeção é uma reta sobre os últimos sete dias:
+            serve para decidir se vale olhar a máquina esta semana, não para marcar data.
+          </p>
         </Card>
       )}
 
@@ -272,6 +500,21 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
           </ul>
         )}
       </Card>
+
+      {fechados.length > 0 && (
+        <Card title="Alertas já resolvidos" className="mb-6">
+          <Table label="Alertas fechados" head={['O quê', 'Detalhe', 'Abriu', 'Fechou']}>
+            {fechados.map((a) => (
+              <tr key={a.id}>
+                <Td className="text-[var(--color-ink-2)]">{ROTULO_DE_ALERTA[a.kind] ?? a.kind}</Td>
+                <Td className="text-[var(--color-ink-2)]">{a.mensagem}</Td>
+                <Td className="text-[var(--color-ink-2)]">{formatDateTime(a.aberto_em)}</Td>
+                <Td className="text-[var(--color-ink-2)]">{formatDateTime(a.fechado_em)}</Td>
+              </tr>
+            ))}
+          </Table>
+        </Card>
+      )}
 
       <Card title={`Software instalado (${instalados.length})`}>
         {instalados.length === 0 ? (

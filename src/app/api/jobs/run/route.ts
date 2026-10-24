@@ -75,8 +75,29 @@ export async function POST(request: Request) {
    * sairia na execução seguinte — o que funciona, mas atrasa a pesquisa em um
    * ciclo inteiro sem motivo.
    */
+  /*
+   * A ORDEM É A DEPENDÊNCIA, e os três trabalhos do agente (0032) entram no fim
+   * por uma razão específica:
+   *
+   * · `aggregate_metrics` antes de `agent_alerts` não é obrigatório hoje — o
+   *   alerta de disco lê `agent_volume_samples`, que já entra agregada. Mas
+   *   agregar primeiro é o que mantém a ordem verdadeira quando um alerta passar
+   *   a olhar a série por hora, e inverter depois é o tipo de mudança que ninguém
+   *   lembra de fazer.
+   *
+   * · `purge_metrics` por ÚLTIMO, sempre. Ele apaga o detalhe; rodá-lo antes da
+   *   agregação jogaria fora amostras que ainda não viraram agregado, e o buraco
+   *   no gráfico apareceria semanas depois, sem causa visível.
+   */
   const resultados: Record<string, number | string> = {}
-  for (const job of ['job_auto_close', 'job_sla_alerts', 'job_satisfaction_invites'] as const) {
+  for (const job of [
+    'job_auto_close',
+    'job_sla_alerts',
+    'job_satisfaction_invites',
+    'job_aggregate_metrics',
+    'job_agent_alerts',
+    'job_purge_metrics',
+  ] as const) {
     const { data, error } = await supabase.schema('app').rpc(job)
     if (error) {
       console.error('[jobs]', job, error.message)

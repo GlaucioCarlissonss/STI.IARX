@@ -17,6 +17,12 @@
 .PARAMETER Token
   O token de inscrição do lote, emitido na tela "Agentes nas máquinas".
 
+.PARAMETER ServicosCriticos
+  Nomes CURTOS dos serviços que esta máquina não pode ficar sem. Ex.:
+  -ServicosCriticos Spooler,WinDefend
+  Vazio por padrão: não existe lista que sirva para todo mundo, e uma inventada
+  por nós produziria alerta em máquina onde o serviço nunca deveria rodar.
+
 .EXAMPLE
   # Numa máquina, com PowerShell como administrador:
   .\instalar.ps1 -Servidor "https://sti.iartech.cloud" -Token "inv_abc..."
@@ -38,6 +44,8 @@ param(
   [Parameter(Mandatory = $true)][string] $Token,
   [int] $IntervaloColetaMin = 1440,
   [int] $IntervaloEnvioMin = 10,
+  [int] $IntervaloAmostraMin = 5,
+  [string[]] $ServicosCriticos = @(),
   [switch] $AutoAtualizar,
   [string] $Origem = $PSScriptRoot
 )
@@ -91,11 +99,16 @@ Copy-Item -Path $binarioOrigem -Destination $Exe -Force
 
 Write-Host 'Gravando a configuracao...'
 $config = [ordered]@{
-  servidor             = $Servidor.TrimEnd('/')
-  token_inscricao      = $Token
-  intervalo_coleta_min = $IntervaloColetaMin
-  intervalo_envio_min  = $IntervaloEnvioMin
-  auto_atualizar       = [bool]$AutoAtualizar
+  servidor              = $Servidor.TrimEnd('/')
+  token_inscricao       = $Token
+  intervalo_coleta_min  = $IntervaloColetaMin
+  intervalo_envio_min   = $IntervaloEnvioMin
+  intervalo_amostra_min = $IntervaloAmostraMin
+  # Nome CURTO do servico ('Spooler'), nunca o de exibicao: o de exibicao muda
+  # com o idioma do sistema, e uma configuracao que funciona no Windows em
+  # portugues falharia calada no mesmo parque com uma maquina em ingles.
+  servicos_criticos     = @($ServicosCriticos)
+  auto_atualizar        = [bool]$AutoAtualizar
 }
 # `ConvertTo-Json` e não concatenação de texto: um token com aspa produziria um
 # arquivo malformado, e o agente não subiria sem dizer por quê.

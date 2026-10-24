@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 156,
-    'catálogo de permissões tem as 156 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 158,
+    'catálogo de permissões tem as 158 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 156,
+  perform app.assert((select count(*) from public.permission_catalog) = 158,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -4532,6 +4532,684 @@ begin
   -- base confere `length` do retorno em vez de confiar na ausência de exceção.
   perform app.assert(v_n = 0,
     'e não revoga máquina: a negação do RLS chega como zero linhas, não como erro');
+end
+$$;
+reset role;
+
+-- =============================================================================
+\echo '=== 36. Desempenho, retenção e alertas do agente (0032) ==='
+-- =============================================================================
+reset role;
+
+-- Um alerta errado não dá erro: ou não chega (e o disco enche), ou chega oito
+-- vezes por dia (e a pessoa cria uma regra de caixa de entrada que manda todos
+-- para a lixeira — inclusive os que importam). As duas falhas são silenciosas e
+-- só aparecem depois de instalado em duzentas máquinas.
+
+-- -----------------------------------------------------------------------------
+-- 36.1 Ingestão de métricas: o lote, e a idempotência do reenvio
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tok  text;
+  v_dev  uuid;
+  v_r    record;
+  v_base timestamptz := date_trunc('hour', now()) - interval '3 hours';
+  v_lote jsonb;
+begin
+  delete from public.agent_metrics_raw;
+  delete from public.agent_volume_samples;
+  delete from public.agent_alerts;
+
+  select device_id, device_token into v_dev, v_tok
+    from public.agent_enroll('inv_aberto',
+      jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000070',
+                         'hostname', 'MAQ-METRICA', 'chassis', 'desktop'));
+
+  perform app.assert(
+    (select status from public.agent_ingest_metrics('ag_token_inventado', '[]'::jsonb)) = 'unauthorized',
+    'token de máquina desconhecido é recusado na ingestão de métricas');
+
+  v_lote := jsonb_build_array(
+    jsonb_build_object('em', v_base, 'cpu', 20, 'mem_usada', 4000000000, 'mem_total', 8000000000,
+      'volumes', jsonb_build_array(jsonb_build_object('ponto', 'C:', 'total', 1000, 'livre', 500))),
+    jsonb_build_object('em', v_base + interval '5 min', 'cpu', 80, 'mem_usada', 6000000000, 'mem_total', 8000000000,
+      'volumes', jsonb_build_array(jsonb_build_object('ponto', 'C:', 'total', 1000, 'livre', 300))));
+
+  select * into v_r from public.agent_ingest_metrics(v_tok, v_lote);
+  perform app.assert(v_r.status = 'stored' and v_r.aceitas = 2,
+    'o lote de duas amostras entra inteiro');
+
+  -- Reenviar o MESMO lote: é o que acontece quando a rede cai depois de o
+  -- servidor gravar e antes de o agente receber a confirmação.
+  select * into v_r from public.agent_ingest_metrics(v_tok, v_lote);
+  perform app.assert(v_r.aceitas = 0,
+    'reenviar o lote não aceita nada de novo');
+  perform app.assert(
+    (select count(*) from public.agent_metrics_raw where device_id = v_dev) = 2,
+    'e NÃO duplica a amostra — senão a média da hora contaria a mesma leitura duas vezes');
+
+  -- O volume vira UMA linha por hora, com o pior momento.
+  perform app.assert(
+    (select count(*) from public.agent_volume_samples where device_id = v_dev) = 1,
+    'as duas amostras de volume viram uma linha por hora');
+  perform app.assert(
+    (select livre_min_bytes from public.agent_volume_samples where device_id = v_dev) = 300,
+    'e o que fica é o MÍNIMO livre da hora, que é o que o alerta precisa');
+  perform app.assert(
+    (select amostras from public.agent_volume_samples where device_id = v_dev) = 2,
+    'com a contagem de amostras da hora');
+
+  -- O batimento também vale: mandar métrica é dar sinal de vida.
+  perform app.assert(
+    (select last_seen_at from public.agent_devices where id = v_dev) > now() - interval '1 minute',
+    'enviar métrica registra o contato: a máquina acabou de falar');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.2 O relógio da máquina de cliente erra
+-- -----------------------------------------------------------------------------
+-- Fuso mal configurado, bateria de placa-mãe acabada, imagem de máquina virtual
+-- restaurada. Uma amostra com data de 2027 ficaria no topo de todo gráfico para
+-- sempre, e a purga por retenção nunca a alcançaria.
+do $$
+declare
+  v_tok text;
+  v_dev uuid;
+  v_r   record;
+begin
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+  select device_token into v_tok from public.agent_enroll('inv_aberto',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000070'));
+
+  select * into v_r from public.agent_ingest_metrics(v_tok, jsonb_build_array(
+    jsonb_build_object('em', now() + interval '2 days', 'cpu', 10),
+    jsonb_build_object('em', now() - interval '200 days', 'cpu', 10),
+    jsonb_build_object('cpu', 10)));
+
+  perform app.assert(v_r.aceitas = 0,
+    'amostra do futuro, do passado remoto e sem data nenhuma são todas descartadas');
+  perform app.assert(
+    not exists (select 1 from public.agent_metrics_raw
+                 where device_id = v_dev and collected_at > now() + interval '1 hour'),
+    'e nenhuma delas ficou gravada');
+
+  -- Uma hora de folga passa: cobre atraso de relógio honesto.
+  select * into v_r from public.agent_ingest_metrics(v_tok, jsonb_build_array(
+    jsonb_build_object('em', now() + interval '20 minutes', 'cpu', 10)));
+  perform app.assert(v_r.aceitas = 1,
+    'mas vinte minutos adiantado passa — relógio de máquina real atrasa e adianta');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.3 Agregação por hora: só horas completas, e reprocessar não soma
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_dev   uuid;
+  v_hora  timestamptz := date_trunc('hour', now()) - interval '3 hours';
+  v_antes integer;
+begin
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+
+  perform app.job_aggregate_metrics();
+
+  perform app.assert(
+    (select cpu_avg from public.agent_metrics_hourly where device_id = v_dev and hora = v_hora) = 50,
+    'a média da hora é a média das amostras (20 e 80 = 50)');
+  perform app.assert(
+    (select cpu_max from public.agent_metrics_hourly where device_id = v_dev and hora = v_hora) = 80,
+    'e o máximo fica junto: média de 40%% com picos de 100%% é uma máquina que trava');
+  perform app.assert(
+    (select mem_max_pct from public.agent_metrics_hourly where device_id = v_dev and hora = v_hora) = 75,
+    'memória também, em percentual');
+  perform app.assert(
+    (select amostras from public.agent_metrics_hourly where device_id = v_dev and hora = v_hora) = 2,
+    'com a contagem, para a tela saber se a hora está completa');
+
+  -- A hora CORRENTE não é agregada: uma barra que encolhe e cresce sozinha é
+  -- uma barra em que ninguém confia.
+  perform app.assert(
+    not exists (select 1 from public.agent_metrics_hourly
+                 where device_id = v_dev and hora >= date_trunc('hour', now())),
+    'a hora corrente NÃO é agregada enquanto não termina');
+
+  -- Reprocessar substitui, não soma. Importa porque lote atrasado do agente
+  -- acrescenta amostras a uma hora que já foi agregada.
+  select amostras into v_antes from public.agent_metrics_hourly
+   where device_id = v_dev and hora = v_hora;
+  perform app.job_aggregate_metrics();
+  perform app.assert(
+    (select amostras from public.agent_metrics_hourly where device_id = v_dev and hora = v_hora) = v_antes,
+    'reprocessar a mesma hora SUBSTITUI o agregado, não soma');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.4 A histerese do alerta de disco
+-- -----------------------------------------------------------------------------
+-- É a asserção que impede o recurso mais útil do módulo de virar o motivo de as
+-- pessoas criarem uma regra de caixa de entrada para ignorá-lo.
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_dev uuid;
+  v_fil uuid;
+begin
+  select id, branch_id into v_dev, v_fil from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+
+  delete from public.agent_alerts;
+  delete from public.agent_volume_samples;
+  delete from public.email_outbox;
+
+  -- Limiar do tenant é 90 por padrão. 85% não abre.
+  insert into public.agent_volume_samples (tenant_id, device_id, branch_id, ponto, hora, total_bytes, livre_min_bytes)
+  values (v_t, v_dev, v_fil, 'C:', date_trunc('hour', now()), 1000, 150);
+  perform app.job_agent_alerts();
+  perform app.assert(
+    not exists (select 1 from public.agent_alerts where device_id = v_dev and kind = 'disco_cheio'),
+    '85%% de uso não abre alerta: o limiar do tenant é 90');
+
+  -- 92% abre.
+  update public.agent_volume_samples set livre_min_bytes = 80 where device_id = v_dev;
+  perform app.job_agent_alerts();
+  perform app.assert(
+    (select count(*) from public.agent_alerts
+      where device_id = v_dev and kind = 'disco_cheio' and fechado_em is null) = 1,
+    '92%% abre UM alerta');
+  perform app.assert(
+    (select valor from public.agent_alerts where device_id = v_dev and kind = 'disco_cheio') = 92.00,
+    'com o número que disparou, para a tela não recalcular');
+
+  -- Rodar de novo não abre um segundo.
+  perform app.job_agent_alerts();
+  perform app.assert(
+    (select count(*) from public.agent_alerts
+      where device_id = v_dev and kind = 'disco_cheio') = 1,
+    'rodar o trabalho de novo NÃO abre um segundo alerta para a mesma condição');
+
+  /*
+   * Agora a histerese. Com limiar 90 e fechamento em 85, um disco em 88% —
+   * abaixo do limiar — CONTINUA com o alerta aberto. Sem essa folga, um disco
+   * parado em 90,1% abriria e fecharia a cada ciclo, com um e-mail por vez.
+   */
+  update public.agent_volume_samples set livre_min_bytes = 120 where device_id = v_dev;
+  perform app.job_agent_alerts();
+  perform app.assert(
+    (select fechado_em from public.agent_alerts
+      where device_id = v_dev and kind = 'disco_cheio') is null,
+    '88%% ainda NÃO fecha: é a histerese que impede o alerta de bater oito vezes por dia');
+
+  -- 80% fecha.
+  update public.agent_volume_samples set livre_min_bytes = 200 where device_id = v_dev;
+  perform app.job_agent_alerts();
+  perform app.assert(
+    (select fechado_em from public.agent_alerts
+      where device_id = v_dev and kind = 'disco_cheio') is not null,
+    '80%% fecha — cinco pontos abaixo do limiar');
+
+  -- E se encher de novo, abre OUTRO alerta: encher duas vezes são dois
+  -- acontecimentos, e o segundo precisa avisar.
+  update public.agent_volume_samples set livre_min_bytes = 50 where device_id = v_dev;
+  perform app.job_agent_alerts();
+  perform app.assert(
+    (select count(*) from public.agent_alerts
+      where device_id = v_dev and kind = 'disco_cheio') = 2,
+    'encher de novo abre um alerta NOVO: são dois acontecimentos');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.5 Dois volumes cheios na mesma máquina são dois alertas
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_dev uuid;
+begin
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+
+  insert into public.agent_volume_samples (tenant_id, device_id, ponto, hora, total_bytes, livre_min_bytes)
+  values (v_t, v_dev, 'D:', date_trunc('hour', now()), 1000, 20);
+  perform app.job_agent_alerts();
+
+  perform app.assert(
+    (select count(*) from public.agent_alerts
+      where device_id = v_dev and kind = 'disco_cheio' and fechado_em is null) = 2,
+    'C: e D: cheios são DOIS alertas: a chave inclui o ponto de montagem');
+  perform app.assert(
+    (select severidade from public.agent_alerts
+      where device_id = v_dev and chave = 'D:' and fechado_em is null) = 'critico',
+    'e 98%% é crítico, não apenas alerta');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.6 Máquina muda
+-- -----------------------------------------------------------------------------
+-- É o alerta que justifica o módulo: agente parado não dá erro, não gera chamado,
+-- simplesmente deixa de haver dado novo.
+do $$
+declare
+  v_dev uuid;
+begin
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+  delete from public.agent_alerts where kind = 'maquina_muda';
+
+  perform app.job_agent_alerts();
+  perform app.assert(
+    not exists (select 1 from public.agent_alerts where device_id = v_dev and kind = 'maquina_muda'),
+    'máquina que acabou de falar não vira alerta');
+
+  update public.agent_devices set last_seen_at = now() - interval '30 hours' where id = v_dev;
+  perform app.job_agent_alerts();
+  perform app.assert(
+    (select count(*) from public.agent_alerts
+      where device_id = v_dev and kind = 'maquina_muda' and fechado_em is null) = 1,
+    'sem contato há 30 h abre alerta — o limiar do tenant é 24');
+
+  update public.agent_devices set last_seen_at = now() where id = v_dev;
+  perform app.job_agent_alerts();
+  perform app.assert(
+    (select fechado_em from public.agent_alerts
+      where device_id = v_dev and kind = 'maquina_muda'
+      order by aberto_em desc limit 1) is not null,
+    'e voltar a falar fecha o alerta sozinho');
+
+  -- Máquina revogada não vira alerta: ela foi tirada do parque de propósito.
+  update public.agent_devices set last_seen_at = now() - interval '30 hours', revoked_at = now()
+   where id = v_dev;
+  delete from public.agent_alerts where kind = 'maquina_muda';
+  perform app.job_agent_alerts();
+  perform app.assert(
+    not exists (select 1 from public.agent_alerts where device_id = v_dev and kind = 'maquina_muda'),
+    'máquina revogada NÃO vira "muda": ela foi tirada do parque de propósito');
+  update public.agent_devices set revoked_at = null, last_seen_at = now() where id = v_dev;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.7 Serviço crítico fora do ar
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_dev uuid;
+begin
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+  delete from public.agent_alerts;
+  delete from public.agent_metrics_raw where device_id = v_dev;
+
+  insert into public.agent_metrics_raw (tenant_id, device_id, collected_at, cpu_percent, servicos_fora)
+  values (v_t, v_dev, now() - interval '5 minutes', 10, array['antivirus', 'backup']);
+  perform app.job_agent_alerts();
+
+  perform app.assert(
+    (select count(*) from public.agent_alerts
+      where device_id = v_dev and kind = 'servico_fora' and fechado_em is null) = 2,
+    'dois serviços fora são dois alertas, um por serviço');
+  perform app.assert(
+    (select severidade from public.agent_alerts
+      where device_id = v_dev and kind = 'servico_fora' limit 1) = 'critico',
+    'serviço crítico fora é crítico, não aviso');
+
+  -- O antivírus voltou; o backup não.
+  insert into public.agent_metrics_raw (tenant_id, device_id, collected_at, cpu_percent, servicos_fora)
+  values (v_t, v_dev, now() - interval '1 minute', 10, array['backup']);
+  perform app.job_agent_alerts();
+
+  perform app.assert(
+    (select fechado_em from public.agent_alerts
+      where device_id = v_dev and kind = 'servico_fora' and chave = 'antivirus') is not null,
+    'o serviço que voltou fecha o alerta dele');
+  perform app.assert(
+    (select fechado_em from public.agent_alerts
+      where device_id = v_dev and kind = 'servico_fora' and chave = 'backup') is null,
+    'e o que continua fora NÃO fecha junto');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.8 SMART em falha vem do inventário, não das métricas
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_dev uuid;
+  v_tok text;
+begin
+  delete from public.agent_alerts;
+  select device_token into v_tok from public.agent_enroll('inv_aberto',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000071',
+                       'hostname', 'MAQ-DISCO-RUIM'));
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000071';
+
+  perform public.agent_ingest_inventory(v_tok, jsonb_build_object(
+    'sistema', jsonb_build_object('hostname', 'MAQ-DISCO-RUIM'),
+    'discos', jsonb_build_array(
+      jsonb_build_object('modelo', 'ST1000DM010', 'saude', 'falha'),
+      jsonb_build_object('modelo', 'Samsung 980', 'saude', 'ok'))));
+
+  perform app.job_agent_alerts();
+  perform app.assert(
+    (select count(*) from public.agent_alerts
+      where device_id = v_dev and kind = 'smart_falha' and fechado_em is null) = 1,
+    'só o disco em falha vira alerta; o saudável não');
+  perform app.assert(
+    (select chave from public.agent_alerts where device_id = v_dev and kind = 'smart_falha') = 'ST1000DM010',
+    'e o alerta diz QUAL disco — numa máquina com quatro, isso é a diferença entre trocar certo e errado');
+
+  -- Trocado o disco, o alerta fecha sozinho na próxima coleta.
+  select device_token into v_tok from public.agent_enroll('inv_aberto',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000071'));
+  perform public.agent_ingest_inventory(v_tok, jsonb_build_object(
+    'sistema', jsonb_build_object('hostname', 'MAQ-DISCO-RUIM'),
+    'discos', jsonb_build_array(
+      jsonb_build_object('modelo', 'ST1000DM010', 'saude', 'ok'))));
+  perform app.job_agent_alerts();
+  perform app.assert(
+    (select fechado_em from public.agent_alerts
+      where device_id = v_dev and kind = 'smart_falha') is not null,
+    'disco trocado fecha o alerta na coleta seguinte');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.9 O aviso sai UMA vez por alerta
+-- -----------------------------------------------------------------------------
+-- "O cliente recebeu quarenta e-mails" é a falha clássica deste tipo de recurso.
+do $$
+declare
+  v_t     uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_dev   uuid;
+  v_antes integer;
+begin
+  delete from public.agent_alerts;
+  delete from public.email_outbox;
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+
+  insert into public.agent_volume_samples (tenant_id, device_id, ponto, hora, total_bytes, livre_min_bytes)
+  values (v_t, v_dev, 'E:', date_trunc('hour', now()), 1000, 20)
+  on conflict (device_id, ponto, hora) do update set livre_min_bytes = 20;
+
+  perform app.job_agent_alerts();
+  select count(*)::integer into v_antes from public.email_outbox where kind = 'agent_alert';
+  perform app.assert(v_antes > 0, 'o alerta aberto enfileira aviso para gestores e admins');
+
+  perform app.job_agent_alerts();
+  perform app.job_agent_alerts();
+  perform app.assert(
+    (select count(*) from public.email_outbox where kind = 'agent_alert') = v_antes,
+    'rodar o trabalho três vezes NÃO manda o aviso de novo');
+
+  perform app.assert(
+    (select notificado_em from public.agent_alerts
+      where device_id = v_dev and chave = 'E:' and fechado_em is null) is not null,
+    'e o alerta fica marcado como notificado, visível na própria tabela');
+
+  -- Solicitante não recebe alerta de infraestrutura: não é trabalho dele.
+  perform app.assert(
+    not exists (
+      select 1 from public.email_outbox o
+       join public.profiles p on p.email = o.to_email and p.tenant_id = o.tenant_id
+      where o.kind = 'agent_alert' and p.role = 'solicitante'),
+    'solicitante NÃO recebe alerta de infraestrutura');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.10 Quem pediu silêncio não recebe
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_dev  uuid;
+  v_user uuid := '22220000-0000-4000-8000-000000000002';  -- gestor de TI
+begin
+  delete from public.agent_alerts;
+  delete from public.email_outbox;
+  delete from public.notification_preferences where user_id = v_user;
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+
+  insert into public.notification_preferences (tenant_id, user_id, kind, enabled)
+  values (v_t, v_user, 'agent_alert', false);
+
+  insert into public.agent_volume_samples (tenant_id, device_id, ponto, hora, total_bytes, livre_min_bytes)
+  values (v_t, v_dev, 'F:', date_trunc('hour', now()), 1000, 10)
+  on conflict (device_id, ponto, hora) do update set livre_min_bytes = 10;
+  perform app.job_agent_alerts();
+
+  perform app.assert(
+    not exists (
+      select 1 from public.email_outbox o
+       join public.profiles p on p.id = v_user
+      where o.kind = 'agent_alert' and o.to_email = p.email),
+    'quem desligou o aviso de alerta não recebe');
+  perform app.assert(
+    exists (select 1 from public.email_outbox where kind = 'agent_alert'),
+    'mas os outros continuam recebendo: o silêncio é de uma pessoa, não do sistema');
+
+  delete from public.notification_preferences where user_id = v_user;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.11 Retenção
+-- -----------------------------------------------------------------------------
+-- Sem isto, `agent_metrics_raw` cresce para sempre. Um recurso que enche o disco
+-- do servidor em silêncio é pior que um recurso que não existe.
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_dev uuid;
+begin
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+
+  insert into public.agent_metrics_raw (tenant_id, device_id, collected_at, cpu_percent)
+  values (v_t, v_dev, now() - interval '30 days', 10),
+         (v_t, v_dev, now() - interval '2 days', 10)
+  on conflict do nothing;
+
+  insert into public.agent_metrics_hourly (tenant_id, device_id, hora, cpu_avg, cpu_max)
+  values (v_t, v_dev, date_trunc('hour', now() - interval '400 days'), 10, 10),
+         (v_t, v_dev, date_trunc('hour', now() - interval '30 days'), 10, 10)
+  on conflict do nothing;
+
+  perform app.job_purge_metrics();
+
+  perform app.assert(
+    not exists (select 1 from public.agent_metrics_raw
+                 where device_id = v_dev and collected_at < now() - interval '8 days'),
+    'o detalhe com mais de 7 dias (o padrão do tenant) é apagado');
+  perform app.assert(
+    exists (select 1 from public.agent_metrics_raw
+             where device_id = v_dev and collected_at > now() - interval '3 days'),
+    'e o recente fica');
+
+  perform app.assert(
+    not exists (select 1 from public.agent_metrics_hourly
+                 where device_id = v_dev and hora < now() - interval '366 days'),
+    'o agregado com mais de um ano é apagado');
+  perform app.assert(
+    exists (select 1 from public.agent_metrics_hourly
+             where device_id = v_dev and hora > now() - interval '60 days'),
+    'mas o de 30 dias fica: o agregado vive MUITO mais que o detalhe, porque responde outra pergunta');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.12 A frota ganhou saúde, e o limiar passou a vir do tenant
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_dev uuid;
+begin
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+  update public.agent_devices set last_seen_at = now() - interval '10 hours' where id = v_dev;
+
+  update public.tenants set agent_mute_hours = 24 where id = v_t;
+  perform app.assert(
+    (select silencioso from public.vw_agent_fleet where device_id = v_dev) = false,
+    'com limiar de 24 h, dez horas de silêncio ainda não é "mudo"');
+
+  update public.tenants set agent_mute_hours = 6 where id = v_t;
+  perform app.assert(
+    (select silencioso from public.vw_agent_fleet where device_id = v_dev) = true,
+    'baixar o limiar do tenant para 6 h muda a resposta da view — o número mora num lugar só');
+  update public.tenants set agent_mute_hours = 24 where id = v_t;
+
+  perform app.assert(
+    (select alertas_abertos from public.vw_agent_fleet where device_id = v_dev) >= 1,
+    'a view traz a contagem de alertas abertos da máquina');
+  perform app.assert(
+    (select disco_mais_cheio_pct from public.vw_agent_fleet where device_id = v_dev) >= 90,
+    'e o volume MAIS APERTADO — mostrar "o disco" sem dizer qual esconderia justamente o cheio');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.13 Software visto de cima
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  perform app.assert(
+    (select maquinas from public.vw_agent_software
+      where tenant_id = v_t and name = 'Google Chrome') >= 1,
+    'a view agrega o software pela frota');
+  perform app.assert(
+    (select versoes from public.vw_agent_software
+      where tenant_id = v_t and name = 'Google Chrome') = 2,
+    'contando versões distintas: é assim que se responde "quem ainda tem a versão antiga?"');
+  perform app.assert(
+    exists (select 1 from public.vw_agent_software
+             where tenant_id = v_t and name = '7-Zip'),
+    'e o desinstalado continua na lista, com a data em que foi visto pela última vez');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.14 Acesso remoto: integração, não implementação
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tok text;
+  v_dev uuid;
+begin
+  select device_token into v_tok from public.agent_enroll('inv_aberto',
+    jsonb_build_object('device_uuid', '77770000-0000-4000-8000-000000000070'));
+  select id into v_dev from public.agent_devices
+   where device_uuid = '77770000-0000-4000-8000-000000000070';
+
+  perform app.assert(public.agent_set_remote_id(v_tok, '123456789'),
+    'a máquina registra o próprio id no serviço de acesso remoto');
+  perform app.assert(
+    (select remote_id from public.agent_devices where id = v_dev) = '123456789',
+    'e ele fica gravado');
+  perform app.assert(not public.agent_set_remote_id('ag_inventado', '999'),
+    'token que não vale não grava nada');
+
+  -- O modelo de endereço exige {id}: um modelo sem ele geraria um link igual
+  -- para as 200 máquinas, abrindo sempre a mesma.
+  begin
+    update public.tenants set agent_remote_url = 'https://mesh.exemplo.com/' where id = v_t;
+    perform app.assert(false, 'modelo de endereço sem {id} tinha de ser recusado');
+  exception when check_violation then
+    perform app.assert(true, 'modelo de acesso remoto sem {id} é recusado pelo banco');
+  end;
+
+  update public.tenants set agent_remote_url = 'rustdesk://{id}' where id = v_t;
+  perform app.assert(
+    (select agent_remote_url from public.tenants where id = v_t) like '%{id}%',
+    'e com {id} é aceito');
+  update public.tenants set agent_remote_url = null where id = v_t;
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 36.15 Quem executa, e quem enxerga
+-- -----------------------------------------------------------------------------
+do $$
+begin
+  perform app.assert(
+    has_function_privilege('anon', 'public.agent_ingest_metrics(text, jsonb)', 'execute'),
+    'a máquina manda métrica sem ter conta — ela é um serviço');
+  perform app.assert(
+    has_function_privilege('anon', 'public.agent_set_remote_id(text, text)', 'execute'),
+    'e registra o id de acesso remoto');
+
+  perform app.assert(
+    not has_function_privilege('authenticated', 'app.job_agent_alerts()', 'execute'),
+    'mas o trabalho de alerta ninguém logado dispara');
+  perform app.assert(
+    not has_function_privilege('authenticated', 'app.job_purge_metrics()', 'execute'),
+    'nem o de purga — ele APAGA dado');
+  perform app.assert(
+    has_function_privilege('service_role', 'app.job_purge_metrics()', 'execute'),
+    'só service_role, pelo terceiro uso declarado no ADR-011');
+end
+$$;
+
+-- Isolamento entre tenants e por permissão.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.agent_metrics_raw) = 0,
+    'tenant 2 não vê métrica do tenant 1');
+  perform app.assert((select count(*) from public.agent_metrics_hourly) = 0,
+    'nem o agregado');
+  perform app.assert((select count(*) from public.agent_volume_samples) = 0,
+    'nem o disco');
+  perform app.assert((select count(*) from public.agent_alerts) = 0,
+    'nem os alertas');
+  perform app.assert((select count(*) from public.vw_agent_software) = 0,
+    'nem o software agregado');
+end
+$$;
+
+-- Diego Moreira é operador financeiro: não tem `inventario.agentes.ver`.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000006","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.agent_alerts) = 0,
+    'quem não tem a permissão da tela não vê alerta, mesmo no próprio tenant');
+  perform app.assert((select count(*) from public.agent_metrics_hourly) = 0,
+    'nem as métricas');
+end
+$$;
+
+-- Ana Souza é operadora de TI: vê os alertas, e não fecha nenhum.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_id uuid;
+  v_n  integer;
+begin
+  perform app.assert((select count(*) from public.agent_alerts) > 0,
+    'operador de TI enxerga os alertas');
+
+  select id into v_id from public.agent_alerts where fechado_em is null limit 1;
+  update public.agent_alerts set fechado_em = now() where id = v_id;
+  get diagnostics v_n = row_count;
+  perform app.assert(v_n = 0,
+    'e não fecha alerta à mão: a negação do RLS chega como zero linhas, não como erro');
 end
 $$;
 reset role;

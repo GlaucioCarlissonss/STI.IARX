@@ -30,6 +30,10 @@ interface LinhaDaFrota {
   silencioso: boolean
   tem_divergencia: boolean
   software_count: number
+  alertas_abertos: number
+  cpu_ultima_hora: number | null
+  mem_ultima_hora: number | null
+  disco_mais_cheio_pct: number | null
 }
 
 interface TokenDeInscricao {
@@ -101,16 +105,19 @@ export default async function AgentesPage({
   const supabase = await createClient()
   const escopo = await escopoDeCliente()
   const pagina = lerPagina(params.pagina)
-  const filtro = params.filtro === 'mudas' || params.filtro === 'divergentes' ? params.filtro : null
+  const FILTROS = ['mudas', 'divergentes', 'alertadas'] as const
+  type Filtro = (typeof FILTROS)[number]
+  const filtro = FILTROS.includes(params.filtro as Filtro) ? (params.filtro as Filtro) : null
 
   let consulta = supabase
     .from('vw_agent_fleet')
     .select(
-      'device_id, hostname, os, os_version, chassis, agent_version, it_asset_id, match_method, last_seen_at, last_snapshot_at, asset_tag, serial_number, brand, model, branch_name, silencioso, tem_divergencia, software_count',
+      'device_id, hostname, os, os_version, chassis, agent_version, it_asset_id, match_method, last_seen_at, last_snapshot_at, asset_tag, serial_number, brand, model, branch_name, silencioso, tem_divergencia, software_count, alertas_abertos, cpu_ultima_hora, mem_ultima_hora, disco_mais_cheio_pct',
       { count: 'exact' },
     )
   if (filtro === 'mudas') consulta = consulta.eq('silencioso', true)
   if (filtro === 'divergentes') consulta = consulta.eq('tem_divergencia', true)
+  if (filtro === 'alertadas') consulta = consulta.gt('alertas_abertos', 0)
 
   const [{ data: linhas, count }, { data: universo }, { data: tokens }, { data: filiais }] =
     await Promise.all([
@@ -123,9 +130,19 @@ export default async function AgentesPage({
        412, e o número ao lado da lista discordando da lista é o defeito que
        ninguém reporta e todo mundo nota. */
     porFilialOuGeral(
-      supabase.from('vw_agent_fleet').select('silencioso, tem_divergencia, match_method'),
+      supabase
+        .from('vw_agent_fleet')
+        .select('silencioso, tem_divergencia, match_method, alertas_abertos, disco_mais_cheio_pct'),
       escopo,
-    ).returns<{ silencioso: boolean; tem_divergencia: boolean; match_method: string | null }[]>(),
+    ).returns<
+      {
+        silencioso: boolean
+        tem_divergencia: boolean
+        match_method: string | null
+        alertas_abertos: number
+        disco_mais_cheio_pct: number | null
+      }[]
+    >(),
     podeGerenciar
       ? supabase
           .from('agent_enrollments')
@@ -145,11 +162,14 @@ export default async function AgentesPage({
   const todas = universo ?? []
   const mudas = todas.filter((d) => d.silencioso).length
   const divergentes = todas.filter((d) => d.tem_divergencia).length
-  const porHostname = todas.filter((d) => d.match_method === 'hostname').length
+  const comAlerta = todas.filter((d) => d.alertas_abertos > 0).length
+  const discoApertado = todas.filter(
+    (d) => d.disco_mais_cheio_pct !== null && d.disco_mais_cheio_pct >= 90,
+  ).length
 
   const lista = linhas ?? []
 
-  const filtroHref = (valor: 'mudas' | 'divergentes' | null): Route =>
+  const filtroHref = (valor: Filtro | null): Route =>
     (valor ? `/inventario/agentes?filtro=${valor}` : '/inventario/agentes') as Route
 
   return (
@@ -159,13 +179,27 @@ export default async function AgentesPage({
         description="O parque que está ligado e reportando. O inventário destas máquinas não é digitado."
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatTile label="Máquinas com agente" value={todas.length} />
+        {/* Alertas abertos vem em segundo, e não no fim: é o número que diz se
+            alguém precisa fazer alguma coisa hoje. */}
+        <StatTile
+          label="Com alerta aberto"
+          value={comAlerta}
+          hint="disco, silêncio, serviço ou disco com defeito"
+          tone={comAlerta > 0 ? 'breach' : 'ok'}
+        />
         <StatTile
           label="Máquinas mudas"
           value={mudas}
-          hint="sem contato há mais de 24 h"
+          hint="sem contato além do limiar"
           tone={mudas > 0 ? 'warn' : 'ok'}
+        />
+        <StatTile
+          label="Disco acima de 90%"
+          value={discoApertado}
+          hint="no volume mais apertado"
+          tone={discoApertado > 0 ? 'warn' : 'ok'}
         />
         <StatTile
           label="Divergências"
@@ -173,18 +207,13 @@ export default async function AgentesPage({
           hint="cadastro e máquina discordam"
           tone={divergentes > 0 ? 'warn' : 'ok'}
         />
-        <StatTile
-          label="Casadas pelo nome"
-          value={porHostname}
-          hint="vale conferir o equipamento"
-          tone={porHostname > 0 ? 'neutral' : 'ok'}
-        />
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar a frota">
         {(
           [
             [null, 'Todas'],
+            ['alertadas', 'Com alerta'],
             ['mudas', 'Só as mudas'],
             ['divergentes', 'Só as divergentes'],
           ] as const
@@ -211,7 +240,9 @@ export default async function AgentesPage({
               ? 'Nenhuma máquina muda'
               : filtro === 'divergentes'
                 ? 'Nenhuma divergência'
-                : 'Nenhuma máquina com agente ainda'
+                : filtro === 'alertadas'
+                  ? 'Nenhum alerta aberto'
+                  : 'Nenhuma máquina com agente ainda'
           }
           description={
             filtro
@@ -223,7 +254,7 @@ export default async function AgentesPage({
         <>
           <Table
             label="Máquinas com agente"
-            head={['Máquina', 'Sistema', 'Equipamento', 'Conciliação', 'Último contato']}
+            head={['Máquina', 'Sistema', 'Saúde', 'Conciliação', 'Último contato']}
           >
             {lista.map((d) => {
               const c = conciliacao(d.match_method)
@@ -247,10 +278,25 @@ export default async function AgentesPage({
                       {d.agent_version ? ` · agente ${d.agent_version}` : ''}
                     </p>
                   </Td>
-                  <Td className="text-[var(--color-ink-2)]">
-                    {[d.brand, d.model].filter(Boolean).join(' ') || '—'}
+                  {/*
+                    A coluna de equipamento deu lugar à de saúde.
+
+                    Marca e modelo estão na tela de detalhe e no inventário
+                    patrimonial, e não mudam — ninguém volta a esta lista para
+                    descobrir o modelo. O que faz voltar é "alguma coisa está
+                    errada em alguma máquina?", e essa pergunta não tinha coluna.
+                  */}
+                  <Td>
+                    {d.alertas_abertos > 0 ? (
+                      <Badge tone="breach">
+                        {d.alertas_abertos} alerta{d.alertas_abertos > 1 ? 's' : ''}
+                      </Badge>
+                    ) : (
+                      <span className="text-sm text-[var(--color-ok-ink)]">ok</span>
+                    )}
                     <p className="text-xs text-[var(--color-ink-3)]">
-                      {d.asset_tag ?? d.serial_number ?? ''}
+                      {d.cpu_ultima_hora !== null ? `CPU ${d.cpu_ultima_hora}%` : 'sem amostra'}
+                      {d.disco_mais_cheio_pct !== null ? ` · disco ${d.disco_mais_cheio_pct}%` : ''}
                     </p>
                   </Td>
                   <Td>

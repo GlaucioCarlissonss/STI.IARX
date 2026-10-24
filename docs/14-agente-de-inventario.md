@@ -1,7 +1,7 @@
 # 14 — O agente nas máquinas: como ligar
 
-**Status:** implementado (Onda 2 de [docs/12](12-paridade-milvus.md), parte 1 —
-inventário).
+**Status:** implementado (Ondas 2 e 3 de [docs/12](12-paridade-milvus.md) —
+inventário, desempenho e alertas).
 **Depende de você:** emitir um token na tela e instalar o agente. Nada de
 variável de ambiente nova, a não ser que você queira autoatualização.
 
@@ -211,13 +211,22 @@ mais comum dos quatro. O binário anterior é guardado ao lado.
 
 ## 7. Privacidade — a pergunta de quem autoriza
 
-**Coleta:** hardware (fabricante, modelo, série, processador, memória, discos com
-saúde SMART, rede, BIOS), sistema operacional e build, domínio, usuário logado,
-tempo ligado, e a lista de programas instalados com versão.
+**Coleta, uma vez por dia:** hardware (fabricante, modelo, série, processador,
+memória, discos com saúde SMART, rede, BIOS), sistema operacional e build,
+domínio, usuário logado, tempo ligado, e a lista de programas instalados com
+versão.
+
+**Mede, a cada cinco minutos:** uso de processador, uso de memória, espaço livre
+por volume, e quais dos serviços configurados como críticos estão fora do ar.
 
 **Não coleta:** conteúdo de arquivo, histórico de navegação, tela, teclado,
 microfone, câmera, nem o que está aberto. Também **não abre porta nenhuma**: fala
 só de dentro para fora, para um endereço só.
+
+**Nada por processo.** "Qual programa está consumindo a CPU" é a pergunta
+seguinte e é tentadora — e a resposta carrega o nome e a linha de comando de tudo
+que a pessoa está rodando, o que é vigilância e não inventário. O recurso não
+existe, e não é esquecimento.
 
 Está escrito em `agente/cmd/sti-agente/main.go` e é sustentado pelo código — não
 há no programa nada que leia qualquer dessas coisas. Limitar o escopo é mais
@@ -243,15 +252,121 @@ sti-agente --uma-vez
 
 ---
 
-## 9. O que esta onda deliberadamente NÃO fez
+## 9. Desempenho e alertas
+
+### O que a tela da máquina mostra
+
+Processador e memória das últimas 24 horas, com **média e pico** — a média
+sozinha esconde o pico, e o pico é o que faz a máquina travar: 40% de média com
+picos de 100% é uma máquina travando, e a média diria que está folgada.
+
+Hora sem amostra aparece como **buraco**, não como linha reta. Reta num gráfico
+de CPU é lida como "ficou constante", que é o contrário de "a máquina estava
+desligada" — e máquina desligada à noite é o caso comum.
+
+Por volume: tamanho, livre, uso e **em quantos dias enche** no ritmo observado. É
+a informação mais acionável do módulo: "enche em quatro dias" move alguém hoje,
+"está com 88%" não move ninguém. A projeção é uma reta sobre sete dias, de
+propósito — serve para decidir se vale olhar a máquina esta semana, não para
+marcar data.
+
+### Os quatro alertas
+
+| Alerta | Quando abre | Quando fecha |
+|---|---|---|
+| **Disco cheio** | uso ≥ o limiar do tenant (padrão 90%) | uso < limiar **menos 5 pontos** |
+| **Máquina sem contato** | silêncio além do limiar (padrão 24 h) | quando ela volta a falar |
+| **Serviço fora do ar** | serviço crítico configurado não está rodando | quando ele volta |
+| **Disco com defeito** | SMART reporta falha ou atenção | na coleta em que o disco é trocado |
+
+**A folga de cinco pontos é a parte importante.** Um disco parado em 90,1% com
+limiar de 90 abriria e fecharia a cada ciclo, mandando um e-mail por vez — e um
+alerta que chega oito vezes por dia é um alerta que as pessoas filtram para a
+lixeira, levando junto os que importam.
+
+O alerta é um **estado**: abre, fica aberto enquanto vale, fecha sozinho. O aviso
+por e-mail sai **uma vez por alerta**, para gestores e administradores que não
+tenham desligado em *Minha conta*. Fechar à mão é possível e não silencia nada —
+se a condição continuar valendo, ele volta a abrir no ciclo seguinte.
+
+### Configuração, por tenant
+
+Vivem na tabela `tenants`, junto de `auto_close_after_days` e dos percentuais de
+SLA:
+
+| Coluna | Padrão | O que faz |
+|---|---|---|
+| `agent_disk_alert_pct` | 90 | Onde o alerta de disco abre |
+| `agent_mute_hours` | 24 | Quanto silêncio é "máquina muda" |
+| `agent_metrics_retention_days` | 7 | Quanto tempo o **detalhe** fica |
+| `agent_remote_url` | vazio | Modelo de link de acesso remoto, com `{id}` |
+
+`agent_mute_hours` governa a tela, o indicador e o alerta **ao mesmo tempo**:
+antes o limiar estava escrito em três lugares que concordavam por coincidência.
+
+O agregado por hora vive **um ano**, e não o prazo do detalhe. São a mesma
+informação com outra granularidade: o detalhe responde "o que houve às 14h32 de
+ontem" e envelhece rápido; o agregado responde "esta máquina está pequena para o
+trabalho há seis meses", que é a pergunta que justifica uma compra.
+
+### Serviços críticos
+
+Entram no `agente.json` da máquina, pelo **nome curto**:
+
+```json
+{ "servicos_criticos": ["Spooler", "WinDefend"] }
+```
+
+O nome curto (`Spooler`) e não o de exibição (`Spooler de Impressão`): o de
+exibição muda com o idioma do sistema, e uma configuração que funciona no Windows
+em português falharia calada no mesmo parque com uma máquina em inglês.
+
+Serviço configurado que **não existe** na máquina conta como fora do ar. Ou
+alguém o desinstalou (que é o alerta que se quer), ou a configuração tem um nome
+errado (que também precisa aparecer) — silêncio seria pior que os dois.
+
+A lista vem vazia por padrão, e é deliberado: não existe lista que sirva para
+todo mundo, e uma inventada por nós produziria alerta em máquina onde o serviço
+nunca deveria estar rodando.
+
+---
+
+## 10. Acesso remoto *(opcional)*
+
+A plataforma **não implementa controle remoto de tela** — isso é um produto
+inteiro (NAT traversal, relay, codec, latência, segurança), e construí-lo aqui
+custaria meses para entregar pior que o RustDesk auto-hospedado, que é open
+source.
+
+O que ela faz é o pedaço que só ela pode fazer: **saber qual id do RustDesk
+pertence a qual máquina do inventário**. É o elo que falta entre as duas
+ferramentas. O resto é um link.
+
+1. Instale o RustDesk nas máquinas, do jeito que você já faria.
+2. Em `tenants.agent_remote_url`, ponha o modelo com `{id}` — por exemplo
+   `rustdesk://{id}`.
+3. O agente lê o id do arquivo de configuração do RustDesk e o registra. O botão
+   **Acessar remotamente** aparece na ficha da máquina.
+
+Sem o modelo configurado, ou sem RustDesk na máquina, o botão simplesmente não
+aparece. O banco recusa um modelo sem `{id}`: sem ele o link seria igual para as
+200 máquinas e abriria sempre a mesma.
+
+> O MeshCentral **não** é lido automaticamente: ele identifica a máquina por um id
+> gerado no servidor e guardado no banco dele, e ler isso exigiria falar com a API
+> do MeshCentral, com credencial. É outro recurso. O campo aceita qualquer modelo
+> de URL, então quem usa MeshCentral pode preencher o id à mão.
+
+---
+
+## 11. O que estas ondas deliberadamente NÃO fizeram
 
 | | Por quê |
 |---|---|
-| Métricas de desempenho (CPU, memória, disco por volume, temperatura) | Onda 3. Métrica é série temporal e não cabe na linha do ativo: 200 máquinas × 1 amostra por minuto são 288 mil linhas por dia, e todo `update` de métrica dispararia a trigger de auditoria. |
-| As tabelas `agent_metrics_raw` e `agent_metrics_hourly` | Não foram criadas vazias "para já deixar pronto". A forma certa de uma série temporal depende de como o gráfico vai lê-la, e isso só se sabe construindo o gráfico. Tabela criada uma onda antes é tabela migrada duas vezes. |
-| Alertas (disco acima de X%, serviço fora do ar) | Onda 3, junto das métricas. |
-| Acesso remoto | Não será construído aqui: controle remoto de tela é um produto inteiro — NAT traversal, relay, codec, latência, segurança. O caminho é integrar RustDesk auto-hospedado ou MeshCentral, que são open source, e o agente só registrar o id da máquina. |
-| Casamento com CVE | Depois. Primeiro o inventário de software, que já responde *"quem ainda tem Windows 10?"*. |
+| Temperatura | O sensor existe em `/sys` no Linux e em WMI no Windows, e **mente**: placas diferentes expõem sensores diferentes com nomes diferentes, e metade reporta a temperatura do chipset como se fosse a do processador. Um número errado num alerta é pior que nenhum número. |
+| Métrica por processo | "Qual programa está consumindo a CPU" é tentador e a resposta carrega o nome e a linha de comando de tudo que a pessoa está rodando. Isso é vigilância, não inventário. |
+| Controle remoto de tela | Integrado, não implementado — ver a seção 10. É um produto inteiro, e o RustDesk auto-hospedado já o entrega. |
+| Casamento com CVE | Depois. Primeiro o inventário de software, que já responde *"quem ainda tem Windows 10?"* — e está na tela, em **Inventário → Software instalado**. |
 
 ### O que eu não pude verificar
 
@@ -261,5 +376,6 @@ Microsoft e pela Apple, mas **não foi executada nelas** — não há Windows ne
 onde este código foi escrito. A primeira execução em máquina real pode exigir
 ajuste de nome de propriedade.
 
-Em **Linux** ela foi executada de verdade: 693 programas e 6 discos lidos, com o
+Em **Linux** tudo foi executado de verdade: 693 programas e 6 discos lidos no
+inventário; a amostragem de desempenho lendo CPU, memória e volumes reais; o
 pacote `.deb` instalado e o diagnóstico rodando.

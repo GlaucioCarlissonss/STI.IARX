@@ -195,6 +195,13 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
      vista dos dois lados: quem pode pôr uma máquina na frota pode tirá-la. */
   act('inventario', 'agentes', 'gerenciar', 'Inscrever e revogar máquinas', 'gestor'),
 
+  /* Tela separada de `agentes` porque a pergunta é atravessada: `agentes` olha
+     uma máquina por vez, `software` olha um programa em toda a frota — "quem
+     ainda tem o sistema antigo?". Quem faz gestão de licença não precisa ver a
+     ficha de hardware de 200 computadores para responder isso. */
+  scr('inventario', 'software', 'Software instalado', 'visualizador'),
+  act('inventario', 'software', 'ver', 'Consultar o software da frota', 'visualizador'),
+
   /* --- Telefonia --------------------------------------------------------- */
   mod('telefonia', 'visualizador'),
   scr('telefonia', 'linhas', 'Linhas telefônicas', 'visualizador'),

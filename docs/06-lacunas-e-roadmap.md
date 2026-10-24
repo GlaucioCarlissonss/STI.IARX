@@ -1381,7 +1381,7 @@ decisão nova.
 
 ### O que a auditoria já resolve
 
-`audit_log` cobre por trigger 37 tabelas, incluindo `sla_definitions`, `queues`,
+`audit_log` cobre por trigger 38 tabelas, incluindo `sla_definitions`, `queues`,
 `integrations` e `integration_mappings`. Os requisitos de "histórico de alterações" de M1
 e M10 são, portanto, **de interface** — precisam de tela lendo `audit_log`, não de
 modelagem nova. Isso reduz o custo real desses dois módulos em relação ao que o escopo

@@ -119,6 +119,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
          inventário é o patrimônio (inclui monitor, impressora e licença, que nunca
          terão agente); a frota é o que está ligado e reportando agora. */
       { href: '/inventario/agentes', label: 'Agentes nas máquinas', permission: 'inventario.agentes.ver' },
+      /* Depois de `agentes` porque é a mesma coleta vista de outro ângulo: ali
+         uma máquina por vez, aqui um programa em toda a frota. */
+      { href: '/inventario/software', label: 'Software instalado', permission: 'inventario.software.ver' },
       { href: '/telefonia', label: 'Telefonia', permission: 'telefonia.linhas.ver' },
       { href: '/conectividade/links', label: 'Links de internet', permission: 'conectividade.links.ver' },
       { href: '/mapas', label: 'Mapa das filiais', permission: 'mapas.geolocalizacao.ver' },

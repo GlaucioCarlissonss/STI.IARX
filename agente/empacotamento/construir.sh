@@ -194,7 +194,7 @@ chmod 0700 /var/lib/sti-agente
 
 # `printf` com %s e sem interpolação no formato: um token com barra invertida
 # viraria escape dentro do JSON e quebraria o arquivo.
-printf '{"servidor":"%s","token_inscricao":"%s","intervalo_coleta_min":1440,"intervalo_envio_min":10,"auto_atualizar":false}\n' \
+printf '{"servidor":"%s","token_inscricao":"%s","intervalo_coleta_min":1440,"intervalo_envio_min":10,"intervalo_amostra_min":5,"servicos_criticos":[],"auto_atualizar":false}\n' \
   "${SERVIDOR%/}" "$TOKEN" > /var/lib/sti-agente/agente.json
 chmod 0600 /var/lib/sti-agente/agente.json
 

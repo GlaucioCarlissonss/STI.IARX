@@ -36,21 +36,23 @@ describe('inventarioSchema', () => {
     expect(inventarioSchema.safeParse({}).success).toBe(false)
   })
 
-  it('não tem campo de espaço livre em volume', () => {
+  it('não guarda nada sobre volumes — isso é da série temporal', () => {
     /*
-     * A ausência é deliberada e vale asserção: espaço livre muda a cada hora, e
-     * aceitá-lo aqui faria o hash do conteúdo mudar a cada coleta — 365 linhas de
-     * histórico por ano por máquina dizendo "o disco está um pouco mais cheio".
+     * O inventário não tem lista de volumes (ver o comentário no schema). O que
+     * esta asserção prova é que um agente antigo, de uma versão que ainda
+     * mandava a lista, NÃO consegue fazê-la entrar: `strip` é o padrão do zod,
+     * então o campo é descartado em silêncio e o hash do conteúdo continua
+     * estável.
      *
-     * `strip` é o padrão do zod, então o campo seria silenciosamente descartado;
-     * a asserção prova que ele não chega ao banco.
+     * Sem isso, uma frota com versões misturadas do agente teria metade das
+     * máquinas gravando um snapshot novo a cada coleta.
      */
     const r = inventarioSchema.safeParse({
       sistema: { hostname: 'X' },
       volumes: [{ ponto: '/', total_bytes: 1000, livre_bytes: 500 }],
     })
     expect(r.success).toBe(true)
-    expect(r.success && r.data.volumes?.[0]).not.toHaveProperty('livre_bytes')
+    expect(r.success && r.data).not.toHaveProperty('volumes')
   })
 
   it('recusa lista de software grande demais', () => {

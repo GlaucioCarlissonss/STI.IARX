@@ -33,6 +33,11 @@ export const TIPOS_DE_AVISO = [
     label: 'Convite para avaliar atendimento',
     hint: 'Chega a quem abriu o chamado, depois do encerramento.',
   },
+  {
+    kind: 'agent_alert',
+    label: 'Alertas do agente de inventário',
+    hint: 'Disco cheio, máquina sem contato, serviço fora do ar e disco com defeito. Chega a gestores e administradores.',
+  },
 ] as const
 
 export const KINDS_DE_AVISO = TIPOS_DE_AVISO.map((t) => t.kind)

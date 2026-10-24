@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -35,6 +36,8 @@ type servidorDeMentira struct {
 	inscricoes  int
 	inventarios []map[string]any
 	batimentos  int
+	metricas    []map[string]any
+	remotoID    string
 	// negarToken faz o servidor responder 401, como se a máquina tivesse sido
 	// revogada.
 	negarToken bool
@@ -69,6 +72,32 @@ func novoServidor(t *testing.T) *servidorDeMentira {
 		s.inventarios = append(s.inventarios, env)
 		_, _ = w.Write([]byte(`{"status":"stored","asset_id":"a1","snapshot_id":"s1"}`))
 	})
+	mux.HandleFunc("/api/agent/metrics", func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.negarToken {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		bruto, _ := io.ReadAll(r.Body)
+		var lote map[string]any
+		_ = json.Unmarshal(bruto, &lote)
+		s.metricas = append(s.metricas, lote)
+		n := 0
+		if as, ok := lote["amostras"].([]any); ok {
+			n = len(as)
+		}
+		_, _ = w.Write([]byte(`{"status":"stored","aceitas":` + strconv.Itoa(n) + `}`))
+	})
+	mux.HandleFunc("/api/agent/remote-id", func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		bruto, _ := io.ReadAll(r.Body)
+		var corpo map[string]string
+		_ = json.Unmarshal(bruto, &corpo)
+		s.remotoID = corpo["remote_id"]
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
 	mux.HandleFunc("/api/agent/heartbeat", func(w http.ResponseWriter, _ *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -102,6 +131,7 @@ func prepararDiretorio(t *testing.T, servidor string) config.Config {
 	}
 	limpar := func() {
 		_ = os.RemoveAll(filepath.Join(dir, "fila"))
+		_ = os.Remove(filepath.Join(dir, "metricas.jsonl"))
 		_ = os.Remove(filepath.Join(dir, "identidade.json"))
 		_ = os.Remove(filepath.Join(dir, "agente.json"))
 	}
@@ -109,10 +139,11 @@ func prepararDiretorio(t *testing.T, servidor string) config.Config {
 	t.Cleanup(limpar)
 
 	cfg := config.Config{
-		Servidor:           servidor,
-		TokenDeInscricao:   "inv_do_teste",
-		IntervaloColetaMin: 1440,
-		IntervaloEnvioMin:  10,
+		Servidor:            servidor,
+		TokenDeInscricao:    "inv_do_teste",
+		IntervaloColetaMin:  1440,
+		IntervaloEnvioMin:   10,
+		IntervaloAmostraMin: 5,
 	}
 	bruto, _ := json.Marshal(cfg)
 	if err := os.WriteFile(filepath.Join(dir, "agente.json"), bruto, 0o600); err != nil {
@@ -214,6 +245,114 @@ func TestOLacoCompleto(t *testing.T) {
 	}
 	if batimentos2 != 2 {
 		t.Errorf("mas o batimento tinha de sair de novo: houve %d", batimentos2)
+	}
+}
+
+func TestAmostraVaiParaAFilaEDepoisParaOServidor(t *testing.T) {
+	/*
+	 * A amostragem e o envio são separados de propósito: a máquina mede de 5 em 5
+	 * minutos e entrega de 10 em 10. É o que permite ao notebook em viagem
+	 * continuar medindo sem rede — e, quando ela volta, entregar o que passou em
+	 * vez de só o instante.
+	 *
+	 * Este teste percorre os dois lados e o descarte, que é onde mora o erro mais
+	 * silencioso desta parte: amostra entregue e não descartada é reenviada para
+	 * sempre, e o servidor responde 200 todas as vezes porque a ingestão é
+	 * idempotente. Nada falha, nada alerta, e a máquina gasta rede eternamente.
+	 */
+	srv := novoServidor(t)
+	prepararDiretorio(t, srv.URL)
+	// Relê do disco, como o serviço de verdade faz.
+	lida, err := config.Carregar()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := config.CarregarIdentidade()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Novo(lida, id, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// Inscreve primeiro: sem token não há para onde mandar.
+	s.UmaVez(ctx)
+
+	for i := 0; i < 3; i++ {
+		s.Amostrar(ctx)
+	}
+	if n := s.metricas.Tamanho(); n != 3 {
+		t.Fatalf("esperava 3 amostras na fila local, tem %d", n)
+	}
+
+	s.enviarMetricas(ctx)
+
+	srv.mu.Lock()
+	lotes := len(srv.metricas)
+	var enviadas int
+	if lotes > 0 {
+		if as, ok := srv.metricas[0]["amostras"].([]any); ok {
+			enviadas = len(as)
+		}
+	}
+	srv.mu.Unlock()
+
+	if lotes != 1 {
+		t.Fatalf("esperava UM lote, o servidor recebeu %d", lotes)
+	}
+	if enviadas != 3 {
+		t.Fatalf("o lote levou %d amostras, esperava 3", enviadas)
+	}
+	if n := s.metricas.Tamanho(); n != 0 {
+		t.Fatalf("a fila devia estar vazia depois da entrega, tem %d", n)
+	}
+
+	// Enviar de novo com a fila vazia não pode produzir requisição nenhuma.
+	s.enviarMetricas(ctx)
+	srv.mu.Lock()
+	lotes = len(srv.metricas)
+	srv.mu.Unlock()
+	if lotes != 1 {
+		t.Fatalf("fila vazia mandou um segundo lote: %d", lotes)
+	}
+}
+
+func TestOBatimentoNaoSaiJuntoComAsMetricas(t *testing.T) {
+	/*
+	 * Mandar métrica já é dar sinal de vida — a função no banco atualiza
+	 * `last_seen_at`. Um batimento depois seria uma segunda requisição dizendo o
+	 * que a primeira acabou de dizer, 144 vezes por dia em cada máquina do parque.
+	 */
+	srv := novoServidor(t)
+	cfg := prepararDiretorio(t, srv.URL)
+	id, _ := config.CarregarIdentidade()
+	s, err := Novo(cfg, id, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	s.UmaVez(ctx)
+
+	_, _, batimentosAntes := srv.contagens()
+
+	// O ciclo de envio entrega a amostra e, com a fila já vazia depois disso,
+	// manda no máximo UM batimento.
+	s.Amostrar(ctx)
+	s.ciclarEnvio(ctx)
+
+	_, _, batimentosDepois := srv.contagens()
+	if batimentosDepois > batimentosAntes+1 {
+		t.Errorf("batimentos a mais do que o necessário: %d → %d", batimentosAntes, batimentosDepois)
+	}
+
+	srv.mu.Lock()
+	lotes := len(srv.metricas)
+	srv.mu.Unlock()
+	if lotes == 0 {
+		t.Error("o ciclo de envio não entregou as métricas")
 	}
 }
 

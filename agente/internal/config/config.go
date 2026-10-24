@@ -36,6 +36,19 @@ type Config struct {
 	IntervaloColetaMin int `json:"intervalo_coleta_min"`
 	// IntervaloEnvioMin é de quanto em quanto tempo a fila é esvaziada.
 	IntervaloEnvioMin int `json:"intervalo_envio_min"`
+	// IntervaloAmostraMin é de quanto em quanto tempo o desempenho é medido.
+	IntervaloAmostraMin int `json:"intervalo_amostra_min"`
+	/*
+	 * Os serviços que esta máquina não pode ficar sem — nome CURTO, não o de
+	 * exibição: o de exibição muda com o idioma do sistema, e uma configuração
+	 * que funciona no Windows em português falharia calada no mesmo parque com
+	 * uma máquina em inglês.
+	 *
+	 * Vazio é o padrão, e é deliberado: não existe lista de serviços críticos que
+	 * sirva para todo mundo, e uma lista inventada por nós produziria alerta em
+	 * máquina onde o serviço nunca deveria estar rodando.
+	 */
+	ServicosCriticos []string `json:"servicos_criticos"`
 	// AutoAtualizar liga a verificação de versão nova.
 	AutoAtualizar bool `json:"auto_atualizar"`
 }
@@ -53,6 +66,18 @@ type Identidade struct {
 const (
 	ColetaPadraoMin = 24 * 60
 	EnvioPadraoMin  = 10
+	/*
+	 * Cinco minutos entre amostras, e não um.
+	 *
+	 * Um minuto daria 288 mil linhas por dia numa frota de 200 máquinas; cinco
+	 * dão 57 mil. A resolução de cinco minutos responde tudo que este módulo
+	 * promete responder — "o disco encheu", "a máquina vive em 100% de CPU" — e
+	 * a de um minuto só responde o que a plataforma não se propõe a investigar.
+	 */
+	AmostraPadraoMin = 5
+	// Abaixo de um minuto a medição de CPU (que leva 200 ms a 3 s, conforme o
+	// sistema) passaria a ser uma fração significativa do próprio intervalo.
+	AmostraMinimaMin = 1
 )
 
 // DiretorioDeDados devolve onde o agente guarda estado, por sistema.
@@ -101,6 +126,12 @@ func Carregar() (Config, error) {
 	}
 	if c.IntervaloEnvioMin <= 0 {
 		c.IntervaloEnvioMin = EnvioPadraoMin
+	}
+	if c.IntervaloAmostraMin <= 0 {
+		c.IntervaloAmostraMin = AmostraPadraoMin
+	}
+	if c.IntervaloAmostraMin < AmostraMinimaMin {
+		c.IntervaloAmostraMin = AmostraMinimaMin
 	}
 	return c, nil
 }

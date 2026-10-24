@@ -23,6 +23,16 @@ export const LIMITE_INVENTARIO = 4 * 1024 * 1024
 /** Inscrição é meia dúzia de campos curtos. */
 export const LIMITE_INSCRICAO = 16 * 1024
 
+/**
+ * Um lote de métricas: até 500 amostras, cada uma com alguns volumes.
+ *
+ * 512 KB dá folga de uma ordem de grandeza sobre o lote máximo real (~50 KB), e
+ * ainda assim é oito vezes menor que o teto do inventário. O limite por rota não
+ * é burocracia: ele é o que impede uma rota barata de virar a porta por onde se
+ * manda um corpo caro.
+ */
+export const LIMITE_METRICAS = 512 * 1024
+
 type Resultado =
   | { ok: true; json: unknown }
   | { ok: false; resposta: NextResponse }

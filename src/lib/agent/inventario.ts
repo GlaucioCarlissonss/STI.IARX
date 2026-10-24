@@ -94,24 +94,17 @@ export const inventarioSchema = z.object({
   memoria: memoriaSchema.optional(),
   discos: z.array(discoSchema).max(64).optional(),
   /*
-   * Volume NÃO tem `livre_bytes`, e a ausência é deliberada.
+   * Não há lista de volumes aqui, e a ausência vale a nota.
    *
-   * Espaço livre é métrica, não configuração: muda a cada hora. Aceitá-lo aqui
-   * faria o hash do conteúdo mudar a cada coleta, e o histórico — que existe para
-   * responder "o que mudou nesta máquina?" — viraria 365 linhas por ano por
-   * máquina dizendo "o disco está um pouco mais cheio". O tamanho total fica,
-   * porque esse é configuração. O livre é da série temporal da Onda 3.
+   * A primeira versão tinha uma, com o espaço livre deliberadamente de fora
+   * (livre é métrica, e mudaria o hash do conteúdo a cada coleta). Só que nenhum
+   * coletor do agente chegou a preenchê-la — e, quando as métricas chegaram na
+   * Onda 3, elas já carregavam ponto e tamanho de cada volume a cada amostra.
+   *
+   * O campo não trazia nada que a série temporal não traga, e campo declarado e
+   * nunca preenchido é a configuração morta que esta base já removeu seis vezes
+   * do catálogo de permissões. Ver `agente/internal/coleta/tipos.go`.
    */
-  volumes: z
-    .array(
-      z.object({
-        ponto: textoCurto.optional(),
-        sistema_arquivos: textoCurto.optional(),
-        total_bytes: z.number().int().nonnegative().optional(),
-      }),
-    )
-    .max(64)
-    .optional(),
   rede: z
     .array(
       z.object({

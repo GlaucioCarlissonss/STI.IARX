@@ -40,7 +40,7 @@ Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 | **Geolocalização** | Endereço estruturado obrigatório, geocodificação com nível de precisão, tratamento das 6 exceções, mapa em satélite e log append-only de cada tentativa |
 | **Usuários** | 6 papéis, visibilidade por filial (1 ou N), proteção contra auto-escalonamento, criação de conta com senha temporária e troca de senha em `/conta` |
 | **Integration Hub** | Handler Bitrix24 e handler genérico, idempotência, retry com backoff, supressão de eco, logs e mapeamento editável |
-| **Auditoria** | Trigger em 37 tabelas + histórico dedicado de tickets |
+| **Auditoria** | Trigger em 38 tabelas + histórico dedicado de tickets |
 | **Foco por empresa** | Seletor no cabeçalho que estreita treze telas de uma vez. É visualização, não autorização — o isolamento entre tenants continua sendo o RLS |
 | **Tema claro e escuro** | Segue o sistema por padrão, com escolha explícita que vence a preferência do sistema. Os dois temas passam em AA, verificado por teste |
 | **Avisos de SLA** | Atenção, crítico e estourado por e-mail, com caixa de saída, nova tentativa e opt-out por pessoa. Uma mensagem por estado e por ciclo do chamado — nunca duas |
@@ -207,7 +207,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 31 migrações
+  migrations/         # 32 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -295,7 +295,7 @@ aceitável. A resolução depende de uma atualização do Next.
 | [01 — Requisitos](docs/01-requisitos.md) | Requisitos rastreáveis, matriz de permissões, lacunas e decisões por padrão |
 | [02 — Benchmarking](docs/02-benchmarking.md) | Freshservice, Jira SM, Zendesk, GLPI, ManageEngine — padrões adotados e 10 antipatterns evitados |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Visão geral e 12 ADRs com alternativas rejeitadas |
-| [04 — Modelo de dados](docs/04-modelo-dados.md) | 66 tabelas, funções, triggers, views e estratégia de índices |
+| [04 — Modelo de dados](docs/04-modelo-dados.md) | 70 tabelas, funções, triggers, views e estratégia de índices |
 | [05 — Bitrix24](docs/05-integracao-bitrix24.md) | Estudo da API, mapeamento, configuração passo a passo e limitações |
 | [06 — Lacunas e Roadmap](docs/06-lacunas-e-roadmap.md) | Especificação dos 11 módulos pendentes, cronograma em lotes e 14 lacunas globais |
 | [07 — Financeiro e Permissões](docs/07-financeiro-e-permissoes.md) | Permissões granulares, financeiro (contas a pagar/receber, fluxo de caixa) e controle de despesas: 9 módulos no template, matriz de permissões e 15 lacunas |
