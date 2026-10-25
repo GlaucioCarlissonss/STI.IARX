@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 173,
-    'catálogo de permissões tem as 173 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 180,
+    'catálogo de permissões tem as 180 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 173,
+  perform app.assert((select count(*) from public.permission_catalog) = 180,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -6311,6 +6311,298 @@ begin
     'nem as mensagens');
   perform app.assert((select count(*) from public.vw_channel_conversations) = 0,
     'nem a caixa de conversas');
+end
+$$;
+reset role;
+
+-- =============================================================================
+\echo '=== 39. Sugestões de IA: nada é aplicado sozinho (0035) ==='
+-- =============================================================================
+reset role;
+/* `reset role` não limpa `request.jwt.claims` — ver a nota da seção 38. */
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+-- A onda inteira existe para que uma sugestão não vire mudança sem ato humano. O
+-- que o banco garante disso está aqui.
+
+-- -----------------------------------------------------------------------------
+-- 39.1 Ligada sem credencial seria um painel girando para sempre
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_erro boolean := false;
+begin
+  delete from public.ai_settings where tenant_id = v_t;
+
+  begin
+    insert into public.ai_settings (tenant_id, enabled, secret_ref)
+    values (v_t, true, null);
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'IA ligada sem referência de credencial é recusada: o sintoma seria um painel girando');
+
+  begin
+    insert into public.ai_settings (tenant_id, enabled, secret_ref)
+    values (v_t, true, 'sk-ant-api03-segredo-de-verdade');
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'e a chave em si é recusada: o campo guarda o NOME da variável (ADR-009)');
+
+  insert into public.ai_settings (tenant_id, enabled, secret_ref, limite_mensal_centavos)
+  values (v_t, true, 'ANTHROPIC_API_KEY', 1000);
+  perform app.assert(true, 'com o nome da variável, passa');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 39.2 "Aceita por ninguém" não é estado gravável
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tk   uuid;
+  v_p    uuid := '22220000-0000-4000-8000-000000000001';
+  v_id   uuid;
+  v_erro boolean := false;
+begin
+  /* Pelo NÚMERO, e não `limit 1`: a semente cria uuid novo a cada execução, e
+     `limit 1` pegava um chamado de uma filial que a operadora de TI não enxerga —
+     a seção 39.6 então via a tabela cheia e a view vazia (a view junta `tickets`,
+     que é o RLS do chamado fazendo o trabalho dele). O número 1 é estável e está
+     no escopo dela. */
+  select id into v_tk from public.tickets
+   where tenant_id = v_t and ticket_number = 1 and deleted_at is null;
+
+  begin
+    insert into public.ai_suggestions (tenant_id, ticket_id, kind, payload, status)
+    values (v_t, v_tk, 'triagem', '{"confianca":0.9}'::jsonb, 'aceita');
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'sugestão aceita sem autor e sem data é recusada: é exatamente o estado que a onda impede');
+
+  insert into public.ai_suggestions (tenant_id, ticket_id, kind, payload, requested_by)
+  values (v_t, v_tk, 'triagem', '{"confianca":0.9}'::jsonb, v_p)
+  returning id into v_id;
+  perform app.assert(
+    (select status from public.ai_suggestions where id = v_id) = 'pendente',
+    'toda sugestão nasce pendente');
+
+  v_erro := false;
+  begin
+    update public.ai_suggestions set status = 'recusada' where id = v_id;
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'e decidir sem dizer quem decidiu também é recusado');
+
+  update public.ai_suggestions
+     set status = 'recusada', acted_by = v_p, acted_at = now()
+   where id = v_id;
+  perform app.assert(
+    (select acted_by from public.ai_suggestions where id = v_id) = v_p,
+    'com autor e data, a decisão é gravada — e fica registrada para sempre');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 39.3 Uma pendente por chamado e por tipo
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tk   uuid;
+  v_p    uuid := '22220000-0000-4000-8000-000000000001';
+  v_erro boolean := false;
+begin
+  /* Pelo NÚMERO, e não `limit 1`: a semente cria uuid novo a cada execução, e
+     `limit 1` pegava um chamado de uma filial que a operadora de TI não enxerga —
+     a seção 39.6 então via a tabela cheia e a view vazia (a view junta `tickets`,
+     que é o RLS do chamado fazendo o trabalho dele). O número 1 é estável e está
+     no escopo dela. */
+  select id into v_tk from public.tickets
+   where tenant_id = v_t and ticket_number = 1 and deleted_at is null;
+  delete from public.ai_suggestions where ticket_id = v_tk and status = 'pendente';
+
+  insert into public.ai_suggestions (tenant_id, ticket_id, kind, payload, requested_by)
+  values (v_t, v_tk, 'resposta', '{"texto":"a"}'::jsonb, v_p);
+
+  begin
+    insert into public.ai_suggestions (tenant_id, ticket_id, kind, payload, requested_by)
+    values (v_t, v_tk, 'resposta', '{"texto":"b"}'::jsonb, v_p);
+  exception when unique_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'dois cliques não viram duas sugestões pendentes do mesmo tipo — e as duas teriam sido pagas');
+
+  -- Tipo diferente convive: são perguntas diferentes sobre o mesmo chamado.
+  insert into public.ai_suggestions (tenant_id, ticket_id, kind, payload, requested_by)
+  values (v_t, v_tk, 'triagem', '{"confianca":0.5}'::jsonb, v_p);
+  perform app.assert(true, 'mas resposta e triagem convivem no mesmo chamado');
+
+  -- E uma decidida libera a vaga: pedir de novo é legítimo.
+  update public.ai_suggestions
+     set status = 'recusada', acted_by = v_p, acted_at = now()
+   where ticket_id = v_tk and kind = 'resposta' and status = 'pendente';
+  insert into public.ai_suggestions (tenant_id, ticket_id, kind, payload, requested_by)
+  values (v_t, v_tk, 'resposta', '{"texto":"c"}'::jsonb, v_p);
+  perform app.assert(true, 'decidida a anterior, pedir de novo é permitido');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 39.4 A virada do mês do orçamento
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  update public.ai_settings
+     set gasto_do_mes_centavos = 900, limite_mensal_centavos = 1000,
+         mes_de_referencia = date_trunc('month', now())::date
+   where tenant_id = v_t;
+
+  perform app.assert(
+    (select tem_orcamento from public.ai_config_utilizavel()),
+    'com 900 de 1000 gastos, ainda há orçamento');
+
+  perform public.ai_registrar_uso(v_t, 1000, 500, 200);
+  perform app.assert(
+    (select gasto_do_mes_centavos from public.ai_settings where tenant_id = v_t) = 1100,
+    'o consumo acumula');
+  perform app.assert(
+    not (select tem_orcamento from public.ai_config_utilizavel()),
+    'e, passado o teto, a resposta é não — conferida ANTES da próxima chamada');
+
+  -- Mês velho: o acumulado zera, e zera na LEITURA também. Sem isso, no dia 1º o
+  -- painel diria "orçamento esgotado" até alguém pedir a primeira sugestão.
+  update public.ai_settings
+     set mes_de_referencia = (date_trunc('month', now()) - interval '1 month')::date
+   where tenant_id = v_t;
+  perform app.assert(
+    (select tem_orcamento from public.ai_config_utilizavel()),
+    'mês virado devolve orçamento na leitura, sem esperar a primeira chamada');
+  perform app.assert(
+    (select gasto_do_mes_centavos from public.ai_config_utilizavel()) = 0,
+    'e o acumulado mostrado é zero');
+
+  perform public.ai_registrar_uso(v_t, 10, 10, 50);
+  perform app.assert(
+    (select gasto_do_mes_centavos from public.ai_settings where tenant_id = v_t) = 50,
+    'a primeira chamada do mês novo começa do zero, e não soma no acumulado velho');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 39.5 O que sai no prompt: a nota interna é a trava
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tk   uuid;
+  v_p    uuid := '22220000-0000-4000-8000-000000000001';
+  v_json jsonb;
+begin
+  /* Pelo NÚMERO, e não `limit 1`: a semente cria uuid novo a cada execução, e
+     `limit 1` pegava um chamado de uma filial que a operadora de TI não enxerga —
+     a seção 39.6 então via a tabela cheia e a view vazia (a view junta `tickets`,
+     que é o RLS do chamado fazendo o trabalho dele). O número 1 é estável e está
+     no escopo dela. */
+  select id into v_tk from public.tickets
+   where tenant_id = v_t and ticket_number = 1 and deleted_at is null;
+
+  delete from public.ticket_comments where ticket_id = v_tk;
+  insert into public.ticket_comments (tenant_id, ticket_id, author_id, body, visibility)
+  values (v_t, v_tk, v_p, 'Bom dia, já estou verificando.', 'public'),
+         (v_t, v_tk, v_p, 'A senha do servidor e o histórico deste cliente.', 'internal');
+
+  update public.ai_settings set enviar_notas_internas = false where tenant_id = v_t;
+  select comentarios into v_json from public.ai_contexto_do_chamado(v_tk);
+  perform app.assert(jsonb_array_length(v_json) = 1,
+    'com a opção desligada, só o comentário público entra no prompt');
+  perform app.assert(not (v_json::text like '%senha do servidor%'),
+    'e a nota interna NÃO sai deste servidor');
+
+  update public.ai_settings set enviar_notas_internas = true where tenant_id = v_t;
+  select comentarios into v_json from public.ai_contexto_do_chamado(v_tk);
+  perform app.assert(jsonb_array_length(v_json) = 2,
+    'ligada explicitamente, a nota interna entra — é escolha, nunca herança');
+
+  -- Comentário apagado não volta pelo prompt.
+  update public.ticket_comments set deleted_at = now()
+   where ticket_id = v_tk and visibility = 'public';
+  update public.ai_settings set enviar_notas_internas = false where tenant_id = v_t;
+  select comentarios into v_json from public.ai_contexto_do_chamado(v_tk);
+  perform app.assert(jsonb_array_length(v_json) = 0,
+    'comentário apagado não reaparece pelo contexto da IA');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 39.6 Quem pode o quê
+-- -----------------------------------------------------------------------------
+set role rls_tester;
+
+-- Ana Souza é operadora de TI: usa a sugestão, não configura a IA.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_n integer;
+begin
+  perform app.assert(app.has_permission('ia.sugestoes.ver'), 'operador de TI vê as sugestões');
+  perform app.assert(app.has_permission('ia.sugestoes.usar'), 'e pede e decide');
+  perform app.assert(not app.has_permission('ia.config.gerenciar'),
+    'mas NÃO liga a IA: isso guarda credencial e define o gasto do mês');
+  perform app.assert(not app.has_permission('ia.config.ver'),
+    'nem abre a tela de configuração');
+
+  /* Ele PRECISA ler a configuração mesmo sem `ia.config.ver`: é o Server Action
+     dele que faz a chamada, e ele precisa saber o modelo e o nome da variável.
+     Ler o nome da variável não dá acesso a nada — o valor está no ambiente do
+     servidor. */
+  perform app.assert((select count(*) from public.ai_settings) = 1,
+    'mas lê a configuração: é o pedido dele que faz a chamada');
+
+  update public.ai_settings set limite_mensal_centavos = 999999;
+  get diagnostics v_n = row_count;
+  perform app.assert(v_n = 0,
+    'e não mexe no teto de gasto: a negação do RLS chega como zero linhas');
+
+  perform app.assert((select count(*) from public.vw_ai_suggestions) > 0,
+    'as sugestões do chamado aparecem para ele');
+end
+$$;
+
+-- Carla Dias é solicitante: não vê sugestão nenhuma.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000005","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.ai_suggestions) = 0,
+    'solicitante não lê as sugestões de IA');
+  perform app.assert((select count(*) from public.ai_settings) = 0,
+    'nem a configuração');
+  perform app.assert((select count(*) from public.ai_config_utilizavel()) = 0,
+    'e para ele a IA simplesmente não existe');
+end
+$$;
+
+-- Tenant 2 não vê nada do tenant 1.
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.ai_settings) = 0,
+    'tenant 2 não vê a configuração de IA do tenant 1');
+  perform app.assert((select count(*) from public.ai_suggestions) = 0,
+    'nem as sugestões');
+  perform app.assert((select count(*) from public.vw_ai_suggestions) = 0,
+    'nem o consumo');
 end
 $$;
 reset role;

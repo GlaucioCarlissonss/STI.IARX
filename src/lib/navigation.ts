@@ -195,6 +195,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Administração',
     items: [
       { href: '/usuarios', label: 'Usuários', permission: 'usuarios.usuarios.ver' },
+      /* A IA entra em Administração, e não em Atendimento, apesar de as sugestões
+         aparecerem no chamado: esta tela não pede sugestão nenhuma. Ela liga o
+         recurso, guarda a referência da credencial e define quanto o mês pode
+         gastar — é configuração de ambiente, da mesma natureza que os canais.
+         Quem atende nunca precisa abri-la. */
+      { href: '/ia', label: 'Sugestões de IA', permission: 'ia.config.ver' },
       { href: '/perfis', label: 'Perfis de acesso', permission: 'usuarios.perfis.ver' },
       { href: '/tv', label: 'Painéis de TV', permission: 'tv.tokens.ver' },
     ],

@@ -434,6 +434,7 @@ try {
       '/portal',
       '/conversas',
       '/conversas/canais',
+      '/ia',
     ]) {
       await p.goto(BASE + rota, { waitUntil: 'networkidle' })
       ok(p.url().includes('/login'), `${rota}: visitante é mandado para o login`)

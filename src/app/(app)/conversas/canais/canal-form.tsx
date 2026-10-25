@@ -43,7 +43,7 @@ export function CanalForm({
   clientes,
 }: {
   filas: { id: string; name: string }[]
-  prioridades: { id: string; name: string }[]
+  prioridades: { id: string; label: string }[]
   clientes: { id: string; nome: string }[]
 }) {
   const [state, formAction] = useActionState<CanalActionState, FormData>(salvarCanal, {})
@@ -187,7 +187,7 @@ export function CanalForm({
               <option value="">—</option>
               {prioridades.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.label}
                 </option>
               ))}
             </select>

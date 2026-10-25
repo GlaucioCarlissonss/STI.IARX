@@ -47,7 +47,7 @@ export function ServicoForm({
 }: {
   categorias: { id: string; name: string }[]
   filas: { id: string; name: string }[]
-  prioridades: { id: string; name: string }[]
+  prioridades: { id: string; label: string }[]
   className?: string
 }) {
   const [state, action] = useActionState(salvarServico, {})
@@ -111,7 +111,7 @@ export function ServicoForm({
               <option value="">Padrão do chamado</option>
               {prioridades.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.label}
                 </option>
               ))}
             </select>

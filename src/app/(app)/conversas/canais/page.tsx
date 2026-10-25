@@ -57,9 +57,10 @@ export default async function CanaisPage() {
       supabase.from('queues').select('id, name').order('name').returns<{ id: string; name: string }[]>(),
       supabase
         .from('ticket_priorities')
-        .select('id, name')
+        // `label`, e não `name` — ver o comentário em /catalogo.
+        .select('id, label')
         .order('sort_order')
-        .returns<{ id: string; name: string }[]>(),
+        .returns<{ id: string; label: string }[]>(),
       supabase
         .from('clients')
         .select('id, trade_name, legal_name')

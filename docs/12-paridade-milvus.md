@@ -437,11 +437,54 @@ Guia de uso em [docs/16](16-canais-de-conversa.md).
   primeira ligação real pode exigir ajuste de nome de campo — por isso os
   adaptadores registram o que não souberam ler em vez de descartar.
 
-### Onda 6 — IA (3–5 semanas)
+### Onda 6 — IA ✅ **executada**
 
-20. Resposta sugerida a partir da base de conhecimento.
-21. Artigo gerado a partir de um ticket resolvido, com revisão humana.
-22. Triagem sugerida (categoria e prioridade), **sugerida** e não aplicada.
+Guia de uso em [docs/17](17-sugestoes-de-ia.md).
+
+20. ✅ Resposta sugerida a partir da base de conhecimento.
+21. ✅ Artigo gerado a partir de um ticket resolvido, com revisão humana.
+22. ✅ Triagem sugerida (categoria e prioridade), **sugerida** e não aplicada.
+
+**O que mudou em relação ao que estava planejado aqui, e por quê:**
+
+- **"Sugerida" virou a regra dos três, e não só da triagem.** O plano só grifava a
+  palavra no item 22; na execução ela governa os três, porque o mesmo raciocínio
+  vale para todos. Triagem aplicada sozinha muda o SLA sem autor no histórico;
+  resposta enviada sozinha vai para o cliente. Toda sugestão nasce como linha
+  `pendente`, e o CHECK `sug_decidida_tem_autor` impede o estado "aceita por
+  ninguém".
+
+- **A IA não escreve no chamado.** Não há autor "IA" em `ticket_comments`: a
+  resposta sugerida tem botão de *copiar*, não de enviar. Ela vai para a caixa de
+  comentário, onde a pessoa corrige e assina — a responsabilidade pelo que o
+  cliente leu é de quem apertou enviar.
+
+- **O painel de IA fica DEPOIS das sugestões da base, e não antes.** A base é
+  determinística, gratuita, e já tem a resposta de um problema que alguém
+  resolveu. Oferecer a IA primeiro ensinaria a equipe a pular a base — e a base
+  deixaria de ser alimentada, que é o único jeito de ela servir para alguma coisa.
+
+- **Teto de gasto por tenant, conferido antes da chamada.** Não estava no plano, e
+  é o que separa um recurso que a empresa liga de um que ela desliga depois da
+  primeira fatura. Estourado o teto, o painel volta ao caminho determinístico e
+  diz o motivo.
+
+- **Embeddings continuam de fora.** O item 14 da onda 4 já havia adiado a
+  semelhança semântica, e ela continua adiada: as sugestões de artigo usam
+  categoria e busca textual, e a IA lê o que a busca achou. Um banco de vetores
+  seria uma dependência nova para melhorar um passo que hoje não é o gargalo — o
+  gargalo é a base ter poucos artigos.
+
+- **O chatbot do item de benchmarking não foi feito**, e é o mesmo motivo do chat
+  no portal (onda 5): uma superfície que promete resposta imediata. Com os canais
+  e as sugestões prontas, a equipe responde mais rápido no chamado — que é onde o
+  SLA conta.
+
+- **Honestidade sobre o que não foi verificado:** nenhuma chamada real ao
+  provedor (não há credencial da Anthropic neste ambiente nem saída de rede para a
+  API), e a **qualidade** das sugestões não foi medida — isso exigiria um conjunto
+  de avaliação com chamados reais, que é trabalho de outra ordem. Os prompts são a
+  parte que mais vai mudar depois da primeira semana de uso real.
 
 ---
 

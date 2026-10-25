@@ -11,6 +11,9 @@ import { TicketActions } from './ticket-actions'
 import { CommentForm } from './comment-form'
 import { Attachments, type AttachmentRecord } from '@/components/attachments'
 import { SugestoesDaBase, type Sugestao } from './sugestoes'
+import { PainelDeIA, type SugestaoNaTela } from './painel-de-ia'
+import { porQueNaoPosso } from '@/lib/ia/regras'
+import { EXPLICACAO_DA_INDISPONIBILIDADE, type ConfigDeIA } from '@/lib/ia/tipos'
 
 export async function generateMetadata({
   params,
@@ -45,6 +48,11 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
 
   const isAgent = canWorkTickets(profile.role)
   const podeEscreverNaBase = await allowed('autoatendimento.base.escrever')
+  /* Duas permissões, e a distinção tem uso: quem só tem `ver` lê as sugestões e
+     o registro de quem aceitou o quê — auditoria — sem poder gastar dinheiro
+     pedindo mais nem decidir no lugar de quem atende. */
+  const podeVerIA = await allowed('ia.sugestoes.ver')
+  const podeUsarIA = await allowed('ia.sugestoes.usar')
 
   const [
     { data: comments },
@@ -55,6 +63,8 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
     agents,
     { data: sugestoesBrutas },
     { data: artigoExistente },
+    { data: configDeIA },
+    { data: sugestoesDeIA },
   ] =
     await Promise.all([
       supabase
@@ -96,6 +106,23 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
         .is('deleted_at', null)
         .limit(1)
         .returns<{ id: string; title: string }[]>(),
+      /* A configuração de IA é lida junto com o resto porque o painel precisa
+         saber, antes de desenhar qualquer botão, se o recurso está ligado — e
+         uma segunda ida ao banco depois da renderização faria o painel piscar. */
+      podeVerIA
+        ? supabase.rpc('ai_config_utilizavel').maybeSingle<ConfigDeIA>()
+        : Promise.resolve({ data: null }),
+      podeVerIA
+        ? supabase
+            .from('vw_ai_suggestions')
+            .select(
+              'id, kind, payload, status, model, custo_centavos, created_at, acted_at, requested_by_name, acted_by_name',
+            )
+            .eq('ticket_id', id)
+            .order('created_at', { ascending: false })
+            .limit(20)
+            .returns<SugestaoNaTela[]>()
+        : Promise.resolve({ data: [] }),
     ])
 
   const allowedStatuses = (transitions ?? []).map((t) => t.to_status as EnrichedTicket['status'])
@@ -103,6 +130,14 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
      tipos gerados não a conhecem). O molde é o da própria função, e está
      declarado em `sugestoes.tsx`. */
   const sugestoes = (sugestoesBrutas ?? []) as unknown as Sugestao[]
+
+  /* Por que a IA não está disponível — calculado no SERVIDOR, porque é aqui que
+     dá para olhar `process.env` e saber se a variável nomeada na configuração
+     existe de fato. O navegador não tem como saber isso, e "ligada mas sem a
+     variável" é o erro de configuração mais comum. */
+  const motivoDeIndisponibilidade = podeVerIA
+    ? porQueNaoPosso(configDeIA ?? null, 'resposta')
+    : null
 
   return (
     <>
@@ -127,6 +162,33 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
           )}
         </div>
       </div>
+
+      {/*
+        O painel de IA fica DEPOIS das sugestões da base, e não antes.
+
+        A base é determinística, gratuita e já tem a resposta de um problema que
+        alguém resolveu. A IA é probabilística e custa por clique. Oferecer a IA
+        primeiro ensinaria a equipe a pular a base — e a base deixaria de ser
+        alimentada, que é o único jeito de ela servir para alguma coisa.
+      */}
+      {isAgent && podeVerIA && (
+        <PainelDeIA
+          ticketId={id}
+          sugestoes={sugestoesDeIA ?? []}
+          podeUsar={podeUsarIA}
+          disponivel={
+            motivoDeIndisponibilidade
+              ? { pode: false, motivo: EXPLICACAO_DA_INDISPONIBILIDADE[motivoDeIndisponibilidade] }
+              : { pode: true }
+          }
+          recursos={{
+            resposta: configDeIA?.sugerir_resposta ?? false,
+            triagem: configDeIA?.sugerir_triagem ?? false,
+            artigo: configDeIA?.redigir_artigo ?? false,
+          }}
+          resolvido={ticket.status === 'resolved' || ticket.status === 'closed'}
+        />
+      )}
 
       {/*
         As sugestões vêm ANTES do corpo do chamado, e só para quem atende.

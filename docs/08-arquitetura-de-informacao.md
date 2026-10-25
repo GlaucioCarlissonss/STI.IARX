@@ -53,7 +53,7 @@ destino, não categoria.
 | **Infraestrutura** | Inventário de TI · Agentes nas máquinas · Software instalado · Telefonia · Links de internet · Mapa das filiais |
 | **Cadastros** | Clientes e filiais · Fornecedores e contratos |
 | **Integrações** | Sistemas de tickets · *Bancos de dados* · *Pagamento bancário* · *Recebimento bancário* |
-| **Administração** | Usuários · Perfis de acesso · Painéis de TV |
+| **Administração** | Usuários · Perfis de acesso · Painéis de TV · Sugestões de IA |
 | — | Minha conta |
 
 *Itálico* = previsto, sem tela ainda.

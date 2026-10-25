@@ -70,6 +70,7 @@ export const MODULE_LABEL: Record<string, string> = {
   tv: 'Painéis de TV',
   autoatendimento: 'Autoatendimento',
   canais: 'Canais de conversa',
+  ia: 'Sugestões de IA',
 }
 
 /*
@@ -248,6 +249,23 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
      de desligar o WhatsApp da empresa. */
   act('canais', 'canais', 'ver', 'Consultar os canais configurados', 'admin'),
   act('canais', 'canais', 'gerenciar', 'Ligar e desligar canais', 'admin'),
+
+  /* --- Sugestões de IA ----------------------------------------------------- */
+  /* A palavra da onda inteira é "sugerida": nada é aplicado sozinho. Por isso
+     `usar` cobre pedir E aceitar — quem pode usar a sugestão é quem pode
+     criá-la. Separar daria a alguém o direito de encher a fila de sugestões
+     pendentes sem poder resolvê-las. */
+  mod('ia', 'atendente'),
+  scr('ia', 'sugestoes', 'Sugestões nos chamados', 'atendente'),
+  act('ia', 'sugestoes', 'ver', 'Ver as sugestões', 'atendente'),
+  act('ia', 'sugestoes', 'usar', 'Pedir sugestão e aceitá-la', 'atendente'),
+
+  scr('ia', 'config', 'Configuração da IA', 'admin'),
+  /* Teto `admin` por dois motivos independentes, e cada um bastaria: a
+     configuração guarda a referência da credencial, e define QUANTO DINHEIRO o
+     recurso pode gastar por mês. */
+  act('ia', 'config', 'ver', 'Consultar a configuração e o consumo', 'admin'),
+  act('ia', 'config', 'gerenciar', 'Ligar a IA e definir o teto de gasto', 'admin'),
 
   /* --- Telefonia --------------------------------------------------------- */
   mod('telefonia', 'visualizador'),

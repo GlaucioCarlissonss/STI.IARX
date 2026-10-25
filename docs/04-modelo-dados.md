@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-78 tabelas e 24 views em `public`, com 188 policies de RLS, mais 3 policies em
+80 tabelas e 25 views em `public`, com 192 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
@@ -474,6 +474,55 @@ Quatro tabelas, e uma decisão que define o módulo: **toda conversa é um chama
   auditar gravaria uma segunda cópia de cada mensagem em `audit_log` — a mesma
   aritmética que tirou as métricas da trilha na 0032.
 
+### Sugestões de IA (0035)
+Duas tabelas, e a palavra que define a onda está no estado inicial de uma delas.
+
+| Tabela | Papel |
+|---|---|
+| `ai_settings` | Uma linha por tenant. Credencial por **referência**, teto de gasto em centavos, e um interruptor por recurso |
+| `ai_suggestions` | Toda sugestão, sempre nascendo `pendente`, com quem pediu e quem decidiu |
+
+**Decisões que valem registro:**
+
+- **`sug_decidida_tem_autor` é o CHECK que define a onda.** Pendente não tem
+  decisor nem data; decidida tem os dois. Sem ele, "aceita por ninguém às nulo"
+  seria um estado gravável — e é exatamente o estado que a onda existe para
+  impedir. Triagem aplicada sem autor muda o SLA de um chamado, e quando o prazo
+  estourar ninguém vai saber por quê.
+
+- **Uma pendente por chamado e por tipo**, por índice único parcial. Dois cliques
+  no botão criariam duas sugestões, o painel mostraria as duas com um botão de
+  aceitar cada, e **as duas teriam sido pagas**.
+
+- **O `payload` é `jsonb` porque os três tipos têm campos diferentes.** O
+  validador do formato mora no TypeScript (zod) — e é o mesmo objeto que vai ao
+  provedor como esquema obrigatório de saída. Uma definição só, nos dois lados: é
+  essa amarração que torna a injeção de prompt inofensiva, porque o modelo não tem
+  como responder outra coisa senão preencher aqueles campos.
+
+- **`ai_contexto_do_chamado()` decide o que sai daqui.** A filtragem de nota
+  interna mora no banco, e não num `select` da aplicação: escrever a mesma regra
+  lá funcionaria igual hoje e divergiria na primeira vez que alguém acrescentasse
+  um campo. O padrão é **não enviar** nota interna.
+
+- **O teto de gasto é conferido ANTES da chamada** (`ai_config_utilizavel()`
+  devolve `tem_orcamento` já resolvido). Depois já gastou. A virada do mês
+  acontece na leitura **e** na escrita, porque as duas podem ser a primeira do
+  mês — só na escrita, o dia 1º começaria dizendo "orçamento esgotado".
+
+- **`ai_registrar_uso()` é `security definer` concedida a `authenticated`.** O
+  acumulado precisa subir mesmo quando quem pediu a sugestão é um atendente que
+  não tem (e não deve ter) permissão de escrever na configuração. Não é um quarto
+  uso de `service_role` (ADR-011), pelo mesmo raciocínio de `channel_ingest`
+  (0034).
+
+- **Os contadores de consumo entraram em `app.audit_ignored_columns()`** — eles
+  mudam a cada chamada e não são fato de negócio. Mesma classe de `views` (0033) e
+  `last_seen_at` (0031).
+
+- **A recusa fica registrada.** Ela é a única medida honesta de se a IA ajuda:
+  apagá-la deixaria só o que deu certo.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -556,7 +605,7 @@ em alguns perfis e fosse esquecida em outros.
 | `trg_protect_default_queue` | `queues` | protege a fila padrão |
 | `trg_assets_history` | `it_assets` | gera eventos de lifecycle |
 | `trg_profiles_no_escalation` | `profiles` | bloqueia auto-promoção de papel |
-| `trg_*_audit` | 43 tabelas | auditoria global |
+| `trg_*_audit` | 45 tabelas | auditoria global |
 | `trg_branches_geocode_staleness` | `branches` | invalida a coordenada quando o endereço muda |
 | `trg_tenants_seed_access_profiles` | `tenants` | cria os 9 perfis do sistema no nascimento do tenant |
 | `trg_profiles_default_access_profile` | `profiles` | atribui o perfil correspondente ao papel |

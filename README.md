@@ -40,7 +40,7 @@ Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 | **Geolocalização** | Endereço estruturado obrigatório, geocodificação com nível de precisão, tratamento das 6 exceções, mapa em satélite e log append-only de cada tentativa |
 | **Usuários** | 6 papéis, visibilidade por filial (1 ou N), proteção contra auto-escalonamento, criação de conta com senha temporária e troca de senha em `/conta` |
 | **Integration Hub** | Handler Bitrix24 e handler genérico, idempotência, retry com backoff, supressão de eco, logs e mapeamento editável |
-| **Auditoria** | Trigger em 43 tabelas + histórico dedicado de tickets |
+| **Auditoria** | Trigger em 45 tabelas + histórico dedicado de tickets |
 | **Foco por empresa** | Seletor no cabeçalho que estreita treze telas de uma vez. É visualização, não autorização — o isolamento entre tenants continua sendo o RLS |
 | **Tema claro e escuro** | Segue o sistema por padrão, com escolha explícita que vence a preferência do sistema. Os dois temas passam em AA, verificado por teste |
 | **Avisos de SLA** | Atenção, crítico e estourado por e-mail, com caixa de saída, nova tentativa e opt-out por pessoa. Uma mensagem por estado e por ciclo do chamado — nunca duas |
@@ -51,6 +51,7 @@ Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 | **Portal de quem pede** | Tela inicial do solicitante, na ordem do que resolve mais barato: procure a resposta, peça um serviço, acompanhe, e só então abra um chamado |
 | **Agente nas máquinas** | Serviço em Go (Windows, Linux e macOS) que coleta inventário de hardware e software, concilia com o cadastro **sem duplicar ativo** e nunca sobrescreve o que uma pessoa digitou. Token por máquina, revogável uma a uma |
 | **Canais de conversa** | WhatsApp pela API oficial da Meta, e-mail, Bitrix24 e um canal genérico para o N8N — que liga Telegram, Slack ou SMS sem esta base precisar conhecê-los. Toda conversa vira chamado, e a resposta volta pelo canal de onde a pergunta veio |
+| **Sugestões de IA** | Resposta, classificação e artigo — **sugeridos, nunca aplicados**. Toda sugestão nasce pendente e aceitar é ato humano, com autor e data. Credencial por referência, teto de gasto mensal por empresa, e tudo continua funcionando sem chave nenhuma |
 
 ## Instalação
 
@@ -160,8 +161,8 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 321 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação e compliance
-npm run db:validate   # migrações + seed + 397 asserções em PostgreSQL real
+npm test              # 482 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais e sugestões de IA
+npm run db:validate   # migrações + seed + 745 asserções em PostgreSQL real
 ```
 
 Mais duas suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -169,7 +170,7 @@ Chromium e, no caso da segunda, de um build:
 
 ```bash
 node demo/tests/prototipo.spec.mjs   # 44 asserções de permissão no protótipo
-node demo/tests/aplicacao.spec.mjs   # 17 asserções na aplicação: tema, fontes, foco, 360px, peso do JS
+node demo/tests/aplicacao.spec.mjs   # 45 asserções na aplicação: tema, fontes, foco, 360px, peso do JS, rotas do agente e dos canais
 ```
 
 A segunda cobre só as rotas públicas: `src/proxy.ts` guarda toda rota, e sem um
@@ -180,7 +181,14 @@ esta documentação afirma, medidos contra o banco.
 
 ```bash
 python3 scripts/conferir-numeros.py   # depois de npm run db:validate
+python3 scripts/conferir-colunas.py   # idem
 ```
+
+O segundo confere cada `.from('tabela').select('coluna')` contra o schema real.
+O `tsc` não vê nada ali — o nome da coluna é uma string, e o `.returns<T>()` é
+uma asserção de quem escreveu. Quando o nome está errado, o Supabase devolve
+erro, o `?? []` vira lista vazia, e o resultado é um campo de formulário sem
+opções, em silêncio. Ele achou dois casos reais na primeira execução.
 
 `db:validate` sobe o schema inteiro em um banco limpo e roda os testes de RLS
 **com um papel sem `BYPASSRLS`**. Testar isolamento como superusuário passaria
@@ -211,7 +219,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 34 migrações
+  migrations/         # 35 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -299,7 +307,7 @@ aceitável. A resolução depende de uma atualização do Next.
 | [01 — Requisitos](docs/01-requisitos.md) | Requisitos rastreáveis, matriz de permissões, lacunas e decisões por padrão |
 | [02 — Benchmarking](docs/02-benchmarking.md) | Freshservice, Jira SM, Zendesk, GLPI, ManageEngine — padrões adotados e 10 antipatterns evitados |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Visão geral e 12 ADRs com alternativas rejeitadas |
-| [04 — Modelo de dados](docs/04-modelo-dados.md) | 78 tabelas, funções, triggers, views e estratégia de índices |
+| [04 — Modelo de dados](docs/04-modelo-dados.md) | 80 tabelas, funções, triggers, views e estratégia de índices |
 | [05 — Bitrix24](docs/05-integracao-bitrix24.md) | Estudo da API, mapeamento, configuração passo a passo e limitações |
 | [06 — Lacunas e Roadmap](docs/06-lacunas-e-roadmap.md) | Especificação dos 11 módulos pendentes, cronograma em lotes e 14 lacunas globais |
 | [07 — Financeiro e Permissões](docs/07-financeiro-e-permissoes.md) | Permissões granulares, financeiro (contas a pagar/receber, fluxo de caixa) e controle de despesas: 9 módulos no template, matriz de permissões e 15 lacunas |
@@ -312,3 +320,4 @@ aceitável. A resolução depende de uma atualização do Next.
 | [14 — O agente nas máquinas](docs/14-agente-de-inventario.md) | Como instalar o agente (inclusive por GPO), como funciona a conciliação, e o que ele coleta e o que não coleta |
 | [15 — Autoatendimento](docs/15-autoatendimento.md) | Base de conhecimento, catálogo de serviços e portal: por que bases de conhecimento morrem, e o caminho que impede esta de morrer |
 | [16 — Canais de conversa](docs/16-canais-de-conversa.md) | WhatsApp, e-mail, Bitrix24 e N8N: como ligar cada um, por que o N8N é o mais importante dos quatro, e por que não existe caixa de resposta nos canais |
+| [17 — Sugestões de IA](docs/17-sugestoes-de-ia.md) | Resposta, triagem e artigo: por que nada é aplicado sozinho, o que sai para o provedor, o teto de gasto e por que a injeção de prompt é inofensiva aqui |

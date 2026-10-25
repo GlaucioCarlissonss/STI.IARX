@@ -78,10 +78,14 @@ export default async function CatalogoPage() {
       podeGerenciar
         ? supabase
             .from('ticket_priorities')
-            .select('id, name')
+            /* `label`, e não `name`: a coluna de `ticket_priorities` sempre se
+               chamou assim. Com o nome errado o Supabase devolve erro e `data`
+               nulo — a lista de prioridades ficava VAZIA, em silêncio, num campo
+               do formulário de cadastro de serviço. */
+            .select('id, label')
             .order('sort_order')
-            .returns<{ id: string; name: string }[]>()
-        : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+            .returns<{ id: string; label: string }[]>()
+        : Promise.resolve({ data: [] as { id: string; label: string }[] }),
     ])
 
   const lista = itens ?? []
