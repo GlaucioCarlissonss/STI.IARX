@@ -170,7 +170,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 546 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação cronograma de projetos e rateio do orçamento
-npm run db:validate   # migrações + seed + 992 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 1005 asserções em PostgreSQL real
 ```
 
 Mais duas suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -227,7 +227,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 41 migrações
+  migrations/         # 42 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -258,7 +258,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado na última entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 571 testes unitários e 992 asserções de banco passando, mais 44
+apontamentos, 581 testes unitários e 1005 asserções de banco passando, mais 44
 asserções no protótipo e 60 na aplicação, em navegador — incluindo a aritmética
 de horário útil conferida contra 8 cenários (almoço, fim de semana, feriado,
 fora de expediente).

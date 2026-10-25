@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 208,
-    'catálogo de permissões tem as 208 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 209,
+    'catálogo de permissões tem as 209 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 208,
+  perform app.assert((select count(*) from public.permission_catalog) = 209,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -8341,6 +8341,216 @@ begin
     'a tela de preferências tem chave própria: configuração sem tela é configuração morta');
 end
 $$;
+
+-- =============================================================================
+\echo '=== 46. Mapeamento de integração: uma instrução, uma versão (0042) ==='
+-- =============================================================================
+reset role;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+-- O histórico existia desde a 0013 e ninguém o lia. Ao abri-lo para ser lido,
+-- apareceu o defeito que estas asserções protegem: a trigger era por LINHA, e
+-- uma edição de cinco regras deixava dez versões — nove delas estados que o
+-- mapeamento nunca teve como conjunto coerente.
+
+-- -----------------------------------------------------------------------------
+-- 46.1 Uma instrução que mexe em cinco regras grava UMA versão
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_int    uuid := '66660000-0000-4000-8000-000000000001';
+  v_antes  integer;
+  v_depois integer;
+  v_linhas integer;
+begin
+  select count(*) into v_antes from public.integration_mapping_versions
+   where integration_id = v_int;
+
+  update public.integration_mappings
+     set default_value = coalesce(default_value, '')
+   where integration_id = v_int;
+  get diagnostics v_linhas = row_count;
+
+  select count(*) into v_depois from public.integration_mapping_versions
+   where integration_id = v_int;
+
+  perform app.assert(v_linhas >= 5,
+    'a instrução mexeu em várias regras de uma vez');
+  /*
+   * Esta é a asserção inteira da 0042. Por linha, o histórico ganhava uma
+   * versão por regra tocada — e a pessoa que fosse "voltar para antes da
+   * mudança de ontem" escolheria um estado intermediário, pegando o mapeamento
+   * pela metade.
+   */
+  perform app.assert(v_depois = v_antes + 1,
+    'e gravou UMA versão, não uma por linha');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 46.2 O apagar e o inserir também contam uma vez cada
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_int    uuid := '66660000-0000-4000-8000-000000000001';
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_antes  integer;
+  v_depois integer;
+begin
+  select count(*) into v_antes from public.integration_mapping_versions
+   where integration_id = v_int;
+
+  insert into public.integration_mappings
+    (tenant_id, integration_id, source_path, target_field, transform)
+  values
+    (v_t, v_int, 'data.A', 'external_id',  'direct'),
+    (v_t, v_int, 'data.B', 'external_url', 'direct');
+
+  select count(*) into v_depois from public.integration_mapping_versions
+   where integration_id = v_int;
+  perform app.assert(v_depois = v_antes + 1,
+    'inserir duas regras numa instrução grava uma versão');
+
+  delete from public.integration_mappings
+   where integration_id = v_int and target_field in ('external_id', 'external_url');
+
+  select count(*) into v_depois from public.integration_mapping_versions
+   where integration_id = v_int;
+  perform app.assert(v_depois = v_antes + 2,
+    'e apagar as duas grava mais uma');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 46.3 O snapshot é o CONJUNTO, e a nota diz o que foi
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_int uuid := '66660000-0000-4000-8000-000000000001';
+  v_rec record;
+  v_n   integer;
+begin
+  select * into v_rec from public.integration_mapping_versions
+   where integration_id = v_int order by version desc limit 1;
+
+  select count(*) into v_n from public.integration_mappings where integration_id = v_int;
+
+  perform app.assert(jsonb_array_length(v_rec.snapshot) = v_n,
+    'o snapshot tem exatamente as regras que existem agora');
+  perform app.assert(v_rec.note = 'delete',
+    'e a nota diz qual instrução o gerou');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 46.4 Restaurar devolve o conjunto — e é UMA versão, com nota própria
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_int     uuid := '66660000-0000-4000-8000-000000000001';
+  v_t       uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_alvo    integer;
+  v_antes   integer;
+  v_depois  integer;
+  v_n       integer;
+  v_esperado integer;
+begin
+  -- A versão para a qual voltar, e quantas regras ela tinha.
+  select version, jsonb_array_length(snapshot) into v_alvo, v_esperado
+    from public.integration_mapping_versions
+   where integration_id = v_int order by version desc limit 1;
+
+  -- Agora estraga o mapeamento: apaga quase tudo.
+  delete from public.integration_mappings
+   where integration_id = v_int and target_field <> 'title';
+
+  select count(*) into v_n from public.integration_mappings where integration_id = v_int;
+  perform app.assert(v_n = 1, 'o mapeamento ficou com uma regra só');
+
+  select count(*) into v_antes from public.integration_mapping_versions
+   where integration_id = v_int;
+
+  perform public.integracao_restaurar_mapeamento(v_int, v_alvo);
+
+  select count(*) into v_n from public.integration_mappings where integration_id = v_int;
+  perform app.assert(v_n = v_esperado,
+    'restaurar devolve todas as regras da versão escolhida');
+
+  select count(*) into v_depois from public.integration_mapping_versions
+   where integration_id = v_int;
+  /*
+   * UMA versão para a restauração inteira. Sem a trava, o `delete` e o `insert`
+   * de dentro da função gravariam duas — e a segunda seria um mapeamento vazio,
+   * que é precisamente o estado que ninguém quer encontrar no histórico na hora
+   * de restaurar.
+   */
+  perform app.assert(v_depois = v_antes + 1,
+    'e a restauração inteira é UMA versão, não duas');
+
+  perform app.assert(
+    (select note from public.integration_mapping_versions
+      where integration_id = v_int order by version desc limit 1)
+      = format('restauração da versão %s', v_alvo),
+    'cuja nota diz de onde ela veio — a única linha do histórico que se explica');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 46.5 Versão que não existe é erro, não silêncio
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_erro boolean := false;
+begin
+  begin
+    perform public.integracao_restaurar_mapeamento(
+      '66660000-0000-4000-8000-000000000001', 99999);
+  exception when others then v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'restaurar versão inexistente levanta erro em vez de apagar o mapeamento');
+  perform app.assert(
+    (select count(*) from public.integration_mappings
+      where integration_id = '66660000-0000-4000-8000-000000000001') > 1,
+    'e o mapeamento continua inteiro depois da tentativa');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 46.6 `security invoker`: a restauração não é uma porta lateral
+-- -----------------------------------------------------------------------------
+set role rls_tester;
+-- Ana Souza é operadora: não administra registros.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_int    uuid := '66660000-0000-4000-8000-000000000001';
+  v_antes  integer;
+  v_depois integer;
+  v_alvo   integer;
+begin
+  select count(*) into v_antes from public.integration_mappings where integration_id = v_int;
+  select min(version) into v_alvo from public.integration_mapping_versions
+   where integration_id = v_int;
+
+  /*
+   * A função é `security invoker`: o `delete` lá dentro passa pela policy de
+   * quem chamou, e negação em DELETE devolve ZERO LINHAS. O efeito é uma
+   * restauração que não restaura nada — e, principalmente, que não APAGA nada.
+   * Fosse `security definer`, qualquer sessão autenticada poderia trocar o
+   * mapeamento de uma integração pela porta dos fundos.
+   */
+  begin
+    perform public.integracao_restaurar_mapeamento(v_int, v_alvo);
+  exception when others then null;
+  end;
+
+  select count(*) into v_depois from public.integration_mappings where integration_id = v_int;
+  perform app.assert(v_depois = v_antes,
+    'operadora não restaura mapeamento: nada é apagado e nada é inserido');
+end
+$$;
+reset role;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

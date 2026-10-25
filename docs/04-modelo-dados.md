@@ -640,6 +640,32 @@ projetos, ele **lê o que já existe** em vez de duplicar.
   está no banco desde a 0018 e **nunca teve uma linha**: sem seed e sem tela, o
   campo "Categoria" do título a pagar sempre teve uma opção só, a vazia.
 
+### Mapeamento de integração (0042)
+Sem tabela nova. Uma trigger trocada de granularidade e uma função de
+restauração — e as duas existem pelo mesmo motivo: o histórico passou a ser
+lido.
+
+**Decisões que valem registro:**
+
+- **Uma instrução, uma versão.** A trigger da 0013 era `for each row`: uma
+  edição de cinco regras gravava dez versões, e nove eram estados que o
+  mapeamento nunca teve como conjunto coerente. Para uma tabela que ninguém
+  lia, era desperdício; para uma tela de restauração, era uma armadilha. Como
+  uma trigger de múltiplos eventos não pode declarar tabela de transição no
+  PostgreSQL, viraram três triggers sobre a mesma função.
+
+- **A restauração é uma transação, e vale UMA versão.**
+  `integracao_restaurar_mapeamento()` apaga e reinsere dentro de uma função: em
+  duas chamadas separadas haveria um instante com o mapeamento **vazio**, e uma
+  integração recebendo evento nesse instante criaria chamado sem campo nenhum.
+  A GUC `app.pular_versao_de_mapeamento` desliga a trigger durante a troca, e a
+  função grava a sua própria versão com a nota dizendo de onde veio.
+
+- **`security invoker`, como tudo aqui.** Negação em DELETE devolve zero linhas,
+  então uma restauração sem permissão não restaura — e, principalmente, não
+  apaga. `security definer` deixaria qualquer sessão autenticada trocar o
+  mapeamento de uma integração pela porta dos fundos.
+
 ### Visão de resultado (0039)
 Terceira peça do GSTI.IARX, e a única sem tabela nenhuma: duas funções e uma
 coluna acrescentada a `vw_it_budget_monthly`. É relatório sobre o que já existe.
@@ -835,7 +861,7 @@ entre tenants.
 
 `supabase/tests/schema_test.sql` roda contra um banco semeado, com um papel
 **sem `BYPASSRLS`** — como superusuário, todo teste de isolamento passaria
-trivialmente e não provaria nada. São 992 asserções cobrindo cobertura de RLS,
+trivialmente e não provaria nada. São 1005 asserções cobrindo cobertura de RLS,
 isolamento entre tenants, visibilidade por filial, comentário interno oculto do
 solicitante, escalonamento de privilégio, máquina de estados, fila padrão,
 precedência de SLA, pausa/retomada, idempotência, numeração, views, tokens de TV,

@@ -475,6 +475,10 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   scr('integracoes', 'hub', 'Hub de integrações', 'admin'),
   act('integracoes', 'hub', 'ver', 'Consultar integrações', 'admin'),
   act('integracoes', 'hub', 'editar', 'Ligar/desligar e configurar', 'admin'),
+  /* Separada de `editar`: ligar e desligar é reversível com um clique, trocar o
+     mapeamento muda em silêncio o que vira chamado. Um `target_field` errado não
+     dá erro — produz chamados com o campo em branco a partir do próximo evento. */
+  act('integracoes', 'hub', 'mapear', 'Editar e restaurar o mapeamento de campos', 'admin'),
   act('integracoes', 'hub', 'rotacionar_token', 'Rotacionar token de entrada', 'admin'),
 
   /* --- Painéis de TV ----------------------------------------------------- */

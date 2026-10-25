@@ -226,12 +226,24 @@ bash scripts/validate-migrations.sh && python3 scripts/conferir-colunas.py
 > pegou: `tenants` tinha tela de leitura em toda sessão, só não tinha de
 > escrita. Agora tem: `/ambiente`.
 
+> **M10 fechou na migração 0042.** O diagnóstico ("o histórico existe e ninguém
+> lê") estava certo pela metade: além de não haver leitura, não havia como
+> editar o mapeamento pela tela, nem voltar a uma versão, nem saber o que um
+> payload produziria antes de ele chegar. As três coisas existem agora, e o
+> ensaio chama **a mesma função que o webhook chama** — uma segunda
+> implementação atestaria o que o sistema não faz.
+>
+> Abrir o histórico para leitura revelou um defeito que ninguém sentia porque
+> ninguém olhava: a trigger era `for each row`, então uma edição de cinco regras
+> gravava **dez versões**, nove delas estados que o mapeamento nunca teve como
+> conjunto. Quem fosse "voltar para antes da mudança de ontem" escolheria um
+> desses. Agora é uma instrução, uma versão.
+
 Nada aqui é "falta de tempo" — cada um tem um motivo.
 
 | Pendência | Por que continua aberta |
 |---|---|
 | **Edge Function do Zabbix (M8, LG-07)** | Exige um Zabbix real para testar contra. Hoje a queda é registrada à mão, pelo mesmo evento que o webhook vai gravar — sem retrabalho quando ele chegar |
-| **Telas de configuração e dry run de integrações (M10)** | `integration_mapping_versions` guarda o histórico de mapeamento e ninguém o lê. Vale uma rodada própria |
 | **PWA do portal, identidade visual por cliente, domínio próprio** | É o "módulo maior" do LG-08. Nenhum deles muda o que o solicitante consegue fazer — mudam onde ele faz |
 | **Chat (portal e chatbot)** | Quarta superfície de atendimento, e a única que exige presença. Chat sem ninguém do outro lado promete resposta imediata e não entrega |
 | **Embeddings / semelhança semântica** | Dependência nova para melhorar um passo que não é o gargalo. O gargalo é a base ter poucos artigos |

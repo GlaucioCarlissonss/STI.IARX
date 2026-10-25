@@ -1,23 +1,17 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requireScreen } from '@/lib/session'
+import { allowed, requireScreen } from '@/lib/session'
 import { integrationOutcomeLabel, integrationStatusLabel } from '@/lib/i18n'
 import { formatDateTime, formatNumber } from '@/lib/format'
 import type { Integration, IntegrationLog } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
 import { InboundTokenForm } from './inbound-token-form'
+import { Mapeamento, type RegraNaTela } from './mapeamento'
+import { Simulacao } from './simulacao'
+import { Versoes, type VersaoNaTela } from './versoes'
 
 export const metadata: Metadata = { title: 'Integração' }
-
-interface MappingRow {
-  id: string
-  source_path: string
-  target_field: string
-  transform: string
-  value_map: Record<string, string>
-  is_required: boolean
-}
 
 interface EventRow {
   id: string
@@ -50,6 +44,7 @@ const eventTone: Record<string, 'ok' | 'breach' | 'warn' | 'neutral'> = {
 export default async function IntegracaoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   await requireScreen('integracoes.hub.ver')
+  const podeMapear = await allowed('integracoes.hub.mapear')
   const supabase = await createClient()
 
   const { data: integration } = await supabase
@@ -62,13 +57,14 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
 
   if (!integration) notFound()
 
-  const [{ data: mappings }, { data: events }, { data: logs }] = await Promise.all([
+  const [{ data: mappings }, { data: events }, { data: logs }, { data: versoes }] =
+    await Promise.all([
     supabase
       .from('integration_mappings')
-      .select('id, source_path, target_field, transform, value_map, is_required')
+      .select('id, source_path, target_field, transform, value_map, default_value, is_required')
       .eq('integration_id', id)
       .order('target_field')
-      .returns<MappingRow[]>(),
+      .returns<RegraNaTela[]>(),
     supabase
       .from('integration_events')
       .select('id, event_key, event_type, external_id, status, attempts, last_error, received_at, ticket_id')
@@ -83,6 +79,25 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
       .order('created_at', { ascending: false })
       .limit(40)
       .returns<IntegrationLog[]>(),
+    /* O histórico inteiro não: vinte versões é o que cabe numa decisão de
+       "voltar para antes da mudança de ontem". Quem precisa de mais está
+       fazendo arqueologia, e isso é trabalho da trilha de auditoria. */
+    supabase
+      .from('integration_mapping_versions')
+      .select('id, version, note, created_at, snapshot, profiles:created_by (full_name)')
+      .eq('integration_id', id)
+      .order('version', { ascending: false })
+      .limit(20)
+      .returns<
+        {
+          id: string
+          version: number
+          note: string | null
+          created_at: string
+          snapshot: unknown[]
+          profiles: { full_name: string } | null
+        }[]
+      >(),
   ])
 
   const webhookPath =
@@ -116,33 +131,30 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
             </p>
           </Card>
 
-          <Card title={`Mapeamento de campos (${mappings?.length ?? 0})`}>
-            {mappings && mappings.length > 0 ? (
-              <Table head={['Campo de origem', 'Campo do ticket', 'Transformação', 'Valores']} label="Mapeamento de campos">
-                {mappings.map((m) => (
-                  <tr key={m.id}>
-                    <Td className="font-mono text-xs">{m.source_path}</Td>
-                    <Td className="font-medium text-[var(--color-ink)]">
-                      {m.target_field}
-                      {m.is_required && (
-                        <span className="ml-1 text-[var(--color-breach-ink)]">*</span>
-                      )}
-                    </Td>
-                    <Td className="text-[var(--color-ink-2)]">{m.transform}</Td>
-                    <Td className="font-mono text-xs text-[var(--color-ink-3)]">
-                      {Object.keys(m.value_map ?? {}).length > 0
-                        ? Object.entries(m.value_map)
-                            .map(([k, v]) => `${k}→${v}`)
-                            .join(', ')
-                        : '—'}
-                    </Td>
-                  </tr>
-                ))}
-              </Table>
-            ) : (
-              <EmptyState title="Nenhum mapeamento cadastrado" />
-            )}
-          </Card>
+          <Mapeamento
+            integrationId={integration.id}
+            regras={mappings ?? []}
+            podeEditar={podeMapear}
+            ehBitrix={integration.source_system === 'bitrix24'}
+          />
+
+          {/* O ensaio vem logo depois do mapeamento, e antes dos eventos: a
+              ordem da tela é a ordem da pergunta — "está certo?" antes de
+              "o que chegou?". */}
+          <Simulacao integrationId={integration.id} />
+
+          <Versoes
+            integrationId={integration.id}
+            versoes={(versoes ?? []).map((v): VersaoNaTela => ({
+              id: v.id,
+              version: v.version,
+              note: v.note,
+              created_at: v.created_at,
+              created_by_name: v.profiles?.full_name ?? null,
+              regras: Array.isArray(v.snapshot) ? v.snapshot.length : 0,
+            }))}
+            podeRestaurar={podeMapear}
+          />
 
           <Card title="Eventos recentes">
             {events && events.length > 0 ? (
