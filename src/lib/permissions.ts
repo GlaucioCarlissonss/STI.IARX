@@ -73,6 +73,7 @@ export const MODULE_LABEL: Record<string, string> = {
   auditoria: 'Auditoria',
   projetos: 'Projetos',
   gestao: 'Gestão',
+  ambiente: 'Ambiente',
   ia: 'Sugestões de IA',
 }
 
@@ -482,6 +483,20 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('tv', 'tokens', 'ver', 'Consultar tokens', 'gestor'),
   act('tv', 'tokens', 'criar', 'Gerar token', 'gestor'),
   act('tv', 'tokens', 'revogar', 'Revogar token', 'gestor'),
+
+  /* --- Ambiente ----------------------------------------------------------- */
+  /* `tenants` carrega onze parâmetros de operação e NENHUM deles jamais teve
+     tela: mudar o percentual de atenção do SLA, a cota de anexo ou as horas de
+     silêncio do agente exigia um `update` à mão no banco. Na prática, ninguém
+     mudou — os valores em produção são os padrões da migração que os criou.
+
+     É o mesmo defeito que a 0036 corrigiu em seis tabelas. A escrita já era
+     possível desde a 0012 (`tenants_update` exige `can_manage_config()`); o que
+     faltava era onde. */
+  mod('ambiente', 'admin'),
+  scr('ambiente', 'preferencias', 'Preferências do ambiente', 'admin'),
+  act('ambiente', 'preferencias', 'ver', 'Consultar as preferências do ambiente', 'admin'),
+  act('ambiente', 'preferencias', 'editar', 'Alterar as preferências do ambiente', 'admin'),
 ] as const
 
 /** Todas as chaves válidas — o SQL semeia exatamente esta lista. */

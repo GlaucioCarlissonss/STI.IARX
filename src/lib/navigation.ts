@@ -226,6 +226,14 @@ export const NAV_GROUPS: readonly NavGroup[] = [
          gastar — é configuração de ambiente, da mesma natureza que os canais.
          Quem atende nunca precisa abri-la. */
       { href: '/ia', label: 'Sugestões de IA', permission: 'ia.config.ver' },
+      /* Onze parâmetros de operação que só existiam como coluna: para mudar o
+         percentual de atenção do SLA ou as horas de silêncio do agente era
+         preciso um `update` à mão no banco. Na prática, ninguém mudou. */
+      {
+        href: '/ambiente',
+        label: 'Preferências do ambiente',
+        permission: 'ambiente.preferencias.ver',
+      },
       /* A trilha grava desde a 0010 em 45 tabelas e nunca teve onde ser lida. A
          pergunta que ela responde sempre vem em dia ruim: quem mudou isso. */
       { href: '/auditoria', label: 'Trilha de alterações', permission: 'auditoria.trilha.ver' },

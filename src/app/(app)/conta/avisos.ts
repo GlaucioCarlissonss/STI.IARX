@@ -34,6 +34,21 @@ export const TIPOS_DE_AVISO = [
     hint: 'Chega a quem abriu o chamado, depois do encerramento.',
   },
   {
+    kind: 'contract_expiring',
+    label: 'Contrato prestes a vencer',
+    hint: 'Contrato de fornecedor, contrato de link e fim de fidelidade. Chega a gestores e administradores.',
+  },
+  {
+    kind: 'link_down',
+    label: 'Link de internet fora do ar',
+    hint: 'Quando uma queda passa do limiar configurado no ambiente. Chega a gestores e administradores.',
+  },
+  {
+    kind: 'link_restored',
+    label: 'Link de internet de volta',
+    hint: 'Só para queda que foi avisada — ninguém precisa saber do retorno de uma oscilação que não soube que houve.',
+  },
+  {
     kind: 'agent_alert',
     label: 'Alertas do agente de inventário',
     hint: 'Disco cheio, máquina sem contato, serviço fora do ar e disco com defeito. Chega a gestores e administradores.',

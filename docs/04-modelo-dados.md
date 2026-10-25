@@ -835,7 +835,7 @@ entre tenants.
 
 `supabase/tests/schema_test.sql` roda contra um banco semeado, com um papel
 **sem `BYPASSRLS`** — como superusuário, todo teste de isolamento passaria
-trivialmente e não provaria nada. São 970 asserções cobrindo cobertura de RLS,
+trivialmente e não provaria nada. São 992 asserções cobrindo cobertura de RLS,
 isolamento entre tenants, visibilidade por filial, comentário interno oculto do
 solicitante, escalonamento de privilégio, máquina de estados, fila padrão,
 precedência de SLA, pausa/retomada, idempotência, numeração, views, tokens de TV,

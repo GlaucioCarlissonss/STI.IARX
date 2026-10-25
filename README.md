@@ -59,6 +59,7 @@ Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 | **Projetos** | Cronograma mensal com Gantt, tarefas em até três níveis e envolvidos. **Atraso e desvio são calculados, nunca digitados** — e a hierarquia é garantida por trigger, não por convenção da tela. Vindo do GSTI.IARX |
 | **Orçamento de TI** | Quanto a TI custa por mês, por filial e por categoria — e quanto vai custar. Competência, natureza, classificação, cenários e fechamento mensal. **Importa os títulos a pagar sem duplicar**: um título vira lançamento uma vez só. Vindo do GSTI.IARX |
 | **Visão de resultado** | Custo, prazo e entrega do cliente numa tela só, sob o mesmo recorte — porque o gestor de TI não responde por três módulos, responde por um resultado. **A soma de cada detalhamento é conferida contra o indicador na própria tela**, e a divergência aparece ali, não numa reunião. Vindo do GSTI.IARX |
+| **Preferências do ambiente** | Os onze parâmetros que governam quando o sistema age sozinho — prazos de SLA, fechamento automático, cota de anexo, alertas do agente, aviso de contrato e de link. Estavam todos só como coluna no banco: mudá-los exigia um `update` à mão, e por isso ninguém mudou |
 
 ## Instalação
 
@@ -169,7 +170,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 546 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação cronograma de projetos e rateio do orçamento
-npm run db:validate   # migrações + seed + 970 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 992 asserções em PostgreSQL real
 ```
 
 Mais duas suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -226,7 +227,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 40 migrações
+  migrations/         # 41 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -257,7 +258,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado na última entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 571 testes unitários e 970 asserções de banco passando, mais 44
+apontamentos, 571 testes unitários e 992 asserções de banco passando, mais 44
 asserções no protótipo e 60 na aplicação, em navegador — incluindo a aritmética
 de horário útil conferida contra 8 cenários (almoço, fim de semana, feriado,
 fora de expediente).

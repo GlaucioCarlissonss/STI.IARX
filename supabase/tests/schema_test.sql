@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 204,
-    'catálogo de permissões tem as 204 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 208,
+    'catálogo de permissões tem as 208 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 204,
+  perform app.assert((select count(*) from public.permission_catalog) = 208,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -8001,6 +8001,346 @@ begin
 end
 $$;
 reset role;
+
+-- =============================================================================
+\echo '=== 45. Alertas de contrato e de link (0041) ==='
+-- =============================================================================
+reset role;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+-- Os dois trabalhos que faltavam desde a Onda 1. O que se testa aqui é o que
+-- separa um alerta de um incômodo: avisar na hora certa, uma vez só, e saber
+-- recomeçar quando o contrato é renovado.
+
+-- -----------------------------------------------------------------------------
+-- 45.1 Contrato vencendo: um aviso por degrau, e nunca os dois juntos
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_forn   uuid;
+  v_perto  uuid;
+  v_longe  uuid;
+  v_fora   uuid;
+  v_alvos  integer;
+  v_n      integer;
+begin
+  delete from public.email_outbox;
+  delete from public.supplier_contracts where tenant_id = v_t;
+
+  select count(*) into v_alvos from public.profiles
+   where tenant_id = v_t and is_active and role in ('gestor','admin') and email is not null;
+  perform app.assert(v_alvos > 0, 'há gestor ou admin com e-mail para receber o aviso');
+
+  update public.tenants set contract_alert_days = 30 where id = v_t;
+  select id into v_forn from public.suppliers where tenant_id = v_t limit 1;
+
+  insert into public.supplier_contracts (tenant_id, supplier_id, contract_number, ends_on)
+  values (v_t, v_forn, 'CT-PERTO', current_date + 5)   returning id into v_perto;
+  insert into public.supplier_contracts (tenant_id, supplier_id, contract_number, ends_on)
+  values (v_t, v_forn, 'CT-LONGE', current_date + 25)  returning id into v_longe;
+  insert into public.supplier_contracts (tenant_id, supplier_id, contract_number, ends_on)
+  values (v_t, v_forn, 'CT-FORA',  current_date + 200) returning id into v_fora;
+
+  perform app.job_contract_alerts();
+
+  /*
+   * O de 5 dias dispara UM aviso, no degrau de 7 — e não dois, um por degrau.
+   * Com a regra ingênua ("todo degrau que já se aplica"), um contrato que entra
+   * em cena já a 5 dias do fim geraria dois e-mails no mesmo minuto sobre a
+   * mesma coisa. Isso não é redundância útil: é o começo do hábito de ignorar.
+   */
+  select count(*) into v_n from public.email_outbox
+   where dedupe_key like 'contrato:%:' || v_perto || ':%';
+  perform app.assert(v_n = v_alvos,
+    'contrato a 5 dias gera UM aviso por pessoa, no degrau mais apertado');
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where dedupe_key like format('contrato:contrato_fornecedor:%s:%s:7:%%',
+                                   v_perto, current_date + 5))
+      = v_alvos,
+    'e o degrau escolhido é o de 7 dias');
+
+  select count(*) into v_n from public.email_outbox
+   where dedupe_key like 'contrato:%:' || v_longe || ':%';
+  perform app.assert(v_n = v_alvos, 'contrato a 25 dias entra pelo degrau de 30');
+
+  select count(*) into v_n from public.email_outbox
+   where dedupe_key like 'contrato:%:' || v_fora || ':%';
+  perform app.assert(v_n = 0, 'e contrato a 200 dias não gera aviso nenhum');
+
+  -- Rodar de novo não repete nada.
+  perform app.job_contract_alerts();
+  select count(*) into v_n from public.email_outbox where kind = 'contract_expiring';
+  perform app.assert(v_n = v_alvos * 2,
+    'a segunda execução não reenfileira nada: a chave de idempotência segura');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 45.2 Renovar o contrato REARMA o aviso
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t     uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c     uuid;
+  v_alvos integer;
+  v_n     integer;
+begin
+  select count(*) into v_alvos from public.profiles
+   where tenant_id = v_t and is_active and role in ('gestor','admin') and email is not null;
+
+  select id into v_c from public.supplier_contracts
+   where tenant_id = v_t and contract_number = 'CT-LONGE';
+
+  /*
+   * A data entra na chave de idempotência por isto. Sem ela, um contrato
+   * renovado por mais um ano ficaria MUDO PARA SEMPRE — a chave do degrau já
+   * teria sido usada no ciclo anterior, e o aviso do vencimento seguinte nunca
+   * sairia. O defeito só apareceria um ano depois, que é quando ninguém mais
+   * lembra que existe um alerta.
+   */
+  update public.supplier_contracts set ends_on = current_date + 20 where id = v_c;
+  perform app.job_contract_alerts();
+
+  select count(*) into v_n from public.email_outbox
+   where dedupe_key like 'contrato:%:' || v_c || ':%';
+  perform app.assert(v_n = v_alvos * 2,
+    'data nova é série nova de avisos: renovar rearma, em vez de calar para sempre');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 45.3 A fidelidade também vence — e vencer é boa notícia
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t     uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_b     uuid;
+  v_link  uuid;
+  v_alvos integer;
+  v_n     integer;
+begin
+  delete from public.email_outbox;
+  delete from public.internet_links where tenant_id = v_t;
+
+  select count(*) into v_alvos from public.profiles
+   where tenant_id = v_t and is_active and role in ('gestor','admin') and email is not null;
+  select id into v_b from public.branches where tenant_id = v_t limit 1;
+
+  /*
+   * Fim de fidelidade é a única das três datas em que vencer é bom: a partir
+   * dela dá para trocar de operadora sem multa. Um aviso que só chega depois de
+   * a fidelidade renovar sozinha chega tarde por doze meses.
+   */
+  insert into public.internet_links
+    (tenant_id, branch_id, technology, carrier_name, contract_number, loyalty_until)
+  values (v_t, v_b, 'fiber', 'Operadora X', 'LINK-1', current_date + 10)
+  returning id into v_link;
+
+  perform app.job_contract_alerts();
+
+  select count(*) into v_n from public.email_outbox
+   where dedupe_key like 'contrato:fidelidade_link:%';
+  perform app.assert(v_n = v_alvos, 'o fim da fidelidade gera aviso próprio');
+  perform app.assert(
+    (select count(*) from public.email_outbox where subject like '%Fidelidade%') = v_alvos,
+    'e o assunto diz FIDELIDADE, não vencimento — são notícias opostas');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 45.4 Link caído: o limiar separa alerta de incômodo
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_link   uuid;
+  v_curta  bigint;
+  v_longa  bigint;
+  v_alvos  integer;
+  v_n      integer;
+begin
+  delete from public.email_outbox;
+  delete from public.link_availability_events where tenant_id = v_t;
+
+  select count(*) into v_alvos from public.profiles
+   where tenant_id = v_t and is_active and role in ('gestor','admin') and email is not null;
+  select id into v_link from public.internet_links where tenant_id = v_t limit 1;
+
+  update public.tenants set link_alert_minutes = 10 where id = v_t;
+
+  /*
+   * Link oscila. Uma queda de quatro minutos é ruído de operadora, e avisar
+   * sobre ela ensina a pessoa a filtrar a pasta — e a perder a queda de três
+   * horas junto.
+   */
+  insert into public.link_availability_events (tenant_id, link_id, state, started_at)
+  values (v_t, v_link, 'down', now() - interval '4 minutes')
+  returning id into v_curta;
+
+  perform app.job_link_alerts();
+  select count(*) into v_n from public.email_outbox where kind = 'link_down';
+  perform app.assert(v_n = 0, 'queda abaixo do limiar NÃO avisa ninguém');
+
+  -- A mesma queda, agora longa. O índice único de evento aberto por link
+  -- impede duas; então esta é a mesma, envelhecida.
+  update public.link_availability_events
+     set started_at = now() - interval '45 minutes'
+   where id = v_curta;
+
+  perform app.job_link_alerts();
+  select count(*) into v_n from public.email_outbox where kind = 'link_down';
+  perform app.assert(v_n = v_alvos, 'passando do limiar, avisa uma vez por pessoa');
+
+  perform app.job_link_alerts();
+  select count(*) into v_n from public.email_outbox where kind = 'link_down';
+  perform app.assert(v_n = v_alvos, 'e não repete a cada ciclo enquanto a queda durar');
+
+  v_longa := v_curta;
+
+  -- -----------------------------------------------------------------------
+  -- A volta
+  -- -----------------------------------------------------------------------
+  update public.link_availability_events set ended_at = now() where id = v_longa;
+  perform app.job_link_alerts();
+
+  select count(*) into v_n from public.email_outbox where kind = 'link_restored';
+  perform app.assert(v_n = v_alvos,
+    'a volta é avisada: sem isso, quem recebeu "caiu" só descobre o fim abrindo o sistema');
+
+  perform app.job_link_alerts();
+  select count(*) into v_n from public.email_outbox where kind = 'link_restored';
+  perform app.assert(v_n = v_alvos, 'e a volta também avisa uma vez só');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 45.5 A volta de uma queda que ninguém soube que houve é silêncio
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_link uuid;
+  v_id   bigint;
+  v_n    integer;
+begin
+  delete from public.email_outbox;
+  delete from public.link_availability_events where tenant_id = v_t;
+  select id into v_link from public.internet_links where tenant_id = v_t limit 1;
+
+  /*
+   * Oscilação de trinta segundos, já encerrada. Anunciar o retorno de algo que
+   * ninguém soube que caiu derrubaria o limiar pela janela dos fundos: a pessoa
+   * passaria a receber um e-mail por oscilação, com o assunto invertido.
+   */
+  insert into public.link_availability_events
+    (tenant_id, link_id, state, started_at, ended_at)
+  values (v_t, v_link, 'down', now() - interval '90 seconds', now() - interval '60 seconds')
+  returning id into v_id;
+
+  perform app.job_link_alerts();
+  select count(*) into v_n from public.email_outbox;
+  perform app.assert(v_n = 0,
+    'queda curta que não foi avisada também não tem volta avisada');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 45.6 Quem desligou o aviso não recebe
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_p    uuid;
+  v_mail text;
+  v_n    integer;
+begin
+  delete from public.email_outbox;
+  delete from public.link_availability_events where tenant_id = v_t;
+
+  select id, email into v_p, v_mail from public.profiles
+   where tenant_id = v_t and is_active and role in ('gestor','admin') and email is not null
+   limit 1;
+
+  insert into public.notification_preferences (tenant_id, user_id, kind, enabled)
+  values (v_t, v_p, 'link_down', false)
+  on conflict (tenant_id, user_id, kind) do update set enabled = false;
+
+  insert into public.link_availability_events (tenant_id, link_id, state, started_at)
+  select v_t, l.id, 'down', now() - interval '45 minutes'
+    from public.internet_links l where l.tenant_id = v_t limit 1;
+
+  perform app.job_link_alerts();
+
+  select count(*) into v_n from public.email_outbox
+   where kind = 'link_down' and to_email = v_mail;
+  perform app.assert(v_n = 0, 'quem desligou o aviso de link não recebe');
+  perform app.assert((select count(*) from public.email_outbox where kind = 'link_down') > 0,
+    'e os outros continuam recebendo');
+
+  delete from public.notification_preferences where user_id = v_p and kind = 'link_down';
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 45.7 Os dois trabalhos são de `service_role`, e só dele
+-- -----------------------------------------------------------------------------
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_erro boolean := false;
+begin
+  /*
+   * Eles são `security definer` e enxergam todos os tenants por definição.
+   * Deixar `authenticated` executar seria entregar a lista de contratos e de
+   * quedas de todo mundo a qualquer sessão — pela porta de um trabalho
+   * agendado, que é o último lugar onde alguém procuraria.
+   */
+  begin
+    perform app.job_contract_alerts();
+  exception when insufficient_privilege then v_erro := true;
+  end;
+  perform app.assert(v_erro, 'usuário autenticado NÃO executa o alerta de contrato');
+
+  v_erro := false;
+  begin
+    perform app.job_link_alerts();
+  exception when insufficient_privilege then v_erro := true;
+  end;
+  perform app.assert(v_erro, 'nem o de link');
+end
+$$;
+reset role;
+
+-- -----------------------------------------------------------------------------
+-- 45.8 As duas preferências novas têm limites, e a tela tem onde escrevê-las
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_erro boolean := false;
+begin
+  begin
+    update public.tenants set contract_alert_days = 0 where id = v_t;
+  exception when check_violation then v_erro := true;
+  end;
+  perform app.assert(v_erro, 'zero dia de aviso de contrato é recusado: seria um aviso no dia');
+
+  v_erro := false;
+  begin
+    update public.tenants set link_alert_minutes = 0 where id = v_t;
+  exception when check_violation then v_erro := true;
+  end;
+  perform app.assert(v_erro, 'e zero minuto de queda avisaria toda oscilação');
+
+  perform app.assert(
+    (select count(*) from public.permission_catalog
+      where key like 'ambiente.preferencias%') = 3,
+    'a tela de preferências tem chave própria: configuração sem tela é configuração morta');
+end
+$$;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

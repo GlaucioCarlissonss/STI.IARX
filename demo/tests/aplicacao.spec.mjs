@@ -483,6 +483,9 @@ try {
          cliente num lugar só — é a tela deste repositório com mais coisa junta
          por metro quadrado, e a que menos pode responder a um visitante. */
       '/resultado',
+      /* Preferências do ambiente: daqui se muda quando o sistema age sozinho.
+         É a tela cuja permissão tem o teto mais alto do sistema. */
+      '/ambiente',
     ]) {
       await p.goto(BASE + rota, { waitUntil: 'networkidle' })
       ok(p.url().includes('/login'), `${rota}: visitante é mandado para o login`)

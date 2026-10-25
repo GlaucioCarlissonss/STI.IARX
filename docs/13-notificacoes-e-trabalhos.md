@@ -18,6 +18,9 @@ escondido.
 | Resposta da pesquisa, sem login | `/avaliar/<token>` |
 | Quem não quer receber desliga por tipo | `/conta` |
 | Drenagem das respostas dos canais de conversa | `drenarSaidaDosCanais()` ([docs/16](16-canais-de-conversa.md)) |
+| Aviso de contrato, de contrato de link e de fim de fidelidade | `app.job_contract_alerts()` *(0041)* |
+| Aviso de link fora do ar, e de link de volta | `app.job_link_alerts()` *(0041)* |
+| Tela para mudar os prazos destes avisos | `/ambiente` *(0041)* |
 
 A **drenagem dos canais** roda no mesmo `POST /api/jobs/run`, e por último de
 propósito: os trabalhos de banco acima podem fechar um chamado, e fechar um
@@ -151,3 +154,7 @@ produto, não de engenharia:
 | Escala | 1 a 5 (CSAT), não 0 a 10 (NPS) — são perguntas diferentes, e misturá-las dá um número que não responde nenhuma | migração 0029 |
 | Padrão de recebimento | **Ligado.** Sem linha em `notification_preferences` = recebe | `app.quer_notificacao()` |
 | Ranking por atendente | **Não existe**, de propósito: nota vira meta, meta vira pressão para pedir nota boa, e a pesquisa passa a medir quem pede melhor | — |
+| Quem recebe aviso de contrato e de link | **Gestores e admins ativos.** Não há recorte por filial porque não há gestor com escopo restrito: `app.has_tenant_wide_access()` é verdadeiro para esses papéis | `app.job_contract_alerts()`, `app.job_link_alerts()` |
+| Quando o aviso de contrato sai | Dois degraus: o prazo configurado e, se couber, 7 dias. **Um por vez** — o degrau escolhido é o mais apertado que já se aplica, para um contrato que entra em cena a 5 dias do fim não gerar dois e-mails no mesmo minuto | `/ambiente` |
+| Quanto tempo de queda vira aviso | 10 minutos por padrão. Abaixo disso é oscilação de operadora, e avisar oscilação ensina a filtrar a pasta — e a perder a queda de três horas junto | `/ambiente` |
+| Se a volta do link é avisada | **Sim, e só para quem recebeu a queda.** Sem o aviso de volta, quem foi acordado às duas da manhã descobre de manhã que já tinha acabado | `app.job_link_alerts()` |

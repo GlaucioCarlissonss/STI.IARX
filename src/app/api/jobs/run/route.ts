@@ -97,6 +97,13 @@ export async function POST(request: Request) {
     'job_satisfaction_invites',
     'job_aggregate_metrics',
     'job_agent_alerts',
+    /*
+     * Os dois alertas da 0041 não dependem de nenhum outro e não são dependência
+     * de nenhum: entram aqui porque alerta fica junto de alerta, e porque a
+     * purga continua tendo de ser a última linha desta lista.
+     */
+    'job_contract_alerts',
+    'job_link_alerts',
     'job_purge_metrics',
   ] as const) {
     const { data, error } = await supabase.schema('app').rpc(job)

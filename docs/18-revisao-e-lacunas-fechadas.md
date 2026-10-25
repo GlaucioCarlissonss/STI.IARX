@@ -212,11 +212,24 @@ bash scripts/validate-migrations.sh && python3 scripts/conferir-colunas.py
 
 ## 5. O que continua aberto, e por que
 
+> **M7 e M8 fecharam na migração 0041.** Eram descritos aqui como "a pendência
+> mais barata da lista e a mais fácil de fechar", e eram. `app.job_contract_alerts()`
+> avisa de contrato de fornecedor, contrato de link e fim de fidelidade;
+> `app.job_link_alerts()` avisa de queda além do limiar e do retorno. Ver
+> [docs/13](13-notificacoes-e-trabalhos.md).
+>
+> Fechá-los descobriu uma lacuna maior: **os onze parâmetros de operação de
+> `tenants` nunca tiveram tela.** Percentuais de SLA, fechamento automático,
+> cota de anexo, os quatro do agente — todos no valor padrão da migração que os
+> criou, em qualquer ambiente instalado, porque mudá-los exigia um `update` à
+> mão no banco. É o mesmo defeito desta revisão, numa tabela que a varredura não
+> pegou: `tenants` tinha tela de leitura em toda sessão, só não tinha de
+> escrita. Agora tem: `/ambiente`.
+
 Nada aqui é "falta de tempo" — cada um tem um motivo.
 
 | Pendência | Por que continua aberta |
 |---|---|
-| **Alerta de contrato vencendo (M7) e de link fora do ar (M8)** | O canal existe desde a Onda 1; os dois trabalhos agendados não foram escritos. É a pendência mais barata da lista e a mais fácil de fechar |
 | **Edge Function do Zabbix (M8, LG-07)** | Exige um Zabbix real para testar contra. Hoje a queda é registrada à mão, pelo mesmo evento que o webhook vai gravar — sem retrabalho quando ele chegar |
 | **Telas de configuração e dry run de integrações (M10)** | `integration_mapping_versions` guarda o histórico de mapeamento e ninguém o lê. Vale uma rodada própria |
 | **PWA do portal, identidade visual por cliente, domínio próprio** | É o "módulo maior" do LG-08. Nenhum deles muda o que o solicitante consegue fazer — mudam onde ele faz |
