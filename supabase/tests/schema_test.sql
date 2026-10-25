@@ -7835,5 +7835,172 @@ end
 $$;
 reset role;
 
+-- =============================================================================
+\echo '=== 44. A série do resultado: o último ponto é o indicador (0040) ==='
+-- =============================================================================
+reset role;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+-- A seção 43 prova a aritmética do mês. Esta prova as três coisas que só uma
+-- SÉRIE pode errar: discordar do indicador no ponto mais recente, inventar
+-- meses que ainda não aconteceram, e perder a história de um projeto que ficou
+-- atrasado e depois foi entregue.
+
+-- -----------------------------------------------------------------------------
+-- 44.1 O último ponto do gráfico é exatamente o número do cartão
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_c    uuid := 'cc000000-0000-4000-8000-000000000043';
+  v_comp date := date_trunc('month', now())::date;
+  v_r    record;
+  v_s    record;
+begin
+  /*
+   * Um gráfico que discorda do indicador na mesma tela é o defeito da 0039
+   * desenhado — e desenhado é pior, porque ninguém confere um pixel. A barra
+   * mais à direita fica embaixo do cartão: se os dois divergirem, a tela está
+   * se contradizendo no espaço de dez centímetros.
+   */
+  select * into v_r from public.gestao_resultado(v_c, v_comp);
+  select * into v_s from public.gestao_serie(v_c, v_comp, 12)
+   where competencia = v_comp;
+
+  perform app.assert(v_s.gasto = v_r.gasto_mes,
+    'o último ponto da série tem o mesmo gasto do indicador');
+  perform app.assert(v_s.projetos_atrasados = v_r.projetos_atrasados,
+    'e o mesmo número de projetos atrasados');
+  perform app.assert(v_s.conformidade is not distinct from v_r.sla_conformidade,
+    'e a mesma conformidade — inclusive quando as duas são nulas');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 44.2 A série não inventa o futuro, e tem teto
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_c     uuid := 'cc000000-0000-4000-8000-000000000043';
+  v_atual date := date_trunc('month', now())::date;
+  v_n     integer;
+  v_fim   date;
+begin
+  /*
+   * Pedir a série de uma competência futura não pode desenhar barras de meses
+   * que ainda não aconteceram: o que já está lançado para a frente é o
+   * "Compromisso — 12 meses", que é outra pergunta e tem outro nome. Desenhar
+   * aquilo ao lado das barras realizadas diria que já foi gasto.
+   */
+  select max(competencia) into v_fim
+    from public.gestao_serie(v_c, (v_atual + interval '6 months')::date, 12);
+  perform app.assert(v_fim = v_atual,
+    'a série termina no mês corrente mesmo quando pedem um mês futuro');
+
+  select count(*) into v_n from public.gestao_serie(v_c, v_atual, 12);
+  perform app.assert(v_n = 12, 'doze meses pedidos, doze meses devolvidos');
+
+  /* `?meses=100000` na URL não é ataque: é alguém curioso. E sem teto o efeito
+     é o mesmo — oito mil anos de `generate_series`. */
+  select count(*) into v_n from public.gestao_serie(v_c, v_atual, 100000);
+  perform app.assert(v_n = 36, 'e o pedido absurdo é aparado no teto de 36');
+
+  select count(*) into v_n from public.gestao_serie(v_c, v_atual, 0);
+  perform app.assert(v_n = 1, 'zero mês vira um: uma série vazia não é resposta');
+
+  select count(*) into v_n from public.gestao_serie(v_c, v_atual, null);
+  perform app.assert(v_n = 12, 'e sem o parâmetro são doze');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 44.3 A história do atraso: entregue hoje, atrasado em julho
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c      uuid := 'cc000000-0000-4000-8000-000000000045';
+  v_atual  date := date_trunc('month', now())::date;
+  v_antes  integer;
+  v_depois integer;
+  v_hoje   integer;
+begin
+  insert into public.clients (id, tenant_id, legal_name, trade_name)
+  values (v_c, v_t, 'Histórico do Atraso Ltda', 'Histórico');
+
+  /*
+   * Um projeto previsto para quatro meses atrás e entregue há dois. Hoje ele
+   * não está atrasado — e ESTEVE, nos dois meses entre o previsto e a entrega.
+   *
+   * É a única coisa que a série conta e o indicador não tem como contar, e é o
+   * motivo de o predicado histórico existir em vez de reusar `atrasado`, que é
+   * sempre relativo a hoje.
+   */
+  insert into public.projects
+    (tenant_id, client_id, name, start_month, planned_end_month, actual_end_month, status)
+  values (v_t, v_c, 'Entregue com atraso',
+          (v_atual - interval '8 months')::date,
+          (v_atual - interval '4 months')::date,
+          (v_atual - interval '2 months')::date, 'concluido');
+
+  select projetos_atrasados into v_antes from public.gestao_serie(v_c, v_atual, 12)
+   where competencia = (v_atual - interval '3 months')::date;
+  select projetos_atrasados into v_depois from public.gestao_serie(v_c, v_atual, 12)
+   where competencia = (v_atual - interval '1 month')::date;
+  select projetos_atrasados into v_hoje from public.gestao_serie(v_c, v_atual, 12)
+   where competencia = v_atual;
+
+  perform app.assert(v_antes = 1,
+    'o projeto aparece atrasado no mês em que já havia passado do previsto');
+  perform app.assert(v_depois = 0,
+    'e deixa de aparecer no mês seguinte à entrega');
+  perform app.assert(v_hoje = 0,
+    'e hoje não está atrasado — porque foi entregue');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 44.4 Mês sem chamado coberto é buraco, não zero
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_c     uuid := 'cc000000-0000-4000-8000-000000000045';
+  v_atual date := date_trunc('month', now())::date;
+  v_n     integer;
+begin
+  /*
+   * No gráfico, nulo vira buraco na linha. Zero viraria um ponto no chão — e
+   * "conformidade de 0%" é uma acusação grave sobre um mês em que simplesmente
+   * não houve chamado com acordo.
+   */
+  select count(*) into v_n from public.gestao_serie(v_c, v_atual, 12)
+   where conformidade is not null;
+  perform app.assert(v_n = 0,
+    'cliente sem chamado nenhum devolve conformidade NULA em todos os meses');
+
+  select count(*) into v_n from public.gestao_serie(v_c, v_atual, 12)
+   where gasto <> 0;
+  perform app.assert(v_n = 0, 'e gasto zero, que em dinheiro é zero mesmo');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 44.5 `security invoker` também na série
+-- -----------------------------------------------------------------------------
+set role rls_tester;
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+declare
+  v_n integer;
+begin
+  select count(*) into v_n
+    from public.gestao_serie('cc000000-0000-4000-8000-000000000043',
+                             date_trunc('month', now())::date, 12)
+   where gasto <> 0 or conformidade is not null or projetos_atrasados <> 0;
+  perform app.assert(v_n = 0,
+    'outro tenant recebe a série vazia: doze meses de nada, e nenhum número alheio');
+end
+$$;
+reset role;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

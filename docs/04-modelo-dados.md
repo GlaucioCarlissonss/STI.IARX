@@ -678,6 +678,35 @@ coluna acrescentada a `vw_it_budget_monthly`. É relatório sobre o que já exis
   oficial. No dia do primeiro cenário de simulação, todo total de gasto passaria
   a somar a simulação junto com o real, sempre **para mais**.
 
+### A série do resultado (0040)
+Uma função, nenhuma tabela: `gestao_serie(cliente, competência, meses)` devolve
+gasto, conformidade e projetos em atraso no mesmo eixo de tempo.
+
+**Decisões que valem registro:**
+
+- **O último ponto é igual ao indicador.** Um gráfico que discorda do número
+  acima dele é o defeito da conferência desenhado — e desenhado é pior, porque
+  ninguém confere um pixel. O atraso do mês corrente vem de `vw_projects.atrasado`,
+  a mesma coluna do indicador; os meses anteriores usam o predicado histórico
+  ("já passara do previsto e ainda não fora entregue"), que é a única coisa que a
+  série conta e o indicador não tem como contar.
+
+- **A série termina no mês corrente**, mesmo com competência futura. Desenhar a
+  barra de um mês que não aconteceu ao lado das realizadas diria que ele já foi
+  gasto. O que está lançado para a frente é o indicador "Compromisso — 12 meses".
+
+- **Uma varredura por fonte, e não uma por mês.** A primeira versão usava
+  subconsulta correlacionada e custou **1.253 ms** com 25 mil chamados; a atual
+  agrupa por mês numa passada só e custa **42 ms**, sem crescer com o número de
+  meses. Medido por `scripts/medir-resultado.py`, que existe por isso.
+
+- **O recorte das CTEs é só o cliente, sem filtro de mês.** `period` é expressão
+  agrupada (`date_trunc` sobre `created_at`), e filtro sobre ela não desce até a
+  varredura — ficaria pago o mesmo trabalho com aparência de estar limitado.
+
+- **Teto de 36 meses.** `?meses=100000` na URL não é ataque, é curiosidade; sem
+  teto, o efeito é o mesmo.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -806,7 +835,7 @@ entre tenants.
 
 `supabase/tests/schema_test.sql` roda contra um banco semeado, com um papel
 **sem `BYPASSRLS`** — como superusuário, todo teste de isolamento passaria
-trivialmente e não provaria nada. São 956 asserções cobrindo cobertura de RLS,
+trivialmente e não provaria nada. São 970 asserções cobrindo cobertura de RLS,
 isolamento entre tenants, visibilidade por filial, comentário interno oculto do
 solicitante, escalonamento de privilégio, máquina de estados, fila padrão,
 precedência de SLA, pausa/retomada, idempotência, numeração, views, tokens de TV,

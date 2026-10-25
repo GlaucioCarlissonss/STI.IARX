@@ -1,6 +1,6 @@
 # 21 — Visão de resultado: custo, prazo e entrega numa tela só
 
-**Status:** implementado (migração 0039).
+**Status:** implementado (migrações 0039 e 0040).
 **Depende de você:** nada de configuração. Depende de **ter dado nos três
 módulos** — orçamento lançado, projetos cadastrados, chamados atendidos.
 
@@ -134,7 +134,98 @@ filial, e a tela estaria afirmando uma comparação que o dado não sustenta.
 
 ---
 
-## 6. Permissões: uma chave para a tela, as do módulo para cada bloco
+## 6. A série: "estamos melhorando?"
+
+O indicador responde *como estamos neste mês*. É a série que responde a pergunta
+que o gestor leva para a reunião — e um número isolado não diz se o mês foi bom,
+diz só que ele foi.
+
+A tela de orçamento já traça o custo mês a mês, e repetir aquela linha aqui seria
+enfeite. O que não existe em lugar nenhum é **o custo ao lado da conformidade e
+do atraso, no mesmo eixo de tempo**: o mês em que o custo subiu é o mesmo em que
+a conformidade caiu? O corte de junho aparece como atraso em agosto?
+
+A série não *responde* isso — correlação não é causa. Ela faz a pergunta ser
+possível, que é o que um painel de gestão deve fazer.
+
+### Dois quadros, e não duas linhas num quadro
+
+Reais e porcento não compartilham escala. Sobrepor os dois exige dois eixos
+verticais, e **dois eixos fabricam a correlação**: basta esticar um deles para as
+linhas se cruzarem onde se quiser. Quem olha lê "o custo subiu e a conformidade
+caiu junto" — uma conclusão que o desenhista escolheu.
+
+Dois quadros empilhados sobre o mesmo eixo de meses mostram a mesma coincidência
+sem afirmá-la.
+
+### Três regras que a série herda, e uma que é só dela
+
+| Regra | De onde vem |
+|---|---|
+| Mês sem chamado coberto é **buraco** na linha, não queda a zero | 0039 |
+| A série **termina no mês corrente**, mesmo pedindo competência futura | só dela |
+| O pedido de meses é aparado em 36 | só dela |
+| **O último ponto é igual ao indicador** acima dele | 0039 + asserção 44.1 |
+
+A última é a que mais importa: um gráfico que discorda do indicador na mesma tela
+é o defeito da conferência **desenhado** — e desenhado é pior, porque ninguém
+confere um pixel. É por isso que o atraso do mês corrente vem da mesma coluna que
+o indicador usa, e o schema prova a igualdade.
+
+E uma coisa que só a série conta: **um projeto entregue hoje esteve atrasado em
+julho e agosto.** O indicador é sempre relativo a hoje e não tem como saber disso.
+
+---
+
+## 7. Abrir o número
+
+O contrato do GSTI pede que o indicador abra os registros que o produziram, "com
+o mesmo recorte que produziu o número". Clicar em "ver os lançamentos" de uma
+filial, ou em "ver os chamados" de uma fila, abre a lista embaixo da própria
+linha — e **a lista confere a si mesma contra a linha que a abriu**.
+
+Uma lista que não fecha com o número que a abriu é pior que nenhuma lista: ela
+parece confirmar.
+
+**O detalhe aberto mora na URL** (`?abrir=filial:<id>`), e não num estado de
+componente. Assim ele volta com o botão "voltar", sobrevive ao recarregamento e
+pode ser **mandado por mensagem** — a outra pessoa abre a tela no mesmo lugar,
+com o mesmo recorte. Numa reunião, é a terceira que importa.
+
+Trocar de cliente ou de mês **fecha** o detalhe: ele é de um recorte, e
+carregá-lo para outro mostraria registros de um recorte sob o título de outro.
+
+---
+
+## 8. O custo com volume, medido
+
+`scripts/medir-resultado.py` monta um cliente grande de verdade no banco de
+validação — 1.440 lançamentos em 36 meses, 400 projetos e **25 mil chamados no
+mês medido** — e mede a mediana de cinco execuções contra um orçamento de 400 ms.
+
+Ele achou um defeito na primeira execução:
+
+| Função | Antes | Depois |
+|---|---|---|
+| `gestao_resultado` | 93 ms | 94 ms |
+| `gestao_gasto_por_filial` | 3 ms | 3 ms |
+| `gestao_serie` (12 meses) | **1.253 ms** | **42 ms** |
+| `gestao_serie` (36 meses) | **1.560 ms** | **42 ms** |
+
+A primeira versão usava uma subconsulta correlacionada por mês, e reagrupava a
+base inteira doze vezes. **Era correta e inutilizável** — que é como um defeito
+de desempenho sempre se apresenta: o número certo, tarde demais. A versão atual
+varre cada fonte uma vez, agrupa por mês e casa com a lista de meses; o custo
+parou de crescer com o número de meses pedidos.
+
+Detalhe que vale registrar: o recorte das CTEs é só o cliente, **sem filtro de
+mês**. É de propósito — `period` é uma expressão agrupada (`date_trunc` sobre
+`created_at`), e um filtro sobre ela não desce até a varredura dos chamados.
+Ficaria pago o mesmo trabalho, com a aparência de estar limitado.
+
+---
+
+## 9. Permissões: uma chave para a tela, as do módulo para cada bloco
 
 | Chave | Teto | O que governa |
 |---|---|---|
@@ -153,7 +244,7 @@ permissão**. Mostrar zero seria lido como "não há gasto", que é outra coisa.
 
 ---
 
-## 7. O defeito que esta migração corrigiu no orçamento
+## 10. O defeito que esta migração corrigiu no orçamento
 
 A 0038 definia o contrato dos cenários no comentário da tabela — "o `oficial`
 alimenta os indicadores; os outros convivem sem contaminar os totais" — e
@@ -169,7 +260,7 @@ schema (43.1).
 
 ---
 
-## 8. O que não foi verificado
+## 11. O que não foi verificado
 
 - **A tela nunca foi aberta com dado real num navegador.** Ela está atrás do
   login (asserção de navegador) e o schema prova a aritmética dos indicadores,
@@ -179,13 +270,15 @@ schema (43.1).
   teste unitário, inclusive no caso que importa (o detalhe vazio contra o
   indicador diferente de zero). Em produção, com permissão de filial recortando
   uma consulta e não a outra, o comportamento é o esperado — mas não foi visto.
-- **Nenhum gráfico.** O painel do GSTI tem série temporal e barras; esta tela
-  entrega números e tabelas. A série mensal de custo já existe na tela de
-  orçamento, e duplicá-la aqui antes de alguém pedir seria enfeite.
-- **Não há *drill-down* por clique.** O contrato de leitura do GSTI pede que o
-  indicador abra os registros que o produziram. Aqui o detalhe vem junto, na
-  mesma tela, com link para o módulo de origem — que atende o propósito e não o
-  gesto.
-- **O desempenho com volume não foi medido.** `gestao_resultado()` monta cinco
-  CTEs sobre três views. Com um cliente de centenas de projetos e dezenas de
-  milhares de chamados no mês, o custo não foi observado.
+- **A série nunca foi vista desenhada.** A aritmética do gráfico tem 12 testes
+  (escala, barra que não estoura o quadro, buraco que não vira reta, o único mês
+  medido que não some) e o SVG não tem teste nenhum — ele é conferido por
+  leitura. Um erro de atributo desenha errado em silêncio.
+- **O gráfico não tem foco de teclado.** Os meses abaixo dele são links
+  navegáveis, e o `<title>` de cada barra responde ao ponteiro; percorrer as
+  barras pelo teclado, não. Quem não usa ponteiro tem a leitura completa no
+  `aria-label` e os meses como destinos — o que atende, mas não é o mesmo.
+
+> **Três itens saíram desta lista.** O gráfico e a abertura dos registros ao
+> clique foram implementados (seções 6 e 7); o custo com volume foi medido, e a
+> medição achou um defeito de 1,2 s na primeira execução (seção 8).

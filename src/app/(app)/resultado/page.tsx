@@ -1,10 +1,11 @@
+import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireScreen, allowed } from '@/lib/session'
 import { competenciaAtual, paraExibicao, somarMeses } from '@/lib/projetos/competencia'
-import { emReais } from '@/lib/orcamento/rateio'
+import { emReais, ROTULO_DA_CLASSIFICACAO, ROTULO_DA_ORIGEM } from '@/lib/orcamento/rateio'
 import {
   conferir,
   escreverVariacao,
@@ -13,6 +14,7 @@ import {
   variacao,
 } from '@/lib/gestao/conferencia'
 import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { SerieDoResultado, type PontoDaSerie } from './serie'
 
 export const metadata: Metadata = { title: 'Visão de resultado' }
 
@@ -57,6 +59,27 @@ interface SlaPorFila {
   resolution_breaches: number
 }
 
+interface LancamentoAberto {
+  id: string
+  amount: number
+  description: string | null
+  category_name: string
+  supplier_name: string | null
+  natureza: string
+  classificacao: string
+  origem: string
+}
+
+interface ChamadoAberto {
+  id: string
+  ticket_number: number
+  title: string
+  status: string
+  sla_coverage: string | null
+  resolution_breached: boolean | null
+  resolution_state: string | null
+}
+
 /**
  * A visão de resultado: financeiro, SLA e projetos numa tela só.
  *
@@ -90,7 +113,7 @@ interface SlaPorFila {
 export default async function ResultadoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cliente?: string; competencia?: string }>
+  searchParams: Promise<{ cliente?: string; competencia?: string; abrir?: string }>
 }) {
   const params = await searchParams
   await requireScreen('gestao.resultado.ver')
@@ -133,7 +156,20 @@ export default async function ResultadoPage({
     )
   }
 
-  const [resultadoRes, filialRes, atrasadosRes, filaRes] = await Promise.all([
+  /*
+   * O que está aberto, lido da URL.
+   *
+   * O detalhe aberto é ESTADO DE NAVEGAÇÃO, e não estado de componente: fica na
+   * URL, volta com o botão "voltar", sobrevive a um recarregamento e pode ser
+   * mandado por mensagem para outra pessoa — que abre a tela no mesmo lugar, com
+   * o mesmo recorte. Um `useState` daria o mesmo acordeão e perderia as quatro
+   * coisas, e a terceira é a que importa numa reunião.
+   */
+  const [tipoAberto, chaveAberta] = (params.abrir ?? '').split(':')
+  const filialAberta = tipoAberto === 'filial' ? (chaveAberta ?? '') : null
+  const filaAberta = tipoAberto === 'fila' ? decodeURIComponent(chaveAberta ?? '') : null
+
+  const [resultadoRes, filialRes, atrasadosRes, filaRes, serieRes] = await Promise.all([
     supabase
       .rpc('gestao_resultado', { p_client_id: clienteId, p_competence: competencia })
       .maybeSingle<Resultado>(),
@@ -165,7 +201,62 @@ export default async function ResultadoPage({
           .lt('period', somarMeses(competencia, 1))
           .returns<SlaPorFila[]>()
       : null,
+    supabase.rpc('gestao_serie', {
+      p_client_id: clienteId,
+      p_competence: competencia,
+      p_meses: 12,
+    }),
   ])
+
+  /*
+   * Os registros por trás do número, com o MESMO recorte que o produziu.
+   *
+   * Buscados só quando há algo aberto — a tela fechada não paga por eles. E
+   * buscados aqui, no servidor, pelo mesmo cliente e pela mesma competência:
+   * se o filtro divergisse, a conferência logo abaixo da lista acusaria.
+   */
+  const [lancamentosRes, chamadosRes] = await Promise.all([
+    filialAberta && podeFinanceiro
+      ? (() => {
+          const q = supabase
+            .from('vw_it_cost_entries')
+            .select(
+              'id, amount, description, category_name, supplier_name, natureza, classificacao, origem',
+            )
+            .eq('client_id', clienteId)
+            .eq('competence', competencia)
+            .eq('scenario_key', 'oficial')
+            .order('amount', { ascending: false })
+          /* "grupo" é a linha sem filial. `is('branch_id', null)` e
+             `eq('branch_id', ...)` não são a mesma consulta, e tratar as duas
+             como uma faria a linha do grupo abrir os lançamentos de todo mundo. */
+          return (
+            filialAberta === 'grupo' ? q.is('branch_id', null) : q.eq('branch_id', filialAberta)
+          ).returns<LancamentoAberto[]>()
+        })()
+      : null,
+    filaAberta && podeSla
+      ? supabase
+          .from('vw_tickets_enriched')
+          .select(
+            'id, ticket_number, title, status, sla_coverage, resolution_breached, resolution_state',
+          )
+          .eq('client_id', clienteId)
+          .eq('queue_name', filaAberta)
+          .gte('created_at', competencia)
+          .lt('created_at', somarMeses(competencia, 1))
+          .order('ticket_number')
+          .returns<ChamadoAberto[]>()
+      : null,
+  ])
+
+  const lancamentosAbertos = lancamentosRes?.data ?? []
+  const chamadosAbertos = chamadosRes?.data ?? []
+  const serie = ((serieRes.data ?? []) as unknown as PontoDaSerie[]).map((p) => ({
+    ...p,
+    gasto: Number(p.gasto),
+    conformidade: p.conformidade === null ? null : Number(p.conformidade),
+  }))
 
   const r = resultadoRes.data
   const filiais = ((filialRes?.data ?? []) as unknown as GastoPorFilial[]).map((f) => ({
@@ -208,11 +299,21 @@ export default async function ResultadoPage({
 
   const variacaoDoGasto = variacao(Number(r?.gasto_mes ?? 0), Number(r?.gasto_mes_anterior ?? 0))
 
+  /* Trocar de cliente ou de mês FECHA o detalhe aberto: ele é de um recorte, e
+     carregá-lo para outro mostraria registros de um recorte sob o título de
+     outro — o começo exato da desconfiança num painel. */
   const href = (p: Record<string, string>): Route => {
     const q = new URLSearchParams({ cliente: clienteId, competencia, ...p })
     return `/resultado?${q.toString()}` as Route
   }
 
+  /** Clicar no que já está aberto fecha. Sem isso, não há como voltar. */
+  const hrefAbrir = (chave: string): Route =>
+    params.abrir === chave ? href({}) : href({ abrir: chave })
+
+  /* Os chips cobrem o que o gráfico não cobre: a série termina no mês corrente,
+     então sem eles não haveria como olhar uma competência futura — que é
+     exatamente onde o compromisso já lançado aparece. */
   const ultimosMeses = Array.from({ length: 6 }, (_, i) => somarMeses(competencia, i - 4))
 
   return (
@@ -331,6 +432,12 @@ export default async function ResultadoPage({
         />
       )}
 
+      {(podeFinanceiro || podeProjetos || podeSla) && serie.length > 1 && (
+        <Card title="Os três ao longo do tempo" className="mb-6">
+          <SerieDoResultado pontos={serie} competenciaAtiva={competencia} href={href} />
+        </Card>
+      )}
+
       {podeFinanceiro && (
         <Card title="Gasto por filial" className="mb-6">
           {filiais.length === 0 ? (
@@ -338,18 +445,48 @@ export default async function ResultadoPage({
               Nenhum lançamento em {paraExibicao(competencia)}.
             </p>
           ) : (
-            <Table label="Gasto por filial" head={['Filial', 'Gasto', 'Participação']}>
-              {filiais.map((f) => (
-                <tr key={f.branch_id ?? 'grupo'}>
-                  <Td>{f.branch_name}</Td>
-                  <Td className="tabular-nums">{emReais(f.total)}</Td>
-                  <Td className="tabular-nums text-[var(--color-ink-2)]">
-                    {conferenciaFinanceiro.soma > 0
-                      ? `${((f.total / conferenciaFinanceiro.soma) * 100).toFixed(1).replace('.', ',')}%`
-                      : '—'}
-                  </Td>
-                </tr>
-              ))}
+            <Table
+              label="Gasto por filial"
+              head={['Filial', 'Gasto', 'Participação', 'Lançamentos']}
+            >
+              {filiais.map((f) => {
+                const chave = `filial:${f.branch_id ?? 'grupo'}`
+                const aberta = params.abrir === chave
+                return (
+                  <Fragment key={f.branch_id ?? 'grupo'}>
+                    <tr className={aberta ? 'bg-[var(--color-surface-2)]' : undefined}>
+                      <Td>{f.branch_name}</Td>
+                      <Td className="tabular-nums">{emReais(f.total)}</Td>
+                      <Td className="tabular-nums text-[var(--color-ink-2)]">
+                        {conferenciaFinanceiro.soma > 0
+                          ? `${((f.total / conferenciaFinanceiro.soma) * 100).toFixed(1).replace('.', ',')}%`
+                          : '—'}
+                      </Td>
+                      <Td>
+                        <Link
+                          href={hrefAbrir(chave)}
+                          aria-expanded={aberta}
+                          className="text-xs font-semibold text-[var(--color-brand-ink)] hover:underline"
+                        >
+                          {aberta ? 'fechar' : 'ver os lançamentos'}
+                        </Link>
+                      </Td>
+                    </tr>
+                    {aberta && (
+                      <tr>
+                        <Td colSpan={4} className="bg-[var(--color-surface-2)]">
+                          <RegistrosDaFilial
+                            filial={f.branch_name}
+                            competencia={competencia}
+                            total={f.total}
+                            lancamentos={lancamentosAbertos}
+                          />
+                        </Td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
             </Table>
           )}
           <Conferencia
@@ -428,33 +565,65 @@ export default async function ResultadoPage({
           ) : (
             <Table
               label="Conformidade por fila"
-              head={['Fila', 'Chamados', 'Com acordo', 'Fora do prazo', 'Conformidade']}
+              head={[
+                'Fila',
+                'Chamados',
+                'Com acordo',
+                'Fora do prazo',
+                'Conformidade',
+                'Chamados',
+              ]}
             >
               {filas.map((f) => {
                 const pct =
                   f.tickets_with_sla > 0
                     ? ((f.tickets_with_sla - f.resolution_breaches) / f.tickets_with_sla) * 100
                     : null
+                const chave = `fila:${encodeURIComponent(f.queue_name)}`
+                const aberta = params.abrir === chave
                 return (
-                  <tr key={f.queue_name}>
-                    <Td>{f.queue_name}</Td>
-                    <Td className="tabular-nums text-[var(--color-ink-2)]">{f.tickets_total}</Td>
-                    <Td className="tabular-nums text-[var(--color-ink-2)]">
-                      {f.tickets_with_sla}
-                    </Td>
-                    <Td className="tabular-nums text-[var(--color-ink-2)]">
-                      {f.resolution_breaches}
-                    </Td>
-                    <Td>
-                      {pct === null ? (
-                        <span className="text-[var(--color-ink-3)]">—</span>
-                      ) : (
-                        <Badge tone={tomDaConformidade(pct)}>
-                          {pct.toFixed(1).replace('.', ',')}%
-                        </Badge>
-                      )}
-                    </Td>
-                  </tr>
+                  <Fragment key={f.queue_name}>
+                    <tr className={aberta ? 'bg-[var(--color-surface-2)]' : undefined}>
+                      <Td>{f.queue_name}</Td>
+                      <Td className="tabular-nums text-[var(--color-ink-2)]">{f.tickets_total}</Td>
+                      <Td className="tabular-nums text-[var(--color-ink-2)]">
+                        {f.tickets_with_sla}
+                      </Td>
+                      <Td className="tabular-nums text-[var(--color-ink-2)]">
+                        {f.resolution_breaches}
+                      </Td>
+                      <Td>
+                        {pct === null ? (
+                          <span className="text-[var(--color-ink-3)]">—</span>
+                        ) : (
+                          <Badge tone={tomDaConformidade(pct)}>
+                            {pct.toFixed(1).replace('.', ',')}%
+                          </Badge>
+                        )}
+                      </Td>
+                      <Td>
+                        <Link
+                          href={hrefAbrir(chave)}
+                          aria-expanded={aberta}
+                          className="text-xs font-semibold text-[var(--color-brand-ink)] hover:underline"
+                        >
+                          {aberta ? 'fechar' : 'ver os chamados'}
+                        </Link>
+                      </Td>
+                    </tr>
+                    {aberta && (
+                      <tr>
+                        <Td colSpan={6} className="bg-[var(--color-surface-2)]">
+                          <RegistrosDaFila
+                            fila={f.queue_name}
+                            competencia={competencia}
+                            total={f.tickets_total}
+                            chamados={chamadosAbertos}
+                          />
+                        </Td>
+                      </tr>
+                    )}
+                  </Fragment>
                 )
               })}
             </Table>
@@ -535,5 +704,137 @@ function Conferencia({
       {formatar(Math.abs(resultado.diferenca))}. Os dois foram montados por consultas diferentes, e
       alguma delas tem um filtro a mais.
     </p>
+  )
+}
+
+/**
+ * Os lançamentos por trás do gasto de uma filial.
+ *
+ * ## O que faz dele um "abrir o número" e não "uma lista parecida"
+ *
+ * O recorte. Mesmo cliente, mesma competência, mesmo cenário, mesma filial — e
+ * a soma conferida contra a linha que foi clicada, aqui dentro. Uma lista que
+ * não fecha com o número que a abriu é pior que nenhuma lista: ela parece
+ * confirmar.
+ */
+function RegistrosDaFilial({
+  filial,
+  competencia,
+  total,
+  lancamentos,
+}: {
+  filial: string
+  competencia: string
+  total: number
+  lancamentos: LancamentoAberto[]
+}) {
+  const conferencia = conferir(
+    total,
+    lancamentos.map((l) => Number(l.amount)),
+  )
+
+  if (lancamentos.length === 0) {
+    return (
+      <p className="text-xs text-[var(--color-ink-3)]">
+        Nenhum lançamento de {filial} em {paraExibicao(competencia)} — e o indicador diz{' '}
+        {emReais(total)}. Quando os dois discordam assim, o filtro de uma das consultas é mais
+        estreito que o da outra.
+      </p>
+    )
+  }
+
+  return (
+    <div>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-3)]">
+        {lancamentos.length} lançamento(s) de {filial} em {paraExibicao(competencia)}
+      </p>
+      <ul className="flex flex-col gap-1.5">
+        {lancamentos.map((l) => (
+          <li key={l.id} className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+            <span className="text-[var(--color-ink)]">
+              {l.description ?? l.category_name}
+              {l.supplier_name && (
+                <span className="text-[var(--color-ink-3)]"> · {l.supplier_name}</span>
+              )}
+              <span className="text-[var(--color-ink-3)]">
+                {' '}
+                · {ROTULO_DA_CLASSIFICACAO[l.classificacao] ?? l.classificacao} ·{' '}
+                {ROTULO_DA_ORIGEM[l.origem] ?? l.origem}
+              </span>
+            </span>
+            <span className="tabular-nums font-medium">{emReais(Number(l.amount))}</span>
+          </li>
+        ))}
+      </ul>
+      <Conferencia rotulo="o gasto da filial" resultado={conferencia} formatar={emReais} />
+    </div>
+  )
+}
+
+/**
+ * Os chamados por trás de uma fila.
+ *
+ * Aqui a conferência compara CONTAGEM, não dinheiro — e o número que ela usa é
+ * `tickets_total`, o mesmo da coluna "Chamados" da linha clicada. Comparar
+ * contra "com acordo" daria uma divergência garantida em toda fila que tenha um
+ * chamado sem cobertura, e a tela estaria gritando sobre o próprio recorte.
+ */
+function RegistrosDaFila({
+  fila,
+  competencia,
+  total,
+  chamados,
+}: {
+  fila: string
+  competencia: string
+  total: number
+  chamados: ChamadoAberto[]
+}) {
+  const conferencia = conferir(
+    total,
+    chamados.map(() => 1),
+  )
+
+  if (chamados.length === 0) {
+    return (
+      <p className="text-xs text-[var(--color-ink-3)]">
+        Nenhum chamado de {fila} em {paraExibicao(competencia)} — e o indicador conta {total}.
+      </p>
+    )
+  }
+
+  return (
+    <div>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-3)]">
+        {chamados.length} chamado(s) de {fila} em {paraExibicao(competencia)}
+      </p>
+      <ul className="flex flex-col gap-1.5">
+        {chamados.map((c) => (
+          <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+            <Link
+              href={`/tickets/${c.id}` as Route}
+              className="text-[var(--color-ink)] hover:underline"
+            >
+              <span className="tabular-nums text-[var(--color-ink-3)]">#{c.ticket_number}</span>{' '}
+              {c.title}
+            </Link>
+            {c.sla_coverage !== 'covered' ? (
+              /* Sem acordo não é "no prazo": é fora da medida. Mostrar um selo
+                 verde aqui faria a fila parecer melhor do que foi medida. */
+              <span className="text-xs text-[var(--color-ink-3)]">sem acordo</span>
+            ) : (
+              <Badge tone={c.resolution_breached ? 'breach' : 'ok'}>
+                {c.resolution_breached ? 'fora do prazo' : 'no prazo'}
+              </Badge>
+            )}
+          </li>
+        ))}
+      </ul>
+      <Conferencia
+        rotulo="os chamados da fila"
+        resultado={conferencia}
+        formatar={(v) => `${v}`}
+      />
+    </div>
   )
 }
