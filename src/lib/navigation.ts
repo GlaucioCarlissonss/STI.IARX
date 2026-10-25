@@ -101,6 +101,11 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: '/tickets/novo', label: 'Abrir ticket', permission: 'helpdesk.tickets.criar' },
       { href: '/filas', label: 'Filas', permission: 'helpdesk.filas.ver' },
       { href: '/sla', label: 'SLA e prazos', permission: 'sla.compliance.ver' },
+      /* Logo abaixo do SLA porque é a mesma pergunta vista de outro ângulo: ali
+         o prazo, aqui as horas em que o prazo corre. Estava no banco desde a
+         0006 e não tinha tela — dava para ESCOLHER um expediente e não dava para
+         criar nenhum, nem cadastrar feriado. */
+      { href: '/sla/horarios', label: 'Expediente e feriados', permission: 'sla.horarios.ver' },
       /* "Satisfação" e não "CSAT": a sigla é jargão de quem mede, e quem abre a
          tela quer saber se as pessoas gostaram do atendimento. */
       { href: '/satisfacao', label: 'Satisfação', permission: 'helpdesk.satisfacao.ver' },
@@ -201,6 +206,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
          gastar — é configuração de ambiente, da mesma natureza que os canais.
          Quem atende nunca precisa abri-la. */
       { href: '/ia', label: 'Sugestões de IA', permission: 'ia.config.ver' },
+      /* A trilha grava desde a 0010 em 45 tabelas e nunca teve onde ser lida. A
+         pergunta que ela responde sempre vem em dia ruim: quem mudou isso. */
+      { href: '/auditoria', label: 'Trilha de alterações', permission: 'auditoria.trilha.ver' },
+      /* A docs/13 mandava rodar SQL à mão para saber se o agendador parou — e
+         quem precisa da resposta não tem psql. */
+      { href: '/auditoria/trabalhos', label: 'Trabalhos agendados', permission: 'auditoria.trabalhos.ver' },
       { href: '/perfis', label: 'Perfis de acesso', permission: 'usuarios.perfis.ver' },
       { href: '/tv', label: 'Painéis de TV', permission: 'tv.tokens.ver' },
     ],

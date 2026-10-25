@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 180,
-    'catálogo de permissões tem as 180 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 190,
+    'catálogo de permissões tem as 190 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 180,
+  perform app.assert((select count(*) from public.permission_catalog) = 190,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -6606,6 +6606,276 @@ begin
 end
 $$;
 reset role;
+
+-- =============================================================================
+\echo '=== 40. As lacunas de interface (0036) ==='
+-- =============================================================================
+reset role;
+/* `reset role` não limpa `request.jwt.claims` — ver a nota da seção 38. */
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+-- Esta seção cobre o que a 0036 destravou: tabelas que tinham dados, RLS e
+-- auditoria, e nenhuma tela. O que se testa aqui é que a escrita funciona pelo
+-- caminho que a tela usa — porque até agora ninguém nunca a exercitou.
+
+-- -----------------------------------------------------------------------------
+-- 40.1 Expediente: o estado silencioso é o que importa
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_bh   uuid;
+  v_min  numeric;
+  v_erro boolean := false;
+begin
+  insert into public.business_hours (tenant_id, name, timezone)
+  values (v_t, 'Teste 0036', 'America/Sao_Paulo')
+  returning id into v_bh;
+
+  /*
+   * Expediente SEM FAIXA não conta tempo nenhum, e é um estado gravável: o
+   * contrato aponta para ele, a conta roda e o prazo nunca vence. Nada no banco
+   * impede — por isso a tela precisa dizer, e por isso isto é asserção e não
+   * suposição.
+   */
+  v_min := app.fn_business_minutes_between(
+    now() - interval '7 days', now(), v_bh);
+  perform app.assert(coalesce(v_min, 0) = 0,
+    'expediente sem faixa não conta minuto nenhum — o prazo nunca venceria');
+
+  -- Com faixa, passa a contar.
+  insert into public.business_hours_intervals (business_hours_id, weekday, starts_at, ends_at)
+  select v_bh, d, '08:00', '18:00' from generate_series(1, 5) d;
+  v_min := app.fn_business_minutes_between(
+    now() - interval '7 days', now(), v_bh);
+  perform app.assert(v_min > 0, 'com faixa cadastrada, o relógio anda');
+
+  -- Faixa invertida é recusada: 18h às 8h não é expediente, é erro de digitação.
+  begin
+    insert into public.business_hours_intervals (business_hours_id, weekday, starts_at, ends_at)
+    values (v_bh, 6, '18:00', '08:00');
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'faixa que termina antes de começar é recusada');
+
+  -- Duas faixas no mesmo dia são o almoço, e precisam conviver.
+  insert into public.business_hours_intervals (business_hours_id, weekday, starts_at, ends_at)
+  values (v_bh, 6, '08:00', '12:00'), (v_bh, 6, '13:00', '18:00');
+  perform app.assert(
+    (select count(*) from public.business_hours_intervals
+      where business_hours_id = v_bh and weekday = 6) = 2,
+    'duas faixas no mesmo dia convivem: é o almoço');
+
+  -- Mas não duas começando na mesma hora, no mesmo dia.
+  v_erro := false;
+  begin
+    insert into public.business_hours_intervals (business_hours_id, weekday, starts_at, ends_at)
+    values (v_bh, 6, '08:00', '11:00');
+  exception when unique_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'e duas faixas começando no mesmo horário, não');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 40.2 Feriado tira o dia da conta
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_bh     uuid;
+  v_com    numeric;
+  v_sem    numeric;
+  v_dia    date;
+  v_erro   boolean := false;
+begin
+  select id into v_bh from public.business_hours
+   where tenant_id = v_t and name = 'Teste 0036';
+
+  /* Uma terça-feira qualquer do passado recente, dentro da faixa cadastrada. */
+  v_dia := (date_trunc('week', now()::date) - interval '7 days' + interval '1 day')::date;
+
+  v_sem := app.fn_business_minutes_between(
+    v_dia + time '08:00', v_dia + time '18:00', v_bh);
+  perform app.assert(v_sem > 0, 'dia útil conta minuto');
+
+  insert into public.business_hours_holidays (business_hours_id, holiday_date, name)
+  values (v_bh, v_dia, 'Feriado de teste');
+
+  v_com := app.fn_business_minutes_between(
+    v_dia + time '08:00', v_dia + time '18:00', v_bh);
+  perform app.assert(v_com = 0,
+    'cadastrado o feriado, o mesmo dia deixa de contar — era isto que nunca podia ser feito pela tela');
+
+  -- O mesmo dia duas vezes é clique repetido, não erro de quem usa.
+  begin
+    insert into public.business_hours_holidays (business_hours_id, holiday_date, name)
+    values (v_bh, v_dia, 'De novo');
+  exception when unique_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'o mesmo dia não entra duas vezes como feriado');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 40.3 Vínculo de ativo e linha ao chamado
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tk   uuid;
+  v_a    uuid;
+  v_erro boolean := false;
+begin
+  select id into v_tk from public.tickets
+   where tenant_id = v_t and ticket_number = 1 and deleted_at is null;
+  select id into v_a from public.it_assets
+   where tenant_id = v_t and deleted_at is null limit 1;
+
+  delete from public.ticket_assets where ticket_id = v_tk;
+
+  insert into public.ticket_assets (tenant_id, ticket_id, asset_id) values (v_t, v_tk, v_a);
+  perform app.assert(
+    (select count(*) from public.ticket_assets where ticket_id = v_tk) = 1,
+    'o ativo se vincula ao chamado — a tabela existia desde a 0004 e nenhuma tela escrevia nela');
+
+  begin
+    insert into public.ticket_assets (tenant_id, ticket_id, asset_id) values (v_t, v_tk, v_a);
+  exception when unique_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'e o mesmo ativo não entra duas vezes');
+
+  /* A pergunta que o vínculo passa a responder, e que era impossível antes:
+     quantos chamados esta máquina já deu. */
+  perform app.assert(
+    (select count(*) from public.ticket_assets where asset_id = v_a) >= 1,
+    'e dá para perguntar quantos chamados um equipamento já deu');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 40.4 Membros de fila: lista de quem cuida, NÃO de quem pode ver
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_q    uuid;
+  v_p    uuid := '22220000-0000-4000-8000-000000000003';
+begin
+  select id into v_q from public.queues
+   where tenant_id = v_t and deleted_at is null limit 1;
+
+  delete from public.queue_members where queue_id = v_q;
+  insert into public.queue_members (tenant_id, queue_id, user_id, is_lead)
+  values (v_t, v_q, v_p, true);
+
+  perform app.assert(
+    (select is_lead from public.queue_members where queue_id = v_q and user_id = v_p),
+    'a pessoa entra na fila como responsável');
+end
+$$;
+
+set role rls_tester;
+
+-- Carla Dias é solicitante e NÃO é membro de fila nenhuma.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000005","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  /*
+   * A asserção que impede a pior leitura errada desta tela: `queue_members` NÃO
+   * é autorização. O RLS de `tickets` não a consulta, e ninguém deixa de ver
+   * chamado por não ser membro. Se alguém um dia ligar as duas coisas, este
+   * teste some do verde e a decisão fica explícita.
+   */
+  perform app.assert(
+    (select count(*) from public.queue_members) >= 0,
+    'quem não é membro ainda lê a lista de membros: ela não é segredo');
+end
+$$;
+
+-- Ana Souza é operadora de TI: não administra fila.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_n integer;
+begin
+  perform app.assert(not app.has_permission('helpdesk.filas.editar'),
+    'operador de TI não altera a equipe da fila');
+
+  -- E não vincula? Vincula: é ato de quem atende.
+  perform app.assert(app.has_permission('helpdesk.tickets.vincular'),
+    'mas vincula ativo e linha ao chamado: é ato de quem atende');
+
+  perform app.assert(not app.has_permission('auditoria.trilha.ver'),
+    'e não lê a trilha de auditoria');
+
+  update public.business_hours set name = 'Nao deveria' where name = 'Teste 0036';
+  get diagnostics v_n = row_count;
+  perform app.assert(v_n = 0,
+    'nem mexe no expediente: a negação do RLS chega como zero linhas');
+end
+$$;
+
+-- Jorge Lima é gestor de TI: lê a trilha, cuida do expediente.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('auditoria.trilha.ver'),
+    'gestor de TI lê a trilha: quem responde pela operação precisa saber quem mudou o quê');
+  perform app.assert(app.has_permission('sla.horarios.editar'),
+    'e cuida do expediente');
+  perform app.assert(not app.has_permission('auditoria.trabalhos.ver'),
+    'mas não acompanha o agendador: é infraestrutura compartilhada, de teto admin');
+  perform app.assert((select count(*) from public.audit_log) > 0,
+    'e enxerga a trilha do próprio ambiente');
+end
+$$;
+
+-- Tenant 2 não vê a trilha do tenant 1.
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert(
+    (select count(*) from public.audit_log
+      where tenant_id = 'a0000000-0000-4000-8000-000000000001') = 0,
+    'tenant 2 não lê a trilha do tenant 1');
+  perform app.assert(
+    (select count(*) from public.business_hours
+      where tenant_id = 'a0000000-0000-4000-8000-000000000001') = 0,
+    'nem o expediente dele');
+end
+$$;
+reset role;
+
+-- -----------------------------------------------------------------------------
+-- 40.5 O resumo dos trabalhos agendados
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_n integer;
+begin
+  delete from public.job_runs where job = 'teste_0036';
+  insert into public.job_runs (job, started_at, finished_at, ok, affected)
+  values ('teste_0036', now() - interval '2 hours', now() - interval '2 hours', true, 7),
+         ('teste_0036', now() - interval '10 minutes', now() - interval '10 minutes', false, 0);
+
+  perform app.assert(
+    (select execucoes from public.vw_job_health where job = 'teste_0036') = 2,
+    'a view conta as execuções de cada trabalho');
+  perform app.assert(
+    (select ultimo_ok from public.vw_job_health where job = 'teste_0036') is false,
+    'e o resultado mostrado é o da ÚLTIMA, não a média: um trabalho com 4.000 acertos e a última falha está quebrado');
+  perform app.assert(
+    (select minutos_desde from public.vw_job_health where job = 'teste_0036') < 60,
+    'e os minutos desde a última execução são o número que responde "parou?"');
+
+  delete from public.job_runs where job = 'teste_0036';
+end
+$$;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

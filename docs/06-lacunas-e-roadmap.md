@@ -32,22 +32,48 @@ outro nome, a divergência está registrada explicitamente em vez de duplicada.
 ## O que já está implementado desta especificação
 
 A migração `0013_areas_anexos_links.sql` entrega **a camada de dados** do que é
-inequívoco, validada contra PostgreSQL real (397 asserções). O que falta em cada módulo é
+inequívoco, validada contra PostgreSQL real (eram 397 asserções à época; hoje são 771). O
+que falta em cada módulo é
 a **interface** — e, nos casos marcados, a decisão do operador.
 
 | Módulo | Banco | Interface |
 |---|---|---|
-| M1 — SLA e Filas | ✅ `name`, `deleted_at`, `tiebreaker`, `fn_sla_impact_preview`, `fn_bulk_transfer_queue`, **`fn_route_ticket` (0024)** | ✅ CRUD de categorias, prioridades, contratos e definições em `/sla`; filas, pesos do score e regras de roteamento em `/filas` (0024/0025) · ⬜ membros de fila (`queue_members`) |
+| M1 — SLA e Filas | ✅ `name`, `deleted_at`, `tiebreaker`, `fn_sla_impact_preview`, `fn_bulk_transfer_queue`, **`fn_route_ticket` (0024)** | ✅ CRUD de categorias, prioridades, contratos e definições em `/sla`; filas, pesos do score e regras de roteamento em `/filas` (0024/0025); **membros de fila em `/filas/[slug]` (0036)** |
 | M2 — Área da Filial | ✅ `branch_areas`, FKs, trigger de coerência, `fn_seed_branch_areas` | ✅ painel de áreas em `/clientes`, chaves `clientes.areas.*` e botão de áreas padrão (0023) |
 | M3 — Anexos de Inventário | ✅ `asset_attachments`, foto principal por índice | ✅ upload e remoção pelo bucket privado `anexos` (0019) |
-| M4 — Custódia | ✅ campos `previous_*`, `reason`, trigger reescrita, view `asset_custody_history` | ✅ timeline e transferência com motivo em `/inventario` (0023) · ⬜ exportação (LG-11) |
+| M4 — Custódia | ✅ campos `previous_*`, `reason`, trigger reescrita, view `asset_custody_history` | ✅ timeline e transferência com motivo em `/inventario` (0023); **exportação CSV (0036, LG-11)** |
 | M5 — Anexos em Tickets | ✅ `kind` derivado do MIME, cota no banco, `scan_status` | ✅ upload e remoção (0019) · ⬜ player embutido de áudio e vídeo |
-| M6 — Dashboard Telefonia | ✅ `vw_telecom_dashboard`, índices de filtro | ✅ filtros por filial/operadora/situação e leitura da view, com linha sem responsável e livre de fidelidade (0025) · ⬜ exportação (LG-11) |
+| M6 — Dashboard Telefonia | ✅ `vw_telecom_dashboard`, índices de filtro | ✅ filtros por filial/operadora/situação e leitura da view, com linha sem responsável e livre de fidelidade (0025); **exportação CSV (0036, LG-11)** |
 | M7 — Contrato da Linha | ✅ `telecom_line_attachments`, vigência | ✅ anexos na ficha da linha (0019) · ⬜ alerta de vigência vencendo (depende de LG-06) |
 | M8 — Links de Internet | ✅ `internet_links`, anexos, `link_availability_events`, dashboards, CRUD em `/conectividade/links`, chaves `conectividade.links.*` (0022) | ⬜ Edge Function do Zabbix — hoje a queda é registrada à mão, pelo mesmo evento que o webhook vai gravar |
 | M9 — Área na Telefonia | ✅ `company_area_id` + trigger | ✅ campo no formulário e coluna na tabela (0023) · ⬜ filtro por área |
 | M10 — Edição de Integrações | ✅ `integration_mapping_versions` + trigger, campos de rotação | ⬜ telas de configuração e dry run |
 | M11 — Mapas | ✅ `latitude`/`longitude`, precisão do geocode, 5 views com semáforo | ✅ Google Maps em `/mapas`, geocodificação e coordenada colada do Maps |
+
+**A revisão de 2026 e as seis tabelas sem tela.** Uma varredura cruzando as tabelas de
+`public` com as citadas em `src/` encontrou seis recursos que existiam no banco — com RLS,
+auditoria e a aritmética que os usa — e **não existiam na vida de ninguém**. Todos foram
+fechados pela migração 0036 e pelas telas dela:
+
+| Tabela | O que isso custava |
+|---|---|
+| `queue_members` | A última lacuna ⬜ do M1. Não havia como dizer quem cuida de cada fila |
+| `ticket_assets` | O README **afirmava** "vínculo com tickets" no inventário desde a primeira versão. A tela nunca existiu, e "quantos chamados esta máquina já deu?" não tinha resposta |
+| `ticket_telecom_lines` | Idem, para linha telefônica |
+| `business_hours*` | Dava para **escolher** um expediente no contrato de SLA e não dava para **criar** nenhum, nem cadastrar feriado. Na prática: nenhum feriado era respeitado, e um chamado aberto em 24 de dezembro vencia no dia 25 de manhã |
+| `audit_log` | 45 tabelas auditadas por trigger e nenhum lugar para ler o resultado |
+| `job_runs` | A [docs/13](13-notificacoes-e-trabalhos.md) mandava rodar SQL à mão para saber se o agendador parou — e quem precisa da resposta não tem psql |
+
+Duas coisas, e só duas, precisavam de banco: as chaves de permissão das telas novas e dois
+índices em `audit_log` (ela cresce para sempre, e um filtro sem índice vira varredura
+completa no primeiro ambiente com um ano de uso). Todo o resto era interface.
+
+O método virou script: `scripts/conferir-colunas.py` confere cada
+`.from('tabela').select('coluna')` contra o schema real — o `tsc` não vê nada ali, porque o
+nome da coluna é uma string e o `.returns<T>()` é asserção de quem escreveu. Ele achou dois
+defeitos reais na primeira execução, os dois `ticket_priorities.name` (a coluna se chama
+`label`): o campo "Prioridade" do cadastro de serviço e o do cadastro de canal **nunca
+tiveram opção nenhuma**, em silêncio.
 
 **Três achados que só apareceram ao implementar**, todos corrigidos:
 
@@ -1451,14 +1477,24 @@ como histórico real.
 `tiebreaker='custom'` com expressão livre é injeção de SQL e risco de query impagável.
 **Recomendação:** catálogo fechado de critérios. Confirmar se atende.
 
-### LG-06 — Canal de notificação — **risco médio, afeta 4 módulos**
+### LG-06 — Canal de notificação — **RESOLVIDO na Onda 1: e-mail com caixa de saída (docs/13)**
 M1 (breach de SLA), M7 (vencimento de contrato), M8 (link fora do ar) e M4 (ativo sem
-responsável) todos pedem alerta. **A plataforma não tem camada de notificação** — nem
-e-mail, nem push, nem webhook de saída. Hoje os estados são calculados e exibidos, mas não
-notificam fora da tela.
-Isso é **módulo transversal não previsto no escopo**. Decidir: e-mail (provedor?),
-WhatsApp, Telegram, webhook? Sem essa decisão, os quatro módulos entregam o indicador
-visual e não o alerta ativo.
+responsável) pediam alerta, e a plataforma não tinha camada de notificação nenhuma.
+
+**A decisão foi e-mail**, com caixa de saída no banco (`email_outbox`), nova tentativa com
+recuo e opt-out por pessoa — ver [docs/13](13-notificacoes-e-trabalhos.md). O motivo da
+escolha: e-mail não exige que o destinatário instale, aceite ou configure nada, e a caixa de
+saída faz o sistema funcionar **sem** o provedor configurado (acumula e nada se perde), em
+vez de falhar.
+
+Os outros canais vieram depois e por outro caminho: a Onda 5
+([docs/16](16-canais-de-conversa.md)) ligou WhatsApp, e-mail de entrada, Bitrix24 e N8N —
+mas como **conversa que vira chamado**, não como canal de alerta. São coisas diferentes, e
+tratá-las como a mesma foi a tentação que aquela onda recusou.
+
+**O que continua pendente:** os alertas de M7 (contrato vencendo) e M8 (link fora do ar) não
+foram escritos — o canal existe, os dois trabalhos agendados não. Hoje são indicador na
+tela, como antes.
 
 ### LG-07 — Integração com Zabbix — **risco médio, bloqueia parte do M8**
 Não sabemos se existe Zabbix, qual versão, se é acessível pela rede do SaaS, e se o
@@ -1468,13 +1504,19 @@ disparo será webhook (preferível, event-driven, alinhado ao
 custo já entregam valor; a camada de disponibilidade entra depois sem retrabalho, porque
 os campos e a tabela de eventos já estão modelados.
 
-### LG-08 — Portal do cliente — **risco alto de escopo**
-M11 menciona "portal do fornecedor" e "portal do cliente" com mapas distintos. **O portal
-do cliente não existe.** Hoje há um app único com seis papéis; o solicitante enxerga
-apenas os próprios tickets, mas não há área segregada com identidade visual do cliente,
-domínio próprio ou catálogo de serviços.
-Construir isso é **módulo maior que os 11 deste roadmap somados**. Precisa ser tratado
-como iniciativa separada, não como característica do mapa.
+### LG-08 — Portal do cliente — **RESOLVIDO na Onda 4: `/portal` é uma TELA, não um aplicativo (docs/15)**
+M11 mencionava "portal do fornecedor" e "portal do cliente" com mapas distintos, e a
+avaliação era que construir isso seria **módulo maior que os 11 deste roadmap somados**.
+
+A Onda 4 resolveu a parte que valia: `/portal` é uma **tela**, não um aplicativo. O
+solicitante já enxergava apenas os próprios chamados pela policy da 0012 e o menu já se
+filtrava sozinho desde a 0017 — o que faltava era uma página que respondesse "o que você
+precisa?" na ordem do que resolve mais barato: procure a resposta, peça um serviço,
+acompanhe, e só então abra um chamado ([docs/15](15-autoatendimento.md)).
+
+**O que continua fora, e de propósito:** identidade visual por cliente, domínio próprio e
+PWA. Os três são o "módulo maior" de verdade, e nenhum deles muda o que o solicitante
+consegue fazer — mudam onde ele faz.
 
 ### LG-09 — Provedor de mapas — **RESOLVIDO: OpenStreetMap/Esri por padrão, Google opcional**
 Decisão revista: o motor padrão passou a ser **OpenStreetMap (ruas) + Esri World Imagery
@@ -1504,11 +1546,28 @@ alerta de cota.
 Ver Módulo 1. Hoje a pausa é comportamento de status, não configuração. Se o requisito é
 torná-la configurável por contrato, muda o modelo de `sla_definitions`.
 
-### LG-11 — Exportação PDF/Excel — decisão técnica transversal
-M4, M6, M7 e M8 pedem exportação. Não existe hoje. Decidir a abordagem: geração no
-servidor (Edge Function com biblioteca) ou no cliente. Recomendo **no servidor**, para que
-o arquivo respeite exatamente o escopo de RLS do usuário e não dependa do que o navegador
-carregou.
+### LG-11 — Exportação PDF/Excel — **RESOLVIDO na 0036: CSV gerado no servidor**
+M4, M6, M7 e M8 pediam exportação. A recomendação era **gerar no servidor**, para que o
+arquivo respeite exatamente o escopo de RLS do usuário e não dependa do que o navegador
+carregou — e foi o que se fez, em `/api/exportar/[recurso]`: a rota usa o cliente de
+sessão, as mesmas policies de sempre, e o arquivo sai com as linhas que aquela pessoa
+enxerga. Gerar no cliente exportaria **a página visível**, que depois da paginação da
+entrega 6 são 50 linhas — "exportei o inventário" com 50 de 412 ativos é pior que não
+exportar.
+
+**CSV, e não XLSX nem PDF.** XLSX exige biblioteca (`exceljs` pesa ~1 MB) e PDF exige duas.
+CSV abre no Excel, no LibreOffice e no Sheets, não acrescenta dependência nenhuma, e é o
+formato que quem recebe realmente usa — a planilha quase sempre vira outra planilha. Quando
+alguém pedir o PDF carimbado para um auditor, aí a biblioteca se justifica.
+
+Duas armadilhas do formato ficaram resolvidas em `src/lib/exportacao.ts`, e as duas valem
+registro porque são a causa nº 1 de "a exportação veio toda errada": o separador é **ponto e
+vírgula** (o Excel em português lê vírgula como separador decimal) e o arquivo começa com
+**BOM** (sem ele o Excel abre UTF-8 como Latin-1 e todo acento quebra). Há uma terceira, de
+segurança: célula que começa com `=`, `+`, `-` ou `@` é **fórmula** no Excel, e
+`=cmd|'/c calc'!A1` roda um comando na máquina de quem abre — o conteúdo exportado vem de
+campo livre preenchido por terceiros, então isso não é hipótese. Toda célula assim é
+prefixada com apóstrofo.
 
 ### LG-13 — Tickets não têm dimensão de área
 `tickets` referencia `branch_id`, não área. Consequência: o popup do mapa de tickets

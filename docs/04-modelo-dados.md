@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-80 tabelas e 25 views em `public`, com 192 policies de RLS, mais 3 policies em
+80 tabelas e 26 views em `public`, com 192 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
@@ -522,6 +522,43 @@ Duas tabelas, e a palavra que define a onda está no estado inicial de uma delas
 
 - **A recusa fica registrada.** Ela é a única medida honesta de se a IA ajuda:
   apagá-la deixaria só o que deu certo.
+
+### Lacunas de interface (0036)
+Quase nenhuma estrutura, e é esse o ponto: uma revisão cruzando as tabelas de
+`public` com as citadas em `src/` encontrou **seis tabelas com dados, RLS,
+auditoria e nenhuma tela**. O que faltava era permissão, não estrutura.
+
+| O que ganhou tela | Estava no banco desde |
+|---|---|
+| `queue_members` — quem cuida de cada fila | 0004 |
+| `ticket_assets` e `ticket_telecom_lines` — qual equipamento é este chamado | 0004 |
+| `business_hours`, `*_intervals`, `*_holidays` — o expediente que o SLA usa | 0006 |
+| `audit_log` — 45 tabelas auditadas, nenhum leitor | 0010 |
+| `job_runs` — "o agendador parou?" só respondia em psql | 0030 |
+
+**O que a migração acrescentou, e por quê:**
+
+- **Dez chaves de permissão.** `helpdesk.tickets.vincular` (vincular é ato de
+  quem atende, não de quem edita), `sla.horarios.*` e o módulo `auditoria`.
+
+- **Dois índices em `audit_log`.** Ela cresce para sempre e sem teto — toda
+  alteração de 45 tabelas cai nela. Um filtro por entidade sem índice vira
+  varredura completa, e a primeira abertura da tela num ambiente com um ano de
+  uso derrubaria o banco. Os índices são por `(tenant_id, created_at desc)` e
+  por `(tenant_id, entity_type, entity_id, created_at desc)`, que são as duas
+  consultas que a tela faz.
+
+- **`vw_job_health`.** Um resumo por trabalho com **minutos desde a última
+  execução** — o número que responde "parou?". Não é o total nem a taxa de
+  sucesso: um trabalho com 4.000 execuções perfeitas e a última há três dias está
+  quebrado, e a taxa continua dizendo 100%.
+
+**O que NÃO ganhou escrita, e é deliberado:** `sla_pauses`. A pausa do relógio é
+automática desde a 0006 — a trigger abre quando o chamado entra em estado de
+espera e fecha quando sai, creditando só os minutos de expediente. Um botão de
+"pausar" criaria um segundo caminho para a mesma coisa, e os dois brigariam pelo
+índice único de pausa aberta. O que faltava ali era **leitura**: o chamado
+mostrava o distintivo "pausado" sem dizer desde quando nem por quê.
 
 ## 3. Padrões estruturais
 

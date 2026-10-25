@@ -29,7 +29,7 @@ Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 | **Filas** | Fila padrão protegida, filas customizáveis, score de priorização (criticidade + prazo + espera), regras de roteamento |
 | **Dashboard de TV** | Modo kiosk, tipografia fluida 1080p→4K, semáforo, auto-scroll condicional, token de exibição revogável |
 | **Painel administrativo** | KPIs, tickets em risco, "meus tickets", atualização via Realtime |
-| **Inventário de TI** | Cadastro, lifecycle com histórico automático, vínculo com tickets, alerta de garantia |
+| **Inventário de TI** | Cadastro, lifecycle com histórico automático, vínculo com tickets (0036), alerta de garantia |
 | **Telefonia** | Cadastro de linhas, vínculo com aparelho, relatório de custos por filial e operadora |
 | **Fornecedores** | Cadastro, serviços, avaliação, contratos com SLA contratado |
 | **Clientes e filiais** | Grupos econômicos com N filiais, fuso e calendário próprios |
@@ -52,6 +52,10 @@ Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 | **Agente nas máquinas** | Serviço em Go (Windows, Linux e macOS) que coleta inventário de hardware e software, concilia com o cadastro **sem duplicar ativo** e nunca sobrescreve o que uma pessoa digitou. Token por máquina, revogável uma a uma |
 | **Canais de conversa** | WhatsApp pela API oficial da Meta, e-mail, Bitrix24 e um canal genérico para o N8N — que liga Telegram, Slack ou SMS sem esta base precisar conhecê-los. Toda conversa vira chamado, e a resposta volta pelo canal de onde a pergunta veio |
 | **Sugestões de IA** | Resposta, classificação e artigo — **sugeridos, nunca aplicados**. Toda sugestão nasce pendente e aceitar é ato humano, com autor e data. Credencial por referência, teto de gasto mensal por empresa, e tudo continua funcionando sem chave nenhuma |
+| **Trilha de auditoria** | Quem mudou o quê, em 45 tabelas, com filtro por registro e por ação e exportação em CSV. A trigger grava desde a primeira migração; a tela de leitura chegou na 0036 |
+| **Expediente e feriados** | As horas em que o prazo de SLA corre, com faixas por dia (o almoço são duas faixas) e feriados com data. Sem feriado cadastrado, um chamado aberto na véspera de Natal vence no dia 25 |
+| **Trabalhos agendados** | Quando cada trabalho rodou pela última vez e se deu certo — porque trabalho parado é invisível: não há erro, simplesmente nada acontece |
+| **Exportação em CSV** | Trilha, telefonia e custódia. Gerada **no servidor**, com o escopo de RLS de quem pediu — e não as 50 linhas da página visível |
 
 ## Instalação
 
@@ -161,8 +165,8 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 482 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais e sugestões de IA
-npm run db:validate   # migrações + seed + 745 asserções em PostgreSQL real
+npm test              # 507 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria e exportação
+npm run db:validate   # migrações + seed + 771 asserções em PostgreSQL real
 ```
 
 Mais duas suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -170,7 +174,7 @@ Chromium e, no caso da segunda, de um build:
 
 ```bash
 node demo/tests/prototipo.spec.mjs   # 44 asserções de permissão no protótipo
-node demo/tests/aplicacao.spec.mjs   # 45 asserções na aplicação: tema, fontes, foco, 360px, peso do JS, rotas do agente e dos canais
+node demo/tests/aplicacao.spec.mjs   # 57 asserções na aplicação: tema, fontes, foco, 360px, peso do JS, rotas do agente, dos canais e da exportação
 ```
 
 A segunda cobre só as rotas públicas: `src/proxy.ts` guarda toda rota, e sem um
@@ -219,7 +223,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 35 migrações
+  migrations/         # 36 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -321,3 +325,4 @@ aceitável. A resolução depende de uma atualização do Next.
 | [15 — Autoatendimento](docs/15-autoatendimento.md) | Base de conhecimento, catálogo de serviços e portal: por que bases de conhecimento morrem, e o caminho que impede esta de morrer |
 | [16 — Canais de conversa](docs/16-canais-de-conversa.md) | WhatsApp, e-mail, Bitrix24 e N8N: como ligar cada um, por que o N8N é o mais importante dos quatro, e por que não existe caixa de resposta nos canais |
 | [17 — Sugestões de IA](docs/17-sugestoes-de-ia.md) | Resposta, triagem e artigo: por que nada é aplicado sozinho, o que sai para o provedor, o teto de gasto e por que a injeção de prompt é inofensiva aqui |
+| [18 — A revisão](docs/18-revisao-e-lacunas-fechadas.md) | Seis tabelas que tinham dados, RLS e nenhuma tela; como foram encontradas; o que ficou aberto e por quê |

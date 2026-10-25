@@ -226,7 +226,7 @@ Mesma honestidade de [docs/14](14-agente-de-inventario.md) e
   avaliação com chamados reais e um julgamento sobre cada resposta — é trabalho de
   outra ordem, e fingir que um teste de unidade o substitui seria pior que não
   tê-lo.
-- O que **está** verificado: 745 asserções de schema (incluindo o CHECK do autor,
+- O que **está** verificado: 771 asserções de schema (incluindo o CHECK do autor,
   a unicidade da pendente, a virada do mês do orçamento, a trava da nota interna e
   as quatro permissões) e 36 testes de unidade sobre as decisões que não dependem
   de rede — quando pode chamar, o custo estimado, a resolução do nome e da chave da

@@ -48,12 +48,12 @@ destino, não categoria.
 |---|---|
 | — | Visão geral |
 | — | Portal |
-| **Atendimento** | Tickets · Abrir ticket · Filas · SLA e prazos · Satisfação · Base de conhecimento · Catálogo de serviços · Conversas |
+| **Atendimento** | Tickets · Abrir ticket · Filas · SLA e prazos · Expediente e feriados · Satisfação · Base de conhecimento · Catálogo de serviços · Conversas |
 | **Financeiro** | Títulos a pagar · Títulos a receber · Contas bancárias · Centros de custo · Fluxo de caixa |
 | **Infraestrutura** | Inventário de TI · Agentes nas máquinas · Software instalado · Telefonia · Links de internet · Mapa das filiais |
 | **Cadastros** | Clientes e filiais · Fornecedores e contratos |
 | **Integrações** | Sistemas de tickets · *Bancos de dados* · *Pagamento bancário* · *Recebimento bancário* |
-| **Administração** | Usuários · Perfis de acesso · Painéis de TV · Sugestões de IA |
+| **Administração** | Usuários · Perfis de acesso · Painéis de TV · Sugestões de IA · Trilha de alterações · Trabalhos agendados |
 | — | Minha conta |
 
 *Itálico* = previsto, sem tela ainda.

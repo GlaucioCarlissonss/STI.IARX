@@ -277,7 +277,7 @@ Honestidade sobre o alcance dos testes, do mesmo jeito que em
   do Bitrix24 nem de provedor de e-mail neste ambiente, e não há saída de rede
   para eles. Os payloads dos testes são os da documentação oficial, copiados —
   não inventados.
-- O que **está** verificado: 711 asserções de schema no banco (incluindo entrada,
+- O que **está** verificado: 771 asserções de schema no banco (incluindo entrada,
   deduplicação, as três travas de eco, isolamento entre tenants e as quatro
   permissões), 50 testes de unidade dos adaptadores e da drenagem, e o
   comportamento da rota de entrada com corpo cru, assinatura errada, canal

@@ -70,6 +70,7 @@ export const MODULE_LABEL: Record<string, string> = {
   tv: 'Painéis de TV',
   autoatendimento: 'Autoatendimento',
   canais: 'Canais de conversa',
+  auditoria: 'Auditoria',
   ia: 'Sugestões de IA',
 }
 
@@ -120,6 +121,12 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   // solicitante apagar anexo do próprio ticket já escalado apagaria evidência.
   act('helpdesk', 'tickets', 'anexar', 'Anexar arquivo', 'solicitante'),
   act('helpdesk', 'tickets', 'remover_anexo', 'Remover anexo', 'atendente'),
+  /* Vincular ativo e linha ao chamado é ato de quem ATENDE: é durante o
+     atendimento que se descobre de qual máquina o problema é. Chave própria, e
+     não `editar`, porque vincular não muda o chamado — acrescenta contexto a
+     ele. As duas tabelas (`ticket_assets`, `ticket_telecom_lines`) existiam
+     desde a 0004 sem nenhuma tela que escrevesse nelas. */
+  act('helpdesk', 'tickets', 'vincular', 'Vincular ativo ou linha ao chamado', 'atendente'),
   scr('helpdesk', 'filas', 'Filas', 'visualizador'),
   act('helpdesk', 'filas', 'ver', 'Consultar filas', 'visualizador'),
   /* Criar fila muda a estrutura de atendimento do cliente — teto `gestor`, como
@@ -162,6 +169,15 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('sla', 'contratos', 'criar', 'Criar contrato de SLA', 'gestor'),
   act('sla', 'contratos', 'editar', 'Editar contrato de SLA', 'gestor'),
   act('sla', 'contratos', 'inativar', 'Ativar/inativar contrato de SLA', 'gestor'),
+  /* O expediente mora em `sla` porque é lá que ele é usado: contrato e definição
+     apontam para um horário, e toda conta de prazo depende dele. Dava para
+     ESCOLHER um horário nos dois formulários e não dava para criar nenhum — nem
+     cadastrar um feriado. */
+  scr('sla', 'horarios', 'Expediente e feriados', 'gestor'),
+  act('sla', 'horarios', 'ver', 'Consultar expedientes', 'gestor'),
+  act('sla', 'horarios', 'criar', 'Criar expediente', 'gestor'),
+  act('sla', 'horarios', 'editar', 'Editar expediente, faixas e feriados', 'gestor'),
+
   scr('sla', 'categorias', 'Categorias de ticket', 'gestor'),
   act('sla', 'categorias', 'ver', 'Consultar categorias', 'gestor'),
   act('sla', 'categorias', 'criar', 'Criar categoria', 'gestor'),
@@ -266,6 +282,19 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
      recurso pode gastar por mês. */
   act('ia', 'config', 'ver', 'Consultar a configuração e o consumo', 'admin'),
   act('ia', 'config', 'gerenciar', 'Ligar a IA e definir o teto de gasto', 'admin'),
+
+  /* --- Auditoria ---------------------------------------------------------- */
+  /* Módulo próprio, e não uma tela dentro de `usuarios`: a trilha não é sobre
+     pessoas, é sobre o que mudou em qualquer lugar do sistema. Eram 45 tabelas
+     auditadas por trigger desde a 0010 e nenhum lugar para ler o resultado. */
+  mod('auditoria', 'gestor'),
+  scr('auditoria', 'trilha', 'Trilha de alterações', 'gestor'),
+  act('auditoria', 'trilha', 'ver', 'Ler a trilha de alterações', 'gestor'),
+  scr('auditoria', 'trabalhos', 'Trabalhos agendados', 'admin'),
+  /* Teto `admin`, e mesmo assim a policy de `job_runs` só devolve linha ao
+     operador da plataforma: o agendador é infraestrutura compartilhada, sem
+     `tenant_id`. A tela diz isso em vez de parecer vazia por defeito. */
+  act('auditoria', 'trabalhos', 'ver', 'Acompanhar os trabalhos agendados', 'admin'),
 
   /* --- Telefonia --------------------------------------------------------- */
   mod('telefonia', 'visualizador'),

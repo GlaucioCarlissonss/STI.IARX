@@ -153,6 +153,19 @@ export default async function InventarioPage({
       <PageHeader
         title="Inventário de TI"
         description="Equipamentos, periféricos e licenças, com ciclo de vida rastreado."
+        action={
+          /* O histórico de custódia em planilha, pedido pelo M4 do roadmap
+             (LG-11): quem está com cada equipamento, desde quando e por quê. */
+          /* `<a download>`, e não `<Link>`: `/api/exportar/...` é um Route
+             Handler, e navegação do lado do cliente não baixa arquivo nenhum. */
+          <a
+            download
+            href="/api/exportar/custodia"
+            className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]"
+          >
+            Exportar custódia
+          </a>
+        }
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

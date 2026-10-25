@@ -418,7 +418,46 @@ try {
   }
 
   // ---------------------------------------------------------------------------
-  console.log('\n=== 11. As telas do módulo continuam atrás do login ===')
+  console.log('\n=== 11. A rota de exportação ===')
+  // ---------------------------------------------------------------------------
+  /*
+   * A exportação é gerada no SERVIDOR de propósito (LG-11), para o arquivo
+   * respeitar o escopo de RLS de quem pediu em vez de exportar as 50 linhas que o
+   * navegador carregou. Isso torna a rota um leitor de dados, e duas coisas
+   * precisam valer sempre:
+   *
+   *  - sem sessão, ela não entrega nada;
+   *  - `recurso` é chave de um catálogo fechado, nunca nome de tabela vindo da
+   *    URL — senão `/api/exportar/profiles` viraria um leitor genérico do banco.
+   */
+  {
+    const ctx = await b.newContext()
+    const req = ctx.request
+
+    for (const recurso of ['trilha', 'telefonia', 'custodia']) {
+      const r = await req.get(`${BASE}/api/exportar/${recurso}`, { maxRedirects: 0 })
+      ok(
+        r.status() === 307 || r.status() === 302 || r.status() === 401 || r.status() === 403,
+        `/api/exportar/${recurso} sem sessão não entrega o arquivo (veio ${r.status()})`,
+      )
+      const corpo = await r.text()
+      ok(!corpo.includes(';'), `e não devolve CSV nenhum para ${recurso}`)
+    }
+
+    // Nome de tabela na URL não vira exportação.
+    for (const invencao of ['profiles', 'tenants', 'ai_settings']) {
+      const r = await req.get(`${BASE}/api/exportar/${invencao}`, { maxRedirects: 0 })
+      ok(
+        r.status() !== 200,
+        `/api/exportar/${invencao} não é um recurso (veio ${r.status()})`,
+      )
+    }
+
+    await ctx.close()
+  }
+
+  // ---------------------------------------------------------------------------
+  console.log('\n=== 12. As telas do módulo continuam atrás do login ===')
   // ---------------------------------------------------------------------------
   // O contrário da seção 9: as ROTAS do agente são públicas, as TELAS não são.
   // Liberar o prefixo `/api/agent` no guarda de sessão não pode ter aberto o
@@ -435,6 +474,9 @@ try {
       '/conversas',
       '/conversas/canais',
       '/ia',
+      '/auditoria',
+      '/auditoria/trabalhos',
+      '/sla/horarios',
     ]) {
       await p.goto(BASE + rota, { waitUntil: 'networkidle' })
       ok(p.url().includes('/login'), `${rota}: visitante é mandado para o login`)

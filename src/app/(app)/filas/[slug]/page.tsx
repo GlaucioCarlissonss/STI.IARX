@@ -2,7 +2,9 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { escopoDeCliente, porClienteOuGeral } from '@/lib/data/escopo'
-import { requireScreen } from '@/lib/session'
+import { requireScreen, allowed } from '@/lib/session'
+import { getAgents } from '@/lib/data/lookups'
+import { MembrosDaFila, type Membro } from '../membros'
 import type { EnrichedTicket } from '@/lib/types'
 import { EmptyState, PageHeader } from '@/components/ui'
 import { TicketList } from '@/components/ticket-list'
@@ -20,6 +22,7 @@ export async function generateMetadata({
 export default async function FilaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   await requireScreen('helpdesk.filas.ver')
+  const podeEditar = await allowed('helpdesk.filas.editar')
   const supabase = await createClient()
 
   const { data: queue } = await supabase
@@ -30,6 +33,19 @@ export default async function FilaPage({ params }: { params: Promise<{ slug: str
     .maybeSingle()
 
   if (!queue) notFound()
+
+  /* `queue_members` estava no banco desde a 0004, com RLS e auditoria, e era a
+     última lacuna de interface que o roadmap (docs/06, M1) ainda marcava como
+     pendente: nenhuma tela jamais escreveu nela. */
+  const [{ data: membros }, atendentes] = await Promise.all([
+    supabase
+      .from('queue_members')
+      .select('queue_id, user_id, is_lead, pessoa:profiles(full_name, role)')
+      .eq('queue_id', queue.id)
+      .order('is_lead', { ascending: false })
+      .returns<Membro[]>(),
+    podeEditar ? getAgents() : Promise.resolve([]),
+  ])
 
   const { data: tickets } = await porClienteOuGeral(
     supabase
@@ -63,6 +79,17 @@ export default async function FilaPage({ params }: { params: Promise<{ slug: str
       ) : (
         <EmptyState title="Fila vazia" description="Nenhum ticket em aberto nesta fila." />
       )}
+
+      {/* A equipe vem DEPOIS da fila de chamados, e não antes: quem abre esta
+          tela no dia a dia veio trabalhar a fila, não administrá-la. */}
+      <div className="mt-6">
+        <MembrosDaFila
+          queueId={queue.id}
+          membros={membros ?? []}
+          candidatos={atendentes.map((a) => ({ id: a.id, full_name: a.full_name }))}
+          podeEditar={podeEditar}
+        />
+      </div>
     </>
   )
 }

@@ -12,6 +12,11 @@ import { CommentForm } from './comment-form'
 import { Attachments, type AttachmentRecord } from '@/components/attachments'
 import { SugestoesDaBase, type Sugestao } from './sugestoes'
 import { PainelDeIA, type SugestaoNaTela } from './painel-de-ia'
+import {
+  VinculosDoChamado,
+  type AtivoVinculado,
+  type LinhaVinculada,
+} from './vinculos'
 import { porQueNaoPosso } from '@/lib/ia/regras'
 import { EXPLICACAO_DA_INDISPONIBILIDADE, type ConfigDeIA } from '@/lib/ia/tipos'
 
@@ -51,6 +56,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
   /* Duas permissões, e a distinção tem uso: quem só tem `ver` lê as sugestões e
      o registro de quem aceitou o quê — auditoria — sem poder gastar dinheiro
      pedindo mais nem decidir no lugar de quem atende. */
+  const podeVincular = await allowed('helpdesk.tickets.vincular')
   const podeVerIA = await allowed('ia.sugestoes.ver')
   const podeUsarIA = await allowed('ia.sugestoes.usar')
 
@@ -65,6 +71,11 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
     { data: artigoExistente },
     { data: configDeIA },
     { data: sugestoesDeIA },
+    { data: ativosVinculados },
+    { data: linhasVinculadas },
+    { data: pausas },
+    { data: candidatosAtivos },
+    { data: candidatosLinhas },
   ] =
     await Promise.all([
       supabase
@@ -123,6 +134,67 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
             .limit(20)
             .returns<SugestaoNaTela[]>()
         : Promise.resolve({ data: [] }),
+      /* As duas tabelas de vínculo existem desde a 0004 e nenhuma tela jamais
+         escreveu nelas — o README afirmava "vínculo com tickets" desde a
+         primeira versão. */
+      supabase
+        .from('ticket_assets')
+        .select('asset_id, asset:it_assets(id, asset_tag, brand, model, asset_type, status)')
+        .eq('ticket_id', id)
+        .returns<AtivoVinculado[]>(),
+      supabase
+        .from('ticket_telecom_lines')
+        .select('line_id, line:telecom_lines(id, phone_number, carrier)')
+        .eq('ticket_id', id)
+        .returns<LinhaVinculada[]>(),
+      /* O histórico de pausa do relógio. A pausa é automática desde a 0006 (a
+         trigger abre quando o chamado entra em espera e fecha quando sai), e o
+         chamado mostrava só o distintivo "pausado" — sem dizer desde quando nem
+         por quê. */
+      supabase
+        .from('sla_pauses')
+        .select('id, reason, started_at, ended_at')
+        .eq('ticket_id', id)
+        .order('started_at', { ascending: false })
+        .limit(20)
+        .returns<{ id: string; reason: string; started_at: string; ended_at: string | null }[]>(),
+      /*
+       * Os candidatos a vínculo, restritos à FILIAL do chamado.
+       *
+       * `it_assets` e `telecom_lines` são por filial, não por cliente — e um
+       * ambiente com trinta filiais tem milhares de ativos. Oferecer todos num
+       * `select` seria uma lista inutilizável e um payload grande em cada
+       * abertura de chamado. Chamado sem filial não oferece nada, e a tela diz
+       * isso em vez de parecer quebrada.
+       */
+      isAgent && ticket.branch_id
+        ? supabase
+            .from('it_assets')
+            .select('id, asset_tag, brand, model, asset_type')
+            .eq('branch_id', ticket.branch_id)
+            .is('deleted_at', null)
+            .order('asset_tag', { nullsFirst: false })
+            .limit(300)
+            .returns<
+              {
+                id: string
+                asset_tag: string | null
+                brand: string | null
+                model: string | null
+                asset_type: string
+              }[]
+            >()
+        : Promise.resolve({ data: [] }),
+      isAgent && ticket.branch_id
+        ? supabase
+            .from('telecom_lines')
+            .select('id, phone_number')
+            .eq('branch_id', ticket.branch_id)
+            .is('deleted_at', null)
+            .order('phone_number')
+            .limit(300)
+            .returns<{ id: string; phone_number: string }[]>()
+        : Promise.resolve({ data: [] }),
     ])
 
   const allowedStatuses = (transitions ?? []).map((t) => t.to_status as EnrichedTicket['status'])
@@ -130,6 +202,13 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
      tipos gerados não a conhecem). O molde é o da própria função, e está
      declarado em `sugestoes.tsx`. */
   const sugestoes = (sugestoesBrutas ?? []) as unknown as Sugestao[]
+
+  /* O que já está vinculado sai da lista de candidatos: oferecer de novo daria
+     um erro de chave duplicada por um clique que a tela convidou a dar. */
+  const jaVinculados = new Set((ativosVinculados ?? []).map((a) => a.asset_id))
+  const jaVinculadas = new Set((linhasVinculadas ?? []).map((l) => l.line_id))
+  const ativosDisponiveis = (candidatosAtivos ?? []).filter((a) => !jaVinculados.has(a.id))
+  const linhasDisponiveis = (candidatosLinhas ?? []).filter((l) => !jaVinculadas.has(l.id))
 
   /* Por que a IA não está disponível — calculado no SERVIDOR, porque é aqui que
      dá para olhar `process.env` e saber se a variável nomeada na configuração
@@ -255,6 +334,21 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
             </div>
           </Card>
 
+          {/* Equipamento e linha logo depois dos comentários, e só para quem
+              atende: é durante o atendimento que se descobre de qual máquina o
+              problema é, e esse é o único instante em que marcar custa um
+              clique. */}
+          {isAgent && (
+            <VinculosDoChamado
+              ticketId={id}
+              ativos={ativosVinculados ?? []}
+              linhas={linhasVinculadas ?? []}
+              ativosDisponiveis={ativosDisponiveis}
+              linhasDisponiveis={linhasDisponiveis}
+              podeVincular={podeVincular}
+            />
+          )}
+
           {/* Até esta rodada `ticket_attachments` existia sem nenhum caminho de
               upload: anexar arquivo a um ticket era impossível. */}
           <Attachments
@@ -358,6 +452,46 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
                 </div>
               )}
             </dl>
+
+            {/*
+              Desde quando, e por quê.
+
+              A pausa é automática desde a migração 0006: a trigger abre quando o
+              chamado entra em estado de espera e fecha quando sai, creditando só
+              os minutos que caíram dentro do expediente. A tela mostrava o
+              distintivo "pausado" e o total — e não dizia DESDE QUANDO nem POR
+              QUÊ, que é o que alguém quer saber ao ver um prazo que não anda.
+
+              Não há botão de pausar: criar um segundo caminho brigaria com a
+              trigger pelo índice único de pausa aberta.
+            */}
+            {(pausas ?? []).length > 0 && (
+              <details className="mt-4 border-t border-[var(--color-border)] pt-3">
+                <summary className="cursor-pointer text-xs text-[var(--color-ink-2)]">
+                  {(pausas ?? []).length} pausa(s) do relógio
+                </summary>
+                <ul className="mt-2 flex flex-col gap-1.5">
+                  {(pausas ?? []).map((p) => (
+                    <li key={p.id} className="text-xs text-[var(--color-ink-2)]">
+                      <span className="font-medium text-[var(--color-ink)]">
+                        {ticketStatusLabel[p.reason as EnrichedTicket['status']] ?? p.reason}
+                      </span>
+                      <br />
+                      {formatDateTime(p.started_at)} →{' '}
+                      {p.ended_at ? (
+                        formatDateTime(p.ended_at)
+                      ) : (
+                        <span className="text-[var(--color-warn-ink)]">em aberto</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs text-[var(--color-ink-3)]">
+                  O relógio para sozinho quando o chamado entra em espera. Só conta como pausa o
+                  tempo que caiu dentro do expediente.
+                </p>
+              </details>
+            )}
           </Card>
 
           {isAgent && (

@@ -156,6 +156,20 @@ export default async function TelefoniaPage({
       <PageHeader
         title="Telefonia"
         description="Linhas móveis e fixas, com custo mensal por filial e operadora."
+        action={
+          /* Exportação pedida nominalmente pelo M6 do roadmap (LG-11). O arquivo
+             é montado no servidor, com as linhas que o RLS desta sessão enxerga —
+             e não as 50 da página visível. */
+          /* `<a download>`, e não `<Link>`: `/api/exportar/...` é um Route
+             Handler, e navegação do lado do cliente não baixa arquivo nenhum. */
+          <a
+            download
+            href="/api/exportar/telefonia"
+            className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]"
+          >
+            Exportar CSV
+          </a>
+        }
       />
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
