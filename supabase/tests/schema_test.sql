@@ -1744,8 +1744,15 @@ begin
     'bucket tem limite de 25 MB por arquivo');
   -- A mesma lista está em src/lib/storage.ts. Divergir faria a aplicação aceitar
   -- um arquivo que o bucket recusa depois de subir a rede toda.
-  perform app.assert(array_length(v_bucket.allowed_mime_types, 1) = 13,
-    'bucket declara os 13 tipos aceitos, iguais aos de src/lib/storage.ts');
+  perform app.assert(array_length(v_bucket.allowed_mime_types, 1) = 22,
+    'bucket declara os 22 tipos aceitos, iguais aos de src/lib/storage.ts');
+  /* Áudio de voz é o caso mais comum de relato por WhatsApp no Brasil — e era
+     justamente o que o bucket recusava, enquanto `ticket_attachments.kind`
+     aceitava "audio" desde a 0013. */
+  perform app.assert('audio/ogg' = any (v_bucket.allowed_mime_types),
+    'e aceita o áudio de voz do WhatsApp');
+  perform app.assert(not ('video/x-matroska' = any (v_bucket.allowed_mime_types)),
+    'mas não formato que o navegador não toca: aceitar o upload de um arquivo que a pessoa não consegue ouvir é prometer de novo o que não se cumpre');
   perform app.assert('application/pdf' = any (v_bucket.allowed_mime_types),
     'PDF está entre os tipos aceitos');
   perform app.assert(not ('application/x-msdownload' = any (v_bucket.allowed_mime_types)),

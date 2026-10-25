@@ -4,7 +4,12 @@ import { useState, useTransition } from 'react'
 import { ActionForm, SubmitButton } from './action-form'
 import { Field, inputClass } from './ui'
 import { attachFile, removeAttachment, signAttachmentUrl } from '@/app/(app)/anexos/actions'
-import { ALLOWED_MIME_TYPES, type AttachmentEntity, type AttachmentKind } from '@/lib/storage'
+import {
+  ALLOWED_MIME_TYPES,
+  tipoReproduzivel,
+  type AttachmentEntity,
+  type AttachmentKind,
+} from '@/lib/storage'
 import type { AttachmentRecord } from './attachments'
 
 const ACCEPT = ALLOWED_MIME_TYPES.join(',')
@@ -82,6 +87,18 @@ export function AttachmentRow({
 }) {
   const [erro, setErro] = useState<string | null>(null)
   const [abrindo, startTransition] = useTransition()
+  /*
+   * A URL do player mora em estado, e não no HTML renderizado — pelo MESMO
+   * motivo que o download é assinado no clique: o bucket é privado, a URL
+   * expira em 5 minutos, e deixá-la pronta na página a faria vazar por print,
+   * histórico ou página salva, inclusive de quem só abriu a tela e não ouviu
+   * nada.
+   *
+   * O preço é um clique a mais antes de tocar. É o preço certo.
+   */
+  const [tocando, setTocando] = useState<string | null>(null)
+  const [preparando, prepararTransition] = useTransition()
+  const reproduzivel = tipoReproduzivel(record.mime_type)
 
   /*
    * O download passa por URL assinada pedida no clique, não por link pronto na
@@ -101,6 +118,18 @@ export function AttachmentRow({
     })
   }
 
+  function tocar() {
+    setErro(null)
+    prepararTransition(async () => {
+      const r = await signAttachmentUrl(entity, record.storage_path)
+      if ('error' in r) {
+        setErro(r.error)
+        return
+      }
+      setTocando(r.url)
+    })
+  }
+
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-[var(--color-surface-2)] px-3 py-2">
       <button
@@ -117,6 +146,17 @@ export function AttachmentRow({
         {typeLabel} · {sizeLabel} · {dateLabel}
       </span>
 
+      {reproduzivel && !tocando && (
+        <button
+          type="button"
+          onClick={tocar}
+          disabled={preparando}
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-ink-2)] hover:bg-[var(--color-surface-2)] disabled:opacity-60"
+        >
+          {preparando ? 'Preparando…' : reproduzivel === 'audio' ? 'Ouvir aqui' : 'Ver aqui'}
+        </button>
+      )}
+
       {canRemove && (
         <ActionForm action={removeAttachment}>
           <input type="hidden" name="entity" value={entity} />
@@ -125,6 +165,26 @@ export function AttachmentRow({
             Remover
           </SubmitButton>
         </ActionForm>
+      )}
+
+      {tocando && (
+        <div className="w-full pt-2">
+          {reproduzivel === 'audio' ? (
+            /* `preload="none"`: o arquivo só é baixado quando a pessoa aperta
+               play. Numa lista com cinco áudios, pré-carregar todos custaria
+               cinco downloads para ouvir um. */
+            <audio src={tocando} controls preload="none" className="w-full">
+              <track kind="captions" />
+            </audio>
+          ) : (
+            <video src={tocando} controls preload="none" className="max-h-80 w-full rounded-lg">
+              <track kind="captions" />
+            </video>
+          )}
+          <p className="mt-1 text-xs text-[var(--color-ink-3)]">
+            O endereço vale por cinco minutos. Depois disso, é só clicar de novo.
+          </p>
+        </div>
       )}
 
       {erro && (

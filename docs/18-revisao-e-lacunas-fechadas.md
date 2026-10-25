@@ -258,6 +258,22 @@ bash scripts/validate-migrations.sh && python3 scripts/conferir-colunas.py
 > cria o `sla_tracking`, porque triggers do mesmo evento disparam em ordem
 > alfabética.
 
+> **M5 fechou na migração 0044**, e a justificativa que estava aqui ("o
+> navegador já abre o arquivo") estava errada pela metade: **o navegador não
+> abre o que nunca foi aceito no upload.** `ticket_attachments.kind` aceitava
+> 'audio' e 'video' desde a 0013; o bucket, a validação do formulário e a lista
+> de tipos permitidos não aceitavam nenhum dos dois. Eram dois valores de coluna
+> sem caminho nenhum para chegar lá.
+>
+> Deixou de ser cosmético quando a Onda 5 trouxe os canais: num canal de
+> WhatsApp, "gravei um áudio explicando" é a forma mais comum de relato em
+> suporte no Brasil. Receber esse áudio e não poder guardá-lo faria a informação
+> se perder entre a conversa e o chamado.
+>
+> O player assina a URL **no clique**, como o download já fazia: o bucket é
+> privado, a URL expira em cinco minutos, e deixá-la pronta no HTML a faria
+> vazar por print ou página salva.
+
 Nada aqui é "falta de tempo" — cada um tem um motivo.
 
 | Pendência | Por que continua aberta |
@@ -267,7 +283,6 @@ Nada aqui é "falta de tempo" — cada um tem um motivo.
 | **Chat (portal e chatbot)** | Quarta superfície de atendimento, e a única que exige presença. Chat sem ninguém do outro lado promete resposta imediata e não entrega |
 | **Embeddings / semelhança semântica** | Dependência nova para melhorar um passo que não é o gargalo. O gargalo é a base ter poucos artigos |
 | **PDF/XLSX** | Duas bibliotecas por um formato que, hoje, ninguém pediu nominalmente |
-| **Player de áudio e vídeo em anexo (M5)** | Cosmético, e o navegador já abre o arquivo |
 | **LG-01 (dado sensível de saúde), LG-03 (antivírus), LG-10 (pausa configurável), LG-13 (área em tickets)** | São **decisões pendentes**, não código pendente. Cada uma precisa de uma resposta do cliente antes de virar implementação |
 
 E, antes de tudo isso, continuam de pé os três passos de

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ALLOWED_MIME_TYPES,
+  tipoReproduzivel,
   ATTACHMENT_ENTITIES,
   ATTACHMENT_TARGETS,
   MAX_FILE_BYTES,
@@ -179,5 +180,50 @@ describe('rótulos', () => {
     expect(formatBytes(512)).toBe('512 B')
     expect(formatBytes(2048)).toBe('2 KB')
     expect(formatBytes(5_242_880)).toBe('5.0 MB')
+  })
+})
+
+describe('tipoReproduzivel', () => {
+  it('reconhece o áudio de voz do WhatsApp', () => {
+    // É o caso mais comum de relato em suporte no Brasil, e era exatamente o
+    // que o bucket recusava até a 0044.
+    expect(tipoReproduzivel('audio/ogg')).toBe('audio')
+    expect(tipoReproduzivel('audio/opus')).toBe('audio')
+  })
+
+  it('reconhece vídeo de celular', () => {
+    expect(tipoReproduzivel('video/mp4')).toBe('video')
+    expect(tipoReproduzivel('video/quicktime')).toBe('video')
+  })
+
+  it('ignora o parâmetro de codec que o navegador acrescenta', () => {
+    // `audio/ogg; codecs=opus` é o que chega de um MediaRecorder. Comparar a
+    // string inteira faria o botão "Ouvir aqui" sumir justamente no arquivo
+    // gravado pelo navegador.
+    expect(tipoReproduzivel('audio/ogg; codecs=opus')).toBe('audio')
+    expect(tipoReproduzivel('VIDEO/MP4')).toBe('video')
+  })
+
+  it('devolve nulo para o que o navegador não toca', () => {
+    /*
+     * Um botão "Tocar" num arquivo que o navegador não sabe abrir é promessa
+     * falsa: o elemento <audio> falha em SILÊNCIO, sem mensagem nenhuma, e a
+     * pessoa fica olhando um player vazio.
+     */
+    expect(tipoReproduzivel('video/x-matroska')).toBeNull()
+    expect(tipoReproduzivel('application/pdf')).toBeNull()
+    expect(tipoReproduzivel(null)).toBeNull()
+    expect(tipoReproduzivel('')).toBeNull()
+  })
+
+  it('todo tipo de áudio e vídeo aceito no upload é reproduzível', () => {
+    // A lista do formulário e a do player não podem divergir: aceitar um
+    // upload que depois não toca é o defeito que esta função existe para
+    // evitar, invertido.
+    for (const mime of ALLOWED_MIME_TYPES) {
+      if (mime.startsWith('audio/') || mime.startsWith('video/')) {
+        expect(tipoReproduzivel(mime)).not.toBeNull()
+      }
+    }
   })
 })

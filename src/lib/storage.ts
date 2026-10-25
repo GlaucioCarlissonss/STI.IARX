@@ -49,6 +49,20 @@ export const ALLOWED_MIME_TYPES = [
   'application/msword',
   'text/plain',
   'text/csv',
+  /* Áudio e vídeo (0044). A lista é a MESMA do bucket, e a duplicação é
+     deliberada: esta recusa o arquivo antes do upload, com mensagem em
+     português; a do bucket é a garantia, e vale para qualquer caminho que não
+     passe por este formulário. Divergir faz a pessoa escolher um arquivo,
+     esperar o upload e receber um erro do Storage. */
+  'audio/ogg',
+  'audio/opus',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/wav',
+  'audio/webm',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
 ] as const
 
 /** Segundos de validade da URL assinada. */
@@ -130,9 +144,28 @@ export function validateFile(file: { size: number; type: string; name: string })
 }
 
 /** Rótulo curto para o tipo, para a lista de anexos não mostrar MIME cru. */
+/**
+ * O anexo toca na própria tela?
+ *
+ * Só para o que o navegador reproduz sem plugin. Mostrar um botão "Tocar" num
+ * arquivo que o navegador não sabe abrir é a mesma promessa falsa de sempre: a
+ * pessoa clica, o player aparece vazio, e não há mensagem nenhuma — o elemento
+ * `<audio>` falha em silêncio por natureza.
+ */
+export function tipoReproduzivel(mime: string | null): 'audio' | 'video' | null {
+  if (!mime) return null
+  const limpo = mime.split(';')[0]!.trim().toLowerCase()
+  if (['audio/ogg', 'audio/opus', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm'].includes(limpo))
+    return 'audio'
+  if (['video/mp4', 'video/webm', 'video/quicktime'].includes(limpo)) return 'video'
+  return null
+}
+
 export function fileKindLabel(mime: string | null): string {
   if (!mime) return 'arquivo'
   if (mime === 'application/pdf') return 'PDF'
+  if (mime.startsWith('audio/')) return 'áudio'
+  if (mime.startsWith('video/')) return 'vídeo'
   if (mime.startsWith('image/')) return 'imagem'
   if (mime.includes('spreadsheet') || mime.includes('excel') || mime === 'text/csv') return 'planilha'
   if (mime.includes('word')) return 'documento'
