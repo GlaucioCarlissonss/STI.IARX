@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-83 tabelas e 28 views em `public`, com 202 policies de RLS, mais 3 policies em
+88 tabelas e 30 views em `public`, com 212 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
@@ -600,6 +600,46 @@ Primeiro módulo trazido do GSTI.IARX. Três tabelas e duas views.
   exigir papel de gestor para dizer "terminei" faria o cronograma envelhecer no
   gargalo de quem o administra.
 
+### Orçamento de TI (0038)
+Segundo módulo do GSTI.IARX. Cinco tabelas e duas views — e, diferente de
+projetos, ele **lê o que já existe** em vez de duplicar.
+
+| Tabela | Papel |
+|---|---|
+| `it_cost_entries` | O custo por competência. Natureza, classificação, cenário e **origem** |
+| `it_cost_beneficiaries` | Quais filiais consomem o que outra paga. Lista congelada na gravação |
+| `it_budget_closings` | Competências fechadas. A linha não some ao reabrir |
+| `it_budget_scenarios` | `oficial` mais as projeções alternativas |
+| `it_budget_targets` | Teto de gasto mensal |
+
+**Decisões que valem registro:**
+
+- **`payables` e `it_cost_entries` não somam.** Um título vira lançamento uma
+  vez só, por índice único parcial em `payable_id`. `orcamento_importar_titulos()`
+  é idempotente de propósito: quem importa não tem como saber se já importou.
+
+- **A competência é o mês a que a despesa PERTENCE**, não o mês em que ela é
+  paga. É a diferença inteira entre este módulo e contas a pagar.
+
+- **`trg_entry_fechamento` recusa com exceção, não com zero linhas.** Todo o
+  resto desta base trata negação como ausência de linha; aqui isso seria lido
+  como "não encontrei". O fechamento é uma afirmação sobre o mês, não uma
+  questão de permissão. Ela cobre inserir, alterar, excluir **e mover para
+  dentro** — o quarto é o que alguém tentaria para contornar os três primeiros.
+
+- **`app.ratear_valor()` fecha exatamente no total.** 100,00 em 3 é
+  33,34 + 33,33 + 33,33. Um centavo por contrato, em cem contratos, é erro que
+  só aparece quando o cliente confere a planilha contra a nota.
+
+- **`numeric(14,2)`, e não centavos inteiros.** O motivo do GSTI é do SQLite,
+  que não tem decimal exato. O PostgreSQL tem, e é o tipo que `payables.amount`
+  já usa — somar um lançamento contra um título sem conversão é o que evita
+  perder o centavo na fronteira.
+
+- **As nove categorias de despesa passaram a existir.** `expense_categories`
+  está no banco desde a 0018 e **nunca teve uma linha**: sem seed e sem tela, o
+  campo "Categoria" do título a pagar sempre teve uma opção só, a vazia.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -682,7 +722,7 @@ em alguns perfis e fosse esquecida em outros.
 | `trg_protect_default_queue` | `queues` | protege a fila padrão |
 | `trg_assets_history` | `it_assets` | gera eventos de lifecycle |
 | `trg_profiles_no_escalation` | `profiles` | bloqueia auto-promoção de papel |
-| `trg_*_audit` | 47 tabelas | auditoria global |
+| `trg_*_audit` | 50 tabelas | auditoria global |
 | `trg_branches_geocode_staleness` | `branches` | invalida a coordenada quando o endereço muda |
 | `trg_tenants_seed_access_profiles` | `tenants` | cria os 9 perfis do sistema no nascimento do tenant |
 | `trg_profiles_default_access_profile` | `profiles` | atribui o perfil correspondente ao papel |

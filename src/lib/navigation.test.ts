@@ -102,6 +102,7 @@ describe('visibleNavGroups', () => {
       'Contas bancárias',
       'Centros de custo',
       'Fluxo de caixa',
+      'Orçamento de TI',
     ])
   })
 })

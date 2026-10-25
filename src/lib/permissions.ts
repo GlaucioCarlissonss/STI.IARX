@@ -432,6 +432,18 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   scr('financeiro', 'fluxo_caixa', 'Fluxo de caixa', 'gestor'),
   act('financeiro', 'fluxo_caixa', 'ver', 'Consultar a projeção', 'gestor'),
 
+  /* O orçamento de TI, trazido do GSTI.IARX. Fica em `financeiro` porque é
+     dinheiro, e não num módulo próprio — mas responde outra pergunta que os
+     títulos: `payables` diz QUANDO eu pago, o orçamento diz QUANTO a TI custa
+     por mês, por filial e por categoria. Os dois não somam: um título vira
+     lançamento uma vez só, por índice único em `payable_id`. */
+  scr('financeiro', 'orcamento', 'Orçamento de TI', 'gestor'),
+  act('financeiro', 'orcamento', 'ver', 'Consultar o orçamento de TI', 'gestor'),
+  act('financeiro', 'orcamento', 'lancar', 'Lançar custo e importar títulos', 'gestor'),
+  /* Fechar é chave PRÓPRIA: quem lança não decide quando o mês para de aceitar
+     lançamento, e é o fechamento que dá sentido a um número divulgado. */
+  act('financeiro', 'orcamento', 'fechar', 'Fechar e reabrir competência', 'gestor'),
+
   /* --- Usuários e acesso ------------------------------------------------- */
   mod('usuarios', 'gestor'),
   scr('usuarios', 'usuarios', 'Usuários', 'gestor'),

@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 197,
-    'catálogo de permissões tem as 197 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 201,
+    'catálogo de permissões tem as 201 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 197,
+  perform app.assert((select count(*) from public.permission_catalog) = 201,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -7188,6 +7188,321 @@ begin
     'tenant 2 não vê projeto do tenant 1');
   perform app.assert((select count(*) from public.vw_project_tasks) = 0,
     'nem as tarefas');
+end
+$$;
+reset role;
+
+-- =============================================================================
+\echo '=== 42. Orçamento de TI (0038) ==='
+-- =============================================================================
+reset role;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+-- Este módulo não é contas a pagar: ele responde quanto a TI CUSTA por
+-- competência. O que se testa aqui é exatamente o que separa os dois — a trava
+-- do mês fechado, a idempotência da importação (que impede a dupla contagem) e o
+-- rateio que fecha na conta.
+
+-- -----------------------------------------------------------------------------
+-- 42.1 Todo cliente nasce com o cenário oficial
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  /* `scenario_id` é NOT NULL de propósito: um lançamento sem cenário entraria em
+     todos os relatórios e em nenhum. Sem o cenário nascendo junto do cliente,
+     não haveria onde lançar. */
+  perform app.assert(
+    (select count(*) from public.it_budget_scenarios s
+      join public.clients c on c.id = s.client_id
+     where c.tenant_id = v_t and s.key = 'oficial') > 0,
+    'todo cliente nasce com o cenário oficial — sem ele não há onde lançar');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 42.2 O rateio fecha exatamente no total
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_partes numeric[];
+  v_soma   numeric;
+  v_total  numeric;
+  v_n      integer;
+begin
+  /*
+   * Um centavo de diferença por contrato, em cem contratos, é o tipo de erro que
+   * ninguém encontra depois — aparece quando o cliente confere a planilha contra
+   * a nota. O caso que quebra nunca é 100 em 2; é 1.000,01 em 7.
+   */
+  foreach v_total in array array[100, 100.01, 0.03, 1000.01, 1234.56, 9999.99]::numeric[] loop
+    foreach v_n in array array[1, 2, 3, 7, 11, 12, 13, 24, 36] loop
+      v_partes := app.ratear_valor(v_total, v_n);
+      select sum(x) into v_soma from unnest(v_partes) x;
+      perform app.assert(v_soma = v_total,
+        format('o rateio de %s em %s parcelas fecha exatamente', v_total, v_n));
+      perform app.assert(array_length(v_partes, 1) = v_n, 'e devolve o número de parcelas pedido');
+    end loop;
+  end loop;
+
+  -- O resto vai nas PRIMEIRAS, que é a convenção comercial brasileira.
+  perform app.assert(app.ratear_valor(100, 3) = array[33.34, 33.33, 33.33]::numeric[],
+    '100 em 3 é 33,34 + 33,33 + 33,33 — o resto nas primeiras');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 42.3 A trava do mês fechado
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c    uuid;
+  v_cen  uuid;
+  v_cat  uuid;
+  v_e    uuid;
+  v_f    uuid;
+  v_comp date := '2026-05-01';
+  v_erro boolean := false;
+begin
+  select id into v_c from public.clients where tenant_id = v_t and deleted_at is null limit 1;
+  select id into v_cen from public.it_budget_scenarios where client_id = v_c and key = 'oficial';
+  select id into v_cat from public.expense_categories where tenant_id = v_t and is_active limit 1;
+
+  delete from public.it_budget_closings where client_id = v_c;
+  delete from public.it_cost_entries where tenant_id = v_t;
+
+  insert into public.it_cost_entries
+    (tenant_id, client_id, expense_category_id, scenario_id, competence, amount,
+     natureza, classificacao)
+  values (v_t, v_c, v_cat, v_cen, v_comp, 1000.00, 'pontual_unica', 'despesa')
+  returning id into v_e;
+  perform app.assert(true, 'com a competência aberta, o lançamento entra');
+
+  insert into public.it_budget_closings (tenant_id, client_id, competence)
+  values (v_t, v_c, v_comp) returning id into v_f;
+
+  perform app.assert(app.competencia_fechada(v_c, v_comp), 'a competência fica fechada');
+
+  /*
+   * Fechada, ela recusa QUALQUER escrita — e recusa com exceção, não com
+   * silêncio. Todo o resto desta base trata negação como zero linhas, e zero
+   * linhas aqui seria lido como "não encontrei". O fechamento não é questão de
+   * permissão: é uma afirmação sobre o mês.
+   */
+  begin
+    insert into public.it_cost_entries
+      (tenant_id, client_id, expense_category_id, scenario_id, competence, amount,
+       natureza, classificacao)
+    values (v_t, v_c, v_cat, v_cen, v_comp, 50.00, 'pontual_unica', 'despesa');
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'competência fechada recusa INSERÇÃO');
+
+  v_erro := false;
+  begin
+    update public.it_cost_entries set amount = 2000.00 where id = v_e;
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'e recusa ALTERAÇÃO');
+
+  v_erro := false;
+  begin
+    delete from public.it_cost_entries where id = v_e;
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'e recusa EXCLUSÃO');
+
+  /* Mover um lançamento PARA dentro do mês fechado é a mesma coisa que escrever
+     nele — e seria o jeito óbvio de contornar a trava. */
+  v_erro := false;
+  begin
+    insert into public.it_cost_entries
+      (tenant_id, client_id, expense_category_id, scenario_id, competence, amount,
+       natureza, classificacao)
+    values (v_t, v_c, v_cat, v_cen, '2026-06-01', 70.00, 'pontual_unica', 'despesa');
+    update public.it_cost_entries set competence = v_comp
+     where competence = '2026-06-01' and amount = 70.00;
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'e recusa MOVER um lançamento para dentro dela');
+
+  /* Reaberta, volta a aceitar — e a linha do fechamento NÃO some: "este mês já
+     esteve fechado?" precisa ter resposta. */
+  update public.it_budget_closings
+     set reopened_at = now(), reopened_by = '22220000-0000-4000-8000-000000000001',
+         reopen_reason = 'Nota fiscal atrasada'
+   where id = v_f;
+  perform app.assert(not app.competencia_fechada(v_c, v_comp), 'reaberta, a competência aceita de novo');
+  update public.it_cost_entries set amount = 2000.00 where id = v_e;
+  perform app.assert(
+    (select amount from public.it_cost_entries where id = v_e) = 2000.00,
+    'e a alteração passa');
+  perform app.assert(
+    (select count(*) from public.it_budget_closings where id = v_f) = 1,
+    'a linha do fechamento fica: "este mês já esteve fechado?" precisa ter resposta');
+
+  -- Reabrir sem motivo é recusado.
+  v_erro := false;
+  begin
+    update public.it_budget_closings
+       set reopened_at = now(), reopened_by = null, reopen_reason = null
+     where id = v_f;
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'reabrir sem motivo é recusado: a causa é o que alguém vai querer saber');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 42.4 Um título vira lançamento UMA VEZ — a trava da dupla contagem
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c      uuid;
+  v_cen    uuid;
+  v_cat    uuid;
+  v_pay    uuid;
+  v_erro   boolean := false;
+begin
+  select id into v_c from public.clients where tenant_id = v_t and deleted_at is null limit 1;
+  select id into v_cen from public.it_budget_scenarios where client_id = v_c and key = 'oficial';
+  select id into v_cat from public.expense_categories where tenant_id = v_t and is_active limit 1;
+  select id into v_pay from public.payables where tenant_id = v_t and deleted_at is null limit 1;
+
+  delete from public.it_budget_closings where client_id = v_c;
+  delete from public.it_cost_entries where tenant_id = v_t;
+
+  insert into public.it_cost_entries
+    (tenant_id, client_id, expense_category_id, scenario_id, competence, amount,
+     natureza, classificacao, origem, payable_id)
+  values (v_t, v_c, v_cat, v_cen, '2026-07-01', 500.00, 'pontual_unica', 'despesa',
+          'titulo_a_pagar', v_pay);
+
+  /*
+   * A trava que impede a segunda verdade sobre o mesmo dinheiro. Sem ela, rodar
+   * a importação duas vezes dobraria o custo do mês — e quem importa não tem
+   * como saber se já importou.
+   */
+  begin
+    insert into public.it_cost_entries
+      (tenant_id, client_id, expense_category_id, scenario_id, competence, amount,
+       natureza, classificacao, origem, payable_id)
+    values (v_t, v_c, v_cat, v_cen, '2026-07-01', 500.00, 'pontual_unica', 'despesa',
+            'titulo_a_pagar', v_pay);
+  exception when unique_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'o mesmo título não vira dois lançamentos: é o que impede a dupla contagem');
+
+  -- Origem `titulo_a_pagar` sem o título é recusada: a procedência seria uma
+  -- afirmação sem como conferir.
+  v_erro := false;
+  begin
+    insert into public.it_cost_entries
+      (tenant_id, client_id, expense_category_id, scenario_id, competence, amount,
+       natureza, classificacao, origem)
+    values (v_t, v_c, v_cat, v_cen, '2026-07-01', 10.00, 'pontual_unica', 'despesa',
+            'titulo_a_pagar');
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'e origem "título a pagar" exige o título');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 42.5 Parcelada exige o total de parcelas
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c    uuid;
+  v_cen  uuid;
+  v_cat  uuid;
+  v_erro boolean := false;
+begin
+  select id into v_c from public.clients where tenant_id = v_t and deleted_at is null limit 1;
+  select id into v_cen from public.it_budget_scenarios where client_id = v_c and key = 'oficial';
+  select id into v_cat from public.expense_categories where tenant_id = v_t and is_active limit 1;
+
+  begin
+    insert into public.it_cost_entries
+      (tenant_id, client_id, expense_category_id, scenario_id, competence, amount,
+       natureza, classificacao)
+    values (v_t, v_c, v_cat, v_cen, '2026-08-01', 120.00, 'pontual_parcelada', 'despesa');
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'parcelada sem total de parcelas é recusada: "parcelada" seria um rótulo e a série não existiria');
+
+  -- E a parcela não passa do total.
+  v_erro := false;
+  begin
+    insert into public.it_cost_entries
+      (tenant_id, client_id, expense_category_id, scenario_id, competence, amount,
+       natureza, classificacao, installment_number, installment_total)
+    values (v_t, v_c, v_cat, v_cen, '2026-08-01', 10.00, 'pontual_parcelada', 'despesa', 5, 3);
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'e a parcela 5 de 3 é recusada');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 42.6 Quem pode o quê
+-- -----------------------------------------------------------------------------
+set role rls_tester;
+
+-- Jorge Lima é gestor de TI: responde pelo custo da TI, não pelos títulos.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('financeiro.orcamento.ver'),
+    'gestor de TI vê o orçamento: quem responde pelo custo da TI é ele');
+  perform app.assert(app.has_permission('financeiro.orcamento.lancar'), 'e lança');
+  perform app.assert(app.has_permission('financeiro.orcamento.fechar'), 'e fecha a competência');
+  /* Mas o resto do financeiro continua sendo de quem paga. */
+  perform app.assert(not app.has_permission('financeiro.titulos_pagar.ver'),
+    'e NÃO vê os títulos a pagar: isso é de quem paga');
+  perform app.assert((select count(*) from public.vw_it_cost_entries) >= 0,
+    'e a view do orçamento responde para ele');
+end
+$$;
+
+-- Ana Souza é operadora de TI: não vê orçamento nenhum.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(not app.has_permission('financeiro.orcamento.ver'),
+    'operadora de TI não vê o orçamento');
+  perform app.assert((select count(*) from public.it_cost_entries) = 0,
+    'e a tabela devolve zero linhas para ela');
+end
+$$;
+
+-- Tenant 2 não vê o orçamento do tenant 1.
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert(
+    (select count(*) from public.it_cost_entries
+      where tenant_id = 'a0000000-0000-4000-8000-000000000001') = 0,
+    'tenant 2 não vê o orçamento do tenant 1');
+  perform app.assert(
+    (select count(*) from public.it_budget_closings
+      where tenant_id = 'a0000000-0000-4000-8000-000000000001') = 0,
+    'nem os fechamentos');
 end
 $$;
 reset role;

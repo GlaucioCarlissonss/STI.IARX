@@ -205,11 +205,14 @@ só acrescentaria um cabeçalho e nada mais.
 
 ---
 
-## 7. O que vem a seguir
+## 7. O que veio a seguir
 
-O módulo financeiro de gestão: competência, natureza (fixa / pontual / parcelada),
-classificação (despesa / investimento), cenários de projeção, fechamento mensal e
-metas — **lendo `payables` como uma das origens**, em vez de criar uma segunda
-verdade sobre o mesmo dinheiro. O campo `origem` do GSTI já antecipa exatamente
-isso: ele distingue planilha, manual e projeção, e "título a pagar" é a quarta
-origem natural.
+O módulo financeiro de gestão, em [docs/20](20-orcamento-de-ti.md): competência,
+natureza (fixa / pontual / parcelada), classificação (despesa / investimento),
+cenários, fechamento mensal e metas — **lendo `payables` como uma das origens**,
+em vez de criar uma segunda verdade sobre o mesmo dinheiro.
+
+Com ele, os três módulos do GSTI.IARX estão decididos: projetos veio inteiro,
+financeiro veio como camada de planejamento sobre o que já existia, e o de SLA
+não entra — esta base calcula a conformidade de chamado em chamado, e um
+agregado digitado competiria com um número derivado.

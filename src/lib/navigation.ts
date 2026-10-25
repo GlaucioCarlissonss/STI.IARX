@@ -137,6 +137,14 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         label: 'Fluxo de caixa',
         permission: 'financeiro.fluxo_caixa.ver',
       },
+      /* O orçamento de TI, vindo do GSTI.IARX. Fica no grupo Financeiro porque é
+         dinheiro, mas responde outra pergunta que os títulos: eles dizem QUANDO
+         eu pago, ele diz QUANTO a TI custa por mês. Os dois não somam. */
+      {
+        href: '/financeiro/orcamento',
+        label: 'Orçamento de TI',
+        permission: 'financeiro.orcamento.ver',
+      },
     ],
   },
   {
