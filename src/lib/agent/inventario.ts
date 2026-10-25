@@ -45,11 +45,27 @@ export const sistemaSchema = z.object({
   service_tag: textoCurto.optional(),
   dominio: textoCurto.optional(),
   usuario_logado: textoCurto.optional(),
-  /* Em segundos. Fica no inventário e não nas métricas porque "esta máquina está
-     ligada há 240 dias" é um fato de configuração (ninguém reinicia, então ninguém
-     aplica atualização), não uma amostra de desempenho. */
-  tempo_ligado_s: z.number().int().nonnegative().optional(),
 })
+
+/*
+ * O TEMPO LIGADO NÃO ESTÁ NO INVENTÁRIO, e a ausência custou um defeito para ser
+ * descoberta.
+ *
+ * A primeira versão o tinha, com a justificativa de que "esta máquina está ligada
+ * há 240 dias" é um fato de configuração (ninguém reinicia, então ninguém aplica
+ * atualização) e não uma amostra de desempenho. O raciocínio sobre o SIGNIFICADO
+ * estava certo; sobre a MECÂNICA, errado: o número muda a cada segundo, e o
+ * inventário inteiro é hasheado para decidir se mudou.
+ *
+ * O efeito era silencioso e total: toda coleta produzia um hash diferente, então
+ * toda coleta virava um snapshot novo — e o histórico de "o que mudou nesta
+ * máquina?" teria 365 linhas idênticas por ano, por máquina.
+ *
+ * Ele vive em `agent_metrics_raw.uptime_s`, na série temporal, que é onde um
+ * número que muda sempre pertence. O schema continua ACEITANDO o campo e
+ * descartando-o (`strip` é o padrão do zod), para que um agente de versão antiga
+ * numa frota misturada não volte a desestabilizar o hash.
+ */
 
 export const memoriaSchema = z.object({
   total_bytes: z.number().int().nonnegative().optional(),

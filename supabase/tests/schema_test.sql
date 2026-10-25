@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 158,
-    'catálogo de permissões tem as 158 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 166,
+    'catálogo de permissões tem as 166 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 158,
+  perform app.assert((select count(*) from public.permission_catalog) = 166,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -5210,6 +5210,536 @@ begin
   get diagnostics v_n = row_count;
   perform app.assert(v_n = 0,
     'e não fecha alerta à mão: a negação do RLS chega como zero linhas, não como erro');
+end
+$$;
+reset role;
+
+-- =============================================================================
+\echo '=== 37. Autoatendimento: base, catálogo e preço por cliente (0033) ==='
+-- =============================================================================
+reset role;
+
+-- Duas coisas aqui erram de um jeito que não dá erro: um artigo interno visível
+-- para o cliente (vazamento), e um preço mostrado diferente do cobrado (problema
+-- comercial). Nenhuma das duas aparece em teste de tela.
+
+-- -----------------------------------------------------------------------------
+-- 37.1 A busca ignora acento
+-- -----------------------------------------------------------------------------
+-- Metade de quem digita numa caixa de busca não põe acento. Sem `unaccent`,
+-- "manutencao" não acha "manutenção" — e quem não acha abre um chamado, que é
+-- exatamente o que a base existe para evitar.
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_cat uuid;
+  v_art uuid;
+begin
+  delete from public.kb_articles where tenant_id = v_t;
+
+  select id into v_cat from public.ticket_categories where tenant_id = v_t limit 1;
+
+  insert into public.kb_articles
+    (tenant_id, title, resumo, body, category_id, status, visibilidade, published_at)
+  values (v_t, 'Manutenção preventiva da impressora',
+          'Como limpar o cabeçote sem danificar o equipamento',
+          'Abra a tampa, remova o cartucho e limpe o cabeçote com álcool isopropílico.',
+          v_cat, 'publicado', 'solicitante', now())
+  returning id into v_art;
+
+  perform app.assert(
+    (select count(*) from public.kb_articles
+      where search_vector @@ websearch_to_tsquery('public.portugues_sem_acento', 'manutencao')) = 1,
+    'procurar sem acento acha o artigo com acento');
+  perform app.assert(
+    (select count(*) from public.kb_articles
+      where search_vector @@ websearch_to_tsquery('public.portugues_sem_acento', 'MANUTENÇÃO')) = 1,
+    'e com acento e em caixa alta também');
+  perform app.assert(
+    (select count(*) from public.kb_articles
+      where search_vector @@ websearch_to_tsquery('public.portugues_sem_acento', 'impressoras')) = 1,
+    'o radical em português casa o plural com o singular');
+  perform app.assert(
+    (select count(*) from public.kb_articles
+      where search_vector @@ websearch_to_tsquery('public.portugues_sem_acento', 'roteador')) = 0,
+    'e não acha o que não está lá');
+
+  -- O peso: o título vale mais que o corpo. Sem isso, um artigo que menciona a
+  -- palavra de passagem no corpo venceria o que a tem no título.
+  insert into public.kb_articles
+    (tenant_id, title, resumo, body, status, visibilidade, published_at)
+  values (v_t, 'Configuração de rede',
+          'Passo a passo',
+          'Em caso de dúvida, consulte o artigo sobre impressora.',
+          'publicado', 'solicitante', now());
+
+  perform app.assert(
+    (select a.id from public.kb_articles a
+      where a.search_vector @@ websearch_to_tsquery('public.portugues_sem_acento', 'impressora')
+      order by ts_rank(a.search_vector,
+                       websearch_to_tsquery('public.portugues_sem_acento', 'impressora')) desc
+      limit 1) = v_art,
+    'o artigo com a palavra no TÍTULO ganha do que só a cita no corpo');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 37.2 Publicado precisa de data
+-- -----------------------------------------------------------------------------
+-- Sem a data não dá para ordenar por "mais recente", que é a ordenação da lista.
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_erro boolean := false;
+begin
+  begin
+    insert into public.kb_articles (tenant_id, title, body, status)
+    values (v_t, 'Sem data', 'corpo suficiente', 'publicado');
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'artigo publicado sem data de publicação é recusado');
+
+  -- Rascunho sem data é normal: ele ainda não foi publicado.
+  insert into public.kb_articles (tenant_id, title, body, status)
+  values (v_t, 'Rascunho legítimo', 'corpo suficiente', 'rascunho');
+  perform app.assert(true, 'rascunho sem data é aceito — ele não foi publicado');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 37.3 O rascunho a partir do chamado resolvido
+-- -----------------------------------------------------------------------------
+-- É a peça central da migração: bases de conhecimento morrem porque ninguém
+-- escreve, e o único instante em que escrever custa pouco é logo depois de
+-- resolver.
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_user   uuid := '22220000-0000-4000-8000-000000000002';
+  v_fila   uuid;
+  v_prio   uuid;
+  v_cat    uuid;
+  v_ticket uuid;
+  v_r      record;
+begin
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+  select id into v_cat  from public.ticket_categories where tenant_id = v_t limit 1;
+
+  insert into public.tickets
+    (tenant_id, title, description, status, priority_id, queue_id, category_id, requester_id, assignee_id)
+  values (v_t, 'Impressora não imprime em rede',
+          'A impressora do setor fiscal parou de aparecer na lista de impressoras.',
+          'open', v_prio, v_fila, v_cat, v_user, v_user)
+  returning id into v_ticket;
+
+  -- Uma nota INTERNA, mais recente que a pública. Ela não pode virar a solução
+  -- do artigo: ela foi escrita para a equipe, não para quem lê de fora.
+  insert into public.ticket_comments (tenant_id, ticket_id, author_id, body, visibility)
+  values (v_t, v_ticket, v_user,
+          'Reiniciei o spooler e o cabo estava solto. Avisar o Pedro sobre a bagunça do rack.',
+          'internal');
+
+  insert into public.ticket_comments (tenant_id, ticket_id, author_id, body, visibility, created_at)
+  values (v_t, v_ticket, v_user,
+          'Reinstale a impressora pelo endereço \\\\servidor\\fiscal e marque "definir como padrão".',
+          'public', now() - interval '1 minute');
+
+  select * into v_r from app.kb_rascunho_do_chamado(v_ticket);
+
+  perform app.assert(v_r.title = 'Impressora não imprime em rede',
+    'o rascunho herda o título do chamado');
+  perform app.assert(v_r.category_id = v_cat,
+    'e a categoria — é o que faz o artigo voltar a aparecer no chamado parecido');
+  perform app.assert(v_r.body like '%setor fiscal parou de aparecer%',
+    'o problema vem da descrição do chamado');
+  perform app.assert(v_r.body like '%definir como padrão%',
+    'e a solução vem do último comentário PÚBLICO');
+  perform app.assert(v_r.body not like '%bagunça do rack%',
+    'a nota INTERNA não vaza para o artigo: ela foi escrita para a equipe');
+
+  -- Chamado sem descrição e sem comentário público: o rascunho sai com os
+  -- lugares marcados, e não vazio. Texto em branco é a tela que ninguém
+  -- preenche.
+  insert into public.tickets
+    (tenant_id, title, status, priority_id, queue_id, requester_id)
+  values (v_t, 'Chamado seco', 'open', v_prio, v_fila, v_user)
+  returning id into v_ticket;
+  select * into v_r from app.kb_rascunho_do_chamado(v_ticket);
+  perform app.assert(v_r.body like '%descreva o sintoma%',
+    'chamado sem descrição produz um rascunho com o lugar marcado, não vazio');
+  perform app.assert(v_r.body like '%passo a passo da solução%',
+    'idem para a solução');
+
+  perform app.assert(
+    not exists (select 1 from app.kb_rascunho_do_chamado(gen_random_uuid())),
+    'chamado que não existe devolve zero linhas');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 37.4 Artigos sugeridos para um chamado
+-- -----------------------------------------------------------------------------
+-- A outra metade do ciclo: o artigo escrito a partir de um chamado volta a
+-- aparecer no chamado seguinte parecido.
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_user   uuid := '22220000-0000-4000-8000-000000000002';
+  v_fila   uuid;
+  v_prio   uuid;
+  v_cat    uuid;
+  v_ticket uuid;
+begin
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+  select id into v_cat  from public.ticket_categories where tenant_id = v_t limit 1;
+
+  insert into public.tickets
+    (tenant_id, title, description, status, priority_id, queue_id, category_id, requester_id)
+  values (v_t, 'Impressora sumiu da rede', 'Não consigo imprimir', 'open',
+          v_prio, v_fila, v_cat, v_user)
+  returning id into v_ticket;
+
+  perform app.assert(
+    exists (select 1 from public.kb_sugestoes(v_ticket)
+             where title like 'Manutenção preventiva%'),
+    'o artigo sobre impressora é sugerido para o chamado sobre impressora');
+
+  perform app.assert(
+    (select count(*) from public.kb_sugestoes(v_ticket, 2)) <= 2,
+    'o limite é respeitado');
+  perform app.assert(
+    (select count(*) from public.kb_sugestoes(v_ticket, 500)) <= 10,
+    'e tem teto próprio: um limite absurdo não vira uma consulta absurda');
+
+  -- Rascunho NÃO é sugerido: ele não foi revisado, e artigo errado é pior que
+  -- artigo nenhum, porque quem o lê para de procurar.
+  perform app.assert(
+    not exists (select 1 from public.kb_sugestoes(v_ticket, 10) where title = 'Rascunho legítimo'),
+    'rascunho não é sugerido: ele não passou por revisão');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 37.5 Catálogo: o preço certo para cada cliente
+-- -----------------------------------------------------------------------------
+-- O preço mora no banco porque o preço mostrado e o cobrado não podem divergir —
+-- e divergiriam no dia em que uma segunda tela calculasse por conta própria.
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_fila uuid;
+  v_serv uuid;
+  v_c1   uuid;
+  v_c2   uuid;
+  v_r    record;
+  v_erro boolean := false;
+begin
+  delete from public.service_catalog where tenant_id = v_t;
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+  select id into v_c1 from public.clients where tenant_id = v_t order by legal_name limit 1;
+  select id into v_c2 from public.clients where tenant_id = v_t and id <> v_c1 order by legal_name limit 1;
+
+  insert into public.service_catalog (tenant_id, name, description, queue_id, preco, unidade, prazo_horas)
+  values (v_t, 'Formatação de estação', 'Backup, formatação e devolução configurada',
+          v_fila, 180.00, 'unidade', 8)
+  returning id into v_serv;
+
+  -- Sem acordo: paga a tabela.
+  select * into v_r from public.service_preco_para_cliente(v_serv, v_c1);
+  perform app.assert(v_r.preco = 180.00 and not v_r.incluso,
+    'cliente sem acordo paga o preço de tabela');
+
+  -- Com preço negociado.
+  insert into public.service_catalog_clients (tenant_id, service_id, client_id, preco)
+  values (v_t, v_serv, v_c1, 120.00);
+  select * into v_r from public.service_preco_para_cliente(v_serv, v_c1);
+  perform app.assert(v_r.preco = 120.00 and not v_r.incluso,
+    'cliente com preço negociado paga o dele');
+
+  -- Incluído no contrato: não paga.
+  insert into public.service_catalog_clients (tenant_id, service_id, client_id, incluso_no_contrato)
+  values (v_t, v_serv, v_c2, true);
+  select * into v_r from public.service_preco_para_cliente(v_serv, v_c2);
+  perform app.assert(v_r.preco = 0 and v_r.incluso,
+    'cliente com o serviço no contrato não paga, e a tela sabe dizer POR QUÊ');
+
+  -- Incluído no contrato E com preço é contradição.
+  begin
+    update public.service_catalog_clients set preco = 50.00
+     where service_id = v_serv and client_id = v_c2;
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'incluído no contrato com preço é recusado: ou está no pacote, ou custa');
+
+  -- Nulo não é zero: serviço sem preço publicado combina-se caso a caso.
+  insert into public.service_catalog (tenant_id, name, queue_id, preco)
+  values (v_t, 'Projeto sob medida', v_fila, null)
+  returning id into v_serv;
+  select * into v_r from public.service_preco_para_cliente(v_serv, v_c1);
+  perform app.assert(v_r.preco is null,
+    'serviço sem preço publicado devolve NULO — e nulo não é cortesia');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 37.6 O pedido vira um chamado, e o preço fica congelado
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_user   uuid := '22220000-0000-4000-8000-000000000005';  -- Carla, solicitante
+  v_fila   uuid;
+  v_prio   uuid;
+  v_serv   uuid;
+  v_ticket uuid;
+begin
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+  select id into v_serv from public.service_catalog
+   where tenant_id = v_t and name = 'Formatação de estação';
+
+  insert into public.tickets
+    (tenant_id, title, status, priority_id, queue_id, requester_id,
+     service_id, service_fields, service_price)
+  values (v_t, 'Formatação de estação', 'open', v_prio, v_fila, v_user,
+          v_serv, jsonb_build_object('patrimonio', 'PAT-1234'), 120.00)
+  returning id into v_ticket;
+
+  perform app.assert(
+    (select service_price from public.tickets where id = v_ticket) = 120.00,
+    'o chamado guarda o preço ACORDADO, não uma referência à tabela');
+
+  -- A tabela sobe; o que foi combinado continua combinado.
+  update public.service_catalog set preco = 250.00 where id = v_serv;
+  perform app.assert(
+    (select service_price from public.tickets where id = v_ticket) = 120.00,
+    'subir o preço de tabela NÃO muda o que já foi pedido');
+
+  perform app.assert(
+    (select service_fields ->> 'patrimonio' from public.tickets where id = v_ticket) = 'PAT-1234',
+    'e o formulário preenchido fica como fato histórico');
+
+  perform app.assert(
+    (select pedidos from public.vw_service_catalog where id = v_serv) >= 1,
+    'a vitrine conta quantas vezes o serviço foi pedido');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 37.7 Um voto por pessoa
+-- -----------------------------------------------------------------------------
+-- A única pergunta que a base precisa responder sobre si mesma é "quais artigos
+-- funcionam", e um número inflado não responde.
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_art uuid;
+  v_u1  uuid := '22220000-0000-4000-8000-000000000003';
+  v_u2  uuid := '22220000-0000-4000-8000-000000000004';
+begin
+  select id into v_art from public.kb_articles
+   where tenant_id = v_t and title like 'Manutenção preventiva%';
+  delete from public.kb_feedback where article_id = v_art;
+
+  insert into public.kb_feedback (tenant_id, article_id, user_id, util) values (v_t, v_art, v_u1, true);
+  insert into public.kb_feedback (tenant_id, article_id, user_id, util) values (v_t, v_art, v_u2, false);
+
+  -- Votar de novo SUBSTITUI, não soma.
+  insert into public.kb_feedback (tenant_id, article_id, user_id, util)
+  values (v_t, v_art, v_u1, false)
+  on conflict (article_id, user_id) do update set util = excluded.util;
+
+  perform app.assert(
+    (select count(*) from public.kb_feedback where article_id = v_art) = 2,
+    'duas pessoas, dois votos — votar de novo não cria um terceiro');
+  perform app.assert(
+    (select util from public.kb_feedback where article_id = v_art and user_id = v_u1) = false,
+    'e mudar de ideia troca o voto');
+
+  perform app.assert(
+    (select uteis from public.vw_kb_articles where id = v_art) = 0
+    and (select inuteis from public.vw_kb_articles where id = v_art) = 2,
+    'a visão conta os votos como eles estão agora');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 37.8 Contar leitura não vira auditoria
+-- -----------------------------------------------------------------------------
+/*
+ * A função é `security definer` — ela roda com privilégio de dono e passa por
+ * cima do RLS. O isolamento, portanto, é responsabilidade EXPLÍCITA do corpo
+ * dela, e é isso que as duas primeiras asserções conferem: uma sessão do tenant
+ * 2 não consegue contar leitura num artigo do tenant 1.
+ */
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+declare
+  v_art   uuid;
+  v_lidas integer;
+begin
+  select id into v_art from public.kb_articles
+   where tenant_id = 'a0000000-0000-4000-8000-000000000001'
+     and title like 'Manutenção preventiva%';
+  select views into v_lidas from public.kb_articles where id = v_art;
+
+  perform public.kb_registrar_leitura(v_art);
+  perform app.assert(
+    (select views from public.kb_articles where id = v_art) = v_lidas,
+    'sessão de OUTRO tenant não conta leitura: a função definer filtra o tenant à mão');
+end
+$$;
+
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000005","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_t     uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_art   uuid;
+  v_antes bigint;
+  v_lidas integer;
+begin
+  select id into v_art from public.kb_articles
+   where tenant_id = v_t and title like 'Manutenção preventiva%';
+  select views into v_lidas from public.kb_articles where id = v_art;
+
+  -- Solicitante contando leitura: é o público principal da base, e a policy de
+  -- escrita de `kb_articles` não o alcança. É por isso que a função é definer.
+  perform public.kb_registrar_leitura(v_art);
+  perform app.assert(
+    (select views from public.kb_articles where id = v_art) = v_lidas + 1,
+    'solicitante conta leitura, mesmo sem poder escrever no artigo');
+
+  select count(*) into v_antes from public.audit_log
+   where entity_type = 'kb_articles' and entity_id = v_art::text;
+
+  update public.kb_articles set views = views + 1 where id = v_art;
+  perform app.assert(
+    (select count(*) from public.audit_log
+      where entity_type = 'kb_articles' and entity_id = v_art::text) = v_antes,
+    'mexer SÓ no contador de leitura não vira linha de auditoria');
+
+  update public.kb_articles set title = title where id = v_art;
+  perform app.assert(
+    (select count(*) from public.audit_log
+      where entity_type = 'kb_articles' and entity_id = v_art::text) = v_antes,
+    'nem um update que não muda nada');
+
+  update public.kb_articles set resumo = 'Resumo editado' where id = v_art;
+  perform app.assert(
+    (select count(*) from public.audit_log
+      where entity_type = 'kb_articles' and entity_id = v_art::text) > v_antes,
+    'mas EDITAR o artigo vira: é o que a trilha existe para registrar');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 37.9 Quem enxerga o quê
+-- -----------------------------------------------------------------------------
+-- Artigo interno visível para o cliente é vazamento, e é a falha que não dá erro.
+do $$
+declare
+  v_t uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  insert into public.kb_articles
+    (tenant_id, title, body, status, visibilidade, published_at)
+  values (v_t, 'Senha do roteador da matriz',
+          'A senha de administração dos roteadores é trocada todo trimestre.',
+          'publicado', 'interno', now());
+end
+$$;
+
+-- Carla Dias é solicitante.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000005","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(
+    exists (select 1 from public.kb_articles where title like 'Manutenção preventiva%'),
+    'solicitante lê o artigo publicado para solicitante');
+  perform app.assert(
+    not exists (select 1 from public.kb_articles where title like 'Senha do roteador%'),
+    'e NÃO lê o artigo interno — esta é a asserção que impede um vazamento silencioso');
+  perform app.assert(
+    not exists (select 1 from public.kb_articles where status = 'rascunho'),
+    'nem rascunho');
+
+  -- A vitrine é para quem pede: esconder o catálogo de quem pode pedir esvazia o
+  -- recurso.
+  perform app.assert(
+    (select count(*) from public.service_catalog) > 0,
+    'solicitante enxerga o catálogo de serviços');
+  perform app.assert(
+    (select count(*) from public.service_catalog_clients) = 0,
+    'mas NÃO a tabela de preços negociados dos outros clientes');
+
+  perform app.assert(app.has_permission('autoatendimento.catalogo.pedir'),
+    'e pode pedir — é literalmente o que essa pessoa veio fazer');
+  perform app.assert(not app.has_permission('autoatendimento.base.escrever'),
+    'mas não escreve na base');
+  perform app.assert(not app.has_permission('autoatendimento.catalogo.gerenciar'),
+    'nem cadastra serviço');
+end
+$$;
+
+-- Ana Souza é operadora de TI: atende, e escreve na base.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_n integer;
+  v_id uuid;
+begin
+  perform app.assert(
+    exists (select 1 from public.kb_articles where title like 'Senha do roteador%'),
+    'quem atende lê o artigo interno publicado');
+  perform app.assert(app.has_permission('autoatendimento.base.escrever'),
+    'e escreve na base: o artigo nasce do chamado que ela acabou de resolver');
+  perform app.assert(
+    exists (select 1 from public.kb_articles where status = 'rascunho'),
+    'por isso ela também vê os rascunhos');
+
+  perform app.assert(not app.has_permission('autoatendimento.catalogo.gerenciar'),
+    'mas não mexe em preço: isso é comercial, não operação');
+
+  select id into v_id from public.service_catalog limit 1;
+  update public.service_catalog set preco = 1.00 where id = v_id;
+  get diagnostics v_n = row_count;
+  perform app.assert(v_n = 0,
+    'e o RLS confirma: a negação chega como zero linhas, não como erro');
+end
+$$;
+
+-- Diego Moreira é operador financeiro: consulta e pede, não escreve.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000006","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('autoatendimento.base.ver'),
+    'quem é do financeiro também abre chamado, e também acha a resposta antes');
+  perform app.assert(app.has_permission('autoatendimento.catalogo.pedir'),
+    'e também pede serviço');
+  perform app.assert(not app.has_permission('autoatendimento.base.escrever'),
+    'mas não escreve na base de TI');
+end
+$$;
+
+-- Tenant 2 não vê nada do tenant 1.
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.kb_articles) = 0,
+    'tenant 2 não vê artigo do tenant 1');
+  perform app.assert((select count(*) from public.vw_kb_articles) = 0,
+    'nem pela visão');
+  perform app.assert((select count(*) from public.service_catalog) = 0,
+    'nem o catálogo');
+  perform app.assert((select count(*) from public.service_catalog_clients) = 0,
+    'nem os preços');
+  perform app.assert((select count(*) from public.kb_feedback) = 0,
+    'nem os votos');
 end
 $$;
 reset role;

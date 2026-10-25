@@ -213,11 +213,16 @@ mais comum dos quatro. O binário anterior é guardado ao lado.
 
 **Coleta, uma vez por dia:** hardware (fabricante, modelo, série, processador,
 memória, discos com saúde SMART, rede, BIOS), sistema operacional e build,
-domínio, usuário logado, tempo ligado, e a lista de programas instalados com
-versão.
+domínio, usuário logado, e a lista de programas instalados com versão.
 
 **Mede, a cada cinco minutos:** uso de processador, uso de memória, espaço livre
-por volume, e quais dos serviços configurados como críticos estão fora do ar.
+por volume, tempo ligado, e quais dos serviços configurados como críticos estão
+fora do ar.
+
+> O tempo ligado é **medida**, e não inventário, por uma razão mecânica: ele muda
+> a cada segundo, e o inventário inteiro é hasheado para decidir se mudou. No
+> inventário, ele fazia toda coleta virar um snapshot novo — e o histórico de
+> "o que mudou nesta máquina?" teria 365 linhas idênticas por ano.
 
 **Não coleta:** conteúdo de arquivo, histórico de navegação, tela, teclado,
 microfone, câmera, nem o que está aberto. Também **não abre porta nenhuma**: fala

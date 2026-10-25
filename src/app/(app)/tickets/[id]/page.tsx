@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { requireScreen, canWorkTickets } from '@/lib/session'
+import { requireScreen, canWorkTickets, allowed } from '@/lib/session'
 import { getAgents, getQueues } from '@/lib/data/lookups'
 import { formatDateTime, formatMinutes, formatRelative, formatTimeRemaining } from '@/lib/format'
 import { changeSourceLabel, ticketFieldLabel, ticketStatusLabel } from '@/lib/i18n'
@@ -10,6 +10,7 @@ import { Badge, Card, PriorityBadge, SlaBadge, StatusBadge } from '@/components/
 import { TicketActions } from './ticket-actions'
 import { CommentForm } from './comment-form'
 import { Attachments, type AttachmentRecord } from '@/components/attachments'
+import { SugestoesDaBase, type Sugestao } from './sugestoes'
 
 export async function generateMetadata({
   params,
@@ -43,6 +44,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
   if (!ticket) notFound()
 
   const isAgent = canWorkTickets(profile.role)
+  const podeEscreverNaBase = await allowed('autoatendimento.base.escrever')
 
   const [
     { data: comments },
@@ -51,6 +53,8 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
     { data: transitions },
     queues,
     agents,
+    { data: sugestoesBrutas },
+    { data: artigoExistente },
   ] =
     await Promise.all([
       supabase
@@ -79,9 +83,26 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
         .eq('from_status', ticket.status),
       getQueues(),
       getAgents(),
+      /* Artigos que podem resolver este chamado. A função é `security invoker`:
+         quem não enxerga o chamado recebe lista vazia, sem vazar nem o fato de
+         ele existir. */
+      supabase.rpc('kb_sugestoes', { p_ticket_id: id, p_limite: 3 }),
+      /* Este chamado já virou artigo? Evita a dupla: o botão some e o link para
+         o artigo aparece. */
+      supabase
+        .from('kb_articles')
+        .select('id, title')
+        .eq('source_ticket_id', id)
+        .is('deleted_at', null)
+        .limit(1)
+        .returns<{ id: string; title: string }[]>(),
     ])
 
   const allowedStatuses = (transitions ?? []).map((t) => t.to_status as EnrichedTicket['status'])
+  /* O cliente Supabase não tem o tipo desta função (ela nasceu na 0033 e os
+     tipos gerados não a conhecem). O molde é o da própria função, e está
+     declarado em `sugestoes.tsx`. */
+  const sugestoes = (sugestoesBrutas ?? []) as unknown as Sugestao[]
 
   return (
     <>
@@ -106,6 +127,24 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
           )}
         </div>
       </div>
+
+      {/*
+        As sugestões vêm ANTES do corpo do chamado, e só para quem atende.
+
+        É o fechamento do ciclo: o artigo escrito a partir de um chamado volta a
+        aparecer no chamado seguinte parecido. Enterrá-las embaixo do histórico
+        faria ninguém as ver — e uma sugestão que ninguém vê é o mesmo que uma
+        base de conhecimento que ninguém lê.
+      */}
+      {isAgent && (
+        <SugestoesDaBase
+          sugestoes={sugestoes}
+          ticketId={id}
+          podeEscrever={podeEscreverNaBase}
+          artigoDoChamado={(artigoExistente ?? [])[0] ?? null}
+          resolvido={ticket.status === 'resolved' || ticket.status === 'closed'}
+        />
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex min-w-0 flex-col gap-6">

@@ -27,8 +27,30 @@ type Sistema struct {
 	ServiceTag    string `json:"service_tag,omitempty"`
 	Dominio       string `json:"dominio,omitempty"`
 	UsuarioLogado string `json:"usuario_logado,omitempty"`
-	TempoLigadoS  int64  `json:"tempo_ligado_s,omitempty"`
 }
+
+/*
+ * O TEMPO LIGADO NÃO ESTÁ AQUI, e a ausência custou um defeito para ser
+ * descoberta.
+ *
+ * A primeira versão o tinha, com a justificativa de que "esta máquina está
+ * ligada há 240 dias" é um fato de configuração (ninguém reinicia, então ninguém
+ * aplica atualização) e não uma amostra de desempenho. O raciocínio sobre o
+ * SIGNIFICADO estava certo; sobre a MECÂNICA, errado: o número muda a cada
+ * segundo, e tudo neste arquivo é hasheado para decidir se o inventário mudou.
+ *
+ * O efeito era silencioso e total: TODA coleta produzia um hash diferente, então
+ * toda coleta virava um snapshot novo. O histórico de "o que mudou nesta
+ * máquina?" — que é a razão de a tabela existir — teria 365 linhas idênticas por
+ * ano, por máquina.
+ *
+ * Quem pegou foi o teste de ponta a ponta do pacote `servico`, e só quando as
+ * duas coletas caíam em segundos diferentes. Por isso há agora uma asserção
+ * direta sobre a estabilidade do hash, em `coleta_test.go`.
+ *
+ * O tempo ligado vive em `Amostra.LigadaS`, na série temporal, que é onde um
+ * número que muda sempre pertence.
+ */
 
 type Processador struct {
 	Modelo        string `json:"modelo,omitempty"`

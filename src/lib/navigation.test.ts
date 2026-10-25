@@ -3,6 +3,7 @@ import {
   NAV_GROUPS,
   NAV_ITEMS,
   NAV_LINKS,
+  PORTAL,
   SAFE_LANDING,
   landingHref,
   visibleNav,
@@ -79,9 +80,17 @@ describe('visibleNavGroups', () => {
     expect(integracoes!.items.filter((i) => i.soon).length).toBe(6)
   })
 
-  it('quem não alcança nada ainda vê a Visão geral e a própria conta', () => {
+  it('quem não alcança nada ainda vê a Visão geral, o portal e a própria conta', () => {
+    /*
+     * As três não exigem permissão de módulo, e as três são necessárias: sem a
+     * Visão geral e sem o portal, uma sessão recém-criada veria um menu com um
+     * item só — a tela de trocar a senha —, o que parece um sistema quebrado.
+     *
+     * O portal entrou na 0033 e é o destino de quem só pede. Ele não acrescenta
+     * acesso nenhum: o que a página mostra já era alcançável.
+     */
     const hrefs = visibleNavGroups(new Set()).flatMap((g) => g.items.map((i) => i.href))
-    expect(hrefs).toEqual(['/painel', SAFE_LANDING])
+    expect(hrefs).toEqual(['/painel', PORTAL, SAFE_LANDING])
   })
 
   it('preserva a ordem declarada dos itens dentro do grupo', () => {

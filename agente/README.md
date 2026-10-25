@@ -12,11 +12,13 @@ Depois dele, o inventário de TI deixa de ser digitado.
 **Coleta, uma vez por dia:** fabricante, modelo, número de série, processador,
 memória (total e por pente), discos (modelo, tamanho, tipo, saúde SMART), placas
 de rede e MAC, BIOS e modo de inicialização, sistema operacional e build,
-domínio, usuário logado, tempo ligado, e a lista de programas instalados com
-versão.
+domínio, usuário logado, e a lista de programas instalados com versão.
 
 **Mede, a cada cinco minutos:** uso de processador, uso de memória, espaço livre
-por volume, e quais dos serviços configurados como críticos estão fora do ar.
+por volume, tempo ligado, e quais dos serviços configurados como críticos estão
+fora do ar. O tempo ligado é medida e não inventário porque muda a cada segundo —
+no inventário, ele desestabilizava o hash de conteúdo e fazia toda coleta virar um
+snapshot novo.
 
 **Não coleta:** conteúdo de arquivo, histórico de navegação, tela, teclado,
 microfone, câmera, nem o que está aberto. Ele também **não abre porta nenhuma**:

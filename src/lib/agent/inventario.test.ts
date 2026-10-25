@@ -55,6 +55,24 @@ describe('inventarioSchema', () => {
     expect(r.success && r.data).not.toHaveProperty('volumes')
   })
 
+  it('descarta o tempo ligado que um agente antigo ainda mande', () => {
+    /*
+     * O campo saiu do inventário porque muda a cada segundo, e tudo no inventário
+     * é hasheado para decidir se ele mudou — com ele, TODA coleta virava um
+     * snapshot novo.
+     *
+     * O schema continua aceitando e descartando (`strip` é o padrão do zod): numa
+     * frota com versões misturadas do agente, recusar o envio deixaria metade das
+     * máquinas sem inventário, e aceitar o campo as deixaria gravando um snapshot
+     * por coleta. Descartar é a única das três que não quebra nada.
+     */
+    const r = inventarioSchema.safeParse({
+      sistema: { hostname: 'X', tempo_ligado_s: 123456 },
+    })
+    expect(r.success).toBe(true)
+    expect(r.success && r.data.sistema).not.toHaveProperty('tempo_ligado_s')
+  })
+
   it('recusa lista de software grande demais', () => {
     // Sem teto, um inventário vira uma requisição de dezenas de megabytes.
     const muitos = Array.from({ length: 5001 }, (_, i) => ({ nome: `p${i}` }))

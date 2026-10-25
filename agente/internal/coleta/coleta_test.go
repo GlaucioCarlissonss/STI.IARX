@@ -1,10 +1,12 @@
 package coleta
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestChassiNormalizado(t *testing.T) {
@@ -95,6 +97,44 @@ func TestOInventarioSerializadoNaoCarregaHora(t *testing.T) {
 		if strings.Contains(texto, proibido) {
 			t.Errorf("o inventário carrega %q — o hash do conteúdo deixaria de ser estável", proibido)
 		}
+	}
+}
+
+func TestOHashDoInventarioEEstavelEntreColetas(t *testing.T) {
+	/*
+	 * A asserção que faltava, e que custou um defeito.
+	 *
+	 * Todo o desenho de "inventário igual não vira linha nova" depende de duas
+	 * coletas seguidas, numa máquina que não mudou, produzirem BYTES IDÊNTICOS.
+	 * A primeira versão tinha `tempo_ligado_s` aqui dentro — um número que muda a
+	 * cada segundo — e com isso toda coleta virava um snapshot novo. O histórico
+	 * de "o que mudou nesta máquina?" teria 365 linhas idênticas por ano.
+	 *
+	 * O defeito era invisível: nada falhava, nada alertava, e o único sintoma
+	 * seria uma tabela grande com uma tela inútil. Ele só apareceu porque o teste
+	 * de ponta a ponta do pacote `servico` comparava dois envios — e, mesmo lá,
+	 * só quando as duas coletas caíam em segundos diferentes.
+	 *
+	 * A espera de pouco mais de um segundo é o ponto: sem ela, o teste passa com
+	 * o defeito presente.
+	 */
+	ctx := context.Background()
+	primeiro, err := json.Marshal(Coletar(ctx))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(1100 * time.Millisecond)
+
+	segundo, err := json.Marshal(Coletar(ctx))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(primeiro, segundo) {
+		t.Fatalf(
+			"duas coletas da mesma máquina produziram bytes diferentes — algum campo volátil entrou no inventário.\n1: %s\n2: %s",
+			primeiro, segundo)
 	}
 }
 

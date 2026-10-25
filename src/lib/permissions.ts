@@ -68,6 +68,7 @@ export const MODULE_LABEL: Record<string, string> = {
   usuarios: 'Usuários e acesso',
   integracoes: 'Integrações',
   tv: 'Painéis de TV',
+  autoatendimento: 'Autoatendimento',
 }
 
 /*
@@ -201,6 +202,26 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
      ficha de hardware de 200 computadores para responder isso. */
   scr('inventario', 'software', 'Software instalado', 'visualizador'),
   act('inventario', 'software', 'ver', 'Consultar o software da frota', 'visualizador'),
+
+  /* --- Autoatendimento ---------------------------------------------------- */
+  /* Módulo próprio, e não telas dentro de `helpdesk`: ele serve a um público
+     diferente. O helpdesk é de quem ATENDE; a base de conhecimento e o catálogo
+     são de quem PEDE — inclusive do financeiro e do solicitante da
+     empresa-cliente, que nunca vão abrir a fila de chamados. */
+  mod('autoatendimento', 'visualizador'),
+  scr('autoatendimento', 'base', 'Base de conhecimento', 'visualizador'),
+  act('autoatendimento', 'base', 'ver', 'Consultar artigos', 'visualizador'),
+  /* Escrever é de quem atende, e é deliberado: o artigo nasce do chamado
+     resolvido, e quem acabou de resolver é quem tem o texto na cabeça. Uma base
+     que só um redator pode escrever é uma base que não é escrita. */
+  act('autoatendimento', 'base', 'escrever', 'Escrever e publicar artigos', 'atendente'),
+
+  scr('autoatendimento', 'catalogo', 'Catálogo de serviços', 'visualizador'),
+  act('autoatendimento', 'catalogo', 'ver', 'Consultar o catálogo', 'visualizador'),
+  /* `pedir` é a única ação do sistema cujo teto é `solicitante`: é literalmente
+     o que essa pessoa veio fazer. */
+  act('autoatendimento', 'catalogo', 'pedir', 'Pedir um serviço', 'solicitante'),
+  act('autoatendimento', 'catalogo', 'gerenciar', 'Cadastrar serviços e preços', 'gestor'),
 
   /* --- Telefonia --------------------------------------------------------- */
   mod('telefonia', 'visualizador'),

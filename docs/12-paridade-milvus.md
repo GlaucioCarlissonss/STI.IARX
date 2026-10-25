@@ -353,11 +353,40 @@ Guia de uso em [docs/14](14-agente-de-inventario.md).
   informação mais acionável que a série de disco produz: "enche em quatro dias"
   move alguém hoje, "está com 88%" não move ninguém.
 
-### Onda 4 — Autoatendimento (4–6 semanas)
+### Onda 4 — Autoatendimento ✅ **executada**
 
-14. Base de conhecimento, alimentada pelos chamados resolvidos.
-15. Portal do solicitante — enxuto, e é o que vira o PWA.
-16. Catálogo de serviços com preço, ligado ao contrato.
+Guia de uso em [docs/15](15-autoatendimento.md).
+
+14. ✅ Base de conhecimento, alimentada pelos chamados resolvidos (migração 0033).
+15. ⚠️ Portal do solicitante: a **tela** está pronta (`/portal`); o PWA não —
+    ver abaixo.
+16. ✅ Catálogo de serviços com preço por cliente e "incluído no contrato".
+
+**O que mudou em relação ao que estava planejado aqui, e por quê:**
+
+- **O portal é uma tela, não um segundo aplicativo.** O escopo pedia "enxuto", e
+  a tentação é um layout próprio com menu próprio: duas camadas de navegação
+  para manter, dois lugares onde uma permissão nova precisa ser refletida, dois
+  lugares onde um defeito de sessão pode morar. O que torna um portal enxuto é a
+  PÁGINA responder "o que você precisa?" — e o menu lateral já se filtra sozinho
+  desde a 0017. **O PWA continua pendente**, e agora tem o que embrulhar.
+
+- **A peça central não é a tabela de artigos: é o caminho do chamado para o
+  artigo.** Bases de conhecimento morrem porque ninguém escreve, e a tela em
+  branco é onde elas morrem. `app.kb_rascunho_do_chamado()` monta o texto a
+  partir do próprio chamado resolvido, e o botão *Virar artigo* só aparece
+  quando ele está resolvido — artigo escrito no meio do atendimento descreve uma
+  hipótese, não uma solução.
+
+- **O formulário de cada serviço é `jsonb`, e é digitado como JSON.** Um
+  construtor visual é um projeto em si e adiaria o catálogo inteiro. O JSON é
+  feio e honesto: quem cadastra serviço num helpdesk é de TI, o exemplo está ao
+  lado, e o erro é validado na submissão — não na renderização da vitrine, onde
+  quem cadastrou nunca veria.
+
+- **Sem cruzamento com CVE e sem semelhança semântica.** As sugestões de artigo
+  usam categoria e busca textual. Embeddings são da Onda 6, e um artigo relevante
+  achado por categoria vale mais hoje que um artigo perfeito daqui a três meses.
 
 ### Onda 5 — Omnichannel (6–10 semanas)
 

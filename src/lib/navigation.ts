@@ -83,6 +83,15 @@ export const NAV_GROUPS: readonly NavGroup[] = [
        * de atendimento dentro da página.
        */
       { href: '/painel', label: 'Visão geral', permission: null },
+      /*
+       * O portal fica no topo, sem permissão, e é o primeiro item de quem só
+       * pede. Ele não acrescenta acesso nenhum: tudo que a página mostra já era
+       * alcançável — chamados próprios pela policy da 0012, catálogo e base
+       * pelas permissões da 0033. O que ele acrescenta é a ORDEM: procurar a
+       * resposta antes de pedir um serviço, e pedir um serviço antes de abrir um
+       * chamado livre.
+       */
+      { href: '/portal', label: 'Portal', permission: null },
     ],
   },
   {
@@ -95,6 +104,11 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       /* "Satisfação" e não "CSAT": a sigla é jargão de quem mede, e quem abre a
          tela quer saber se as pessoas gostaram do atendimento. */
       { href: '/satisfacao', label: 'Satisfação', permission: 'helpdesk.satisfacao.ver' },
+      /* No grupo de Atendimento, e não num grupo próprio: as duas telas servem
+         ao mesmo trabalho — o chamado que não precisa ser aberto. Um grupo
+         "Autoatendimento" com dois itens só acrescentaria um cabeçalho. */
+      { href: '/base', label: 'Base de conhecimento', permission: 'autoatendimento.base.ver' },
+      { href: '/catalogo', label: 'Catálogo de serviços', permission: 'autoatendimento.catalogo.ver' },
     ],
   },
   {
@@ -208,6 +222,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 /** Destino que não exige permissão de módulo nenhuma. */
 export const SAFE_LANDING: Route = '/conta'
 
+/** A tela de quem só pede. Ver `landingHref`. */
+export const PORTAL: Route = '/portal'
+
 /** Todo item de todos os grupos, na ordem do menu. */
 export const NAV_ITEMS: readonly NavItem[] = NAV_GROUPS.flatMap((g) => g.items)
 
@@ -262,7 +279,20 @@ export function landingHref(granted: ReadonlySet<string>): Route {
     // `/conta` é último recurso, não primeira escolha: mandar quem tem acesso a
     // módulos para a tela de trocar senha seria pior que não redirecionar.
     if (item.href === SAFE_LANDING) continue
+    /*
+     * `/portal` também não é primeira escolha para quem trabalha os chamados: é
+     * uma tela de autoatendimento, e mandar um atendente para ela todo dia seria
+     * um clique a mais antes da fila. Quem não alcança nenhum módulo de operação
+     * cai nela pela regra do fim.
+     */
+    if (item.href === PORTAL) continue
     if (item.permission === null || can(granted, item.permission)) return item.href
   }
-  return SAFE_LANDING
+
+  /*
+   * Chegou aqui: a sessão não alcança nenhuma tela de operação. É o caso do
+   * `solicitante`, e o portal é exatamente a tela dele — melhor que `/conta`,
+   * que é a de trocar senha.
+   */
+  return PORTAL
 }

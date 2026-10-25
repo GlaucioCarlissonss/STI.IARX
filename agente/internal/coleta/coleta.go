@@ -30,11 +30,8 @@ var Versao = "dev"
 // mostrar a máquina numa lista.
 func Coletar(ctx context.Context) Inventario {
 	inv := Inventario{
-		Sistema: Sistema{
-			OS:           runtime.GOOS,
-			TempoLigadoS: tempoLigado(),
-		},
-		Agente: &Agente{Versao: Versao, Plataforma: runtime.GOOS + "/" + runtime.GOARCH},
+		Sistema: Sistema{OS: runtime.GOOS},
+		Agente:  &Agente{Versao: Versao, Plataforma: runtime.GOOS + "/" + runtime.GOARCH},
 	}
 
 	if nome, err := os.Hostname(); err == nil {

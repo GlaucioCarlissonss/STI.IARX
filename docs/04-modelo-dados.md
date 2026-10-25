@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-70 tabelas e 21 views em `public`, com 176 policies de RLS, mais 3 policies em
+74 tabelas e 23 views em `public`, com 182 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
@@ -370,6 +370,64 @@ de hora — relógio travado na máquina de cliente — deixavam a escolha ao ac
 Agora o corrente é o que o `last_snapshot_hash` do dispositivo aponta, que é a
 definição exata de "o que está instalado agora".
 
+### Autoatendimento (0033)
+Quatro tabelas, e as três reutilizações que evitaram um segundo modelo de dados.
+
+| Tabela | Papel |
+|---|---|
+| `kb_articles` | Artigos. Corpo em **texto simples**, com busca em português e `search_vector` gerado |
+| `kb_feedback` | Um voto por pessoa por artigo: "isto resolveu o seu problema?" |
+| `service_catalog` | Os serviços da vitrine, com fila, prioridade, preço e o formulário em `jsonb` |
+| `service_catalog_clients` | Preço por cliente, e o que já está no contrato dele |
+
+**As três reutilizações:**
+
+1. **`ticket_categories` serve aos artigos e ao catálogo.** Uma taxonomia própria
+   para a base pareceria mais limpa e seria pior: os artigos sugeridos para um
+   chamado viram uma junção pela categoria, em vez de um segundo exercício de
+   classificação que ninguém mantém sincronizado.
+
+2. **O pedido do catálogo vira um TICKET**, com a fila, a prioridade e o SLA que
+   o item declarou — mais três colunas novas em `tickets` (`service_id`,
+   `service_fields`, `service_price`). Uma entidade "pedido" paralela teria o
+   próprio estado, a própria fila e o próprio SLA, e a operação olharia duas
+   listas.
+
+3. **O portal é uma TELA, não um modelo.** O `solicitante` já enxergava apenas os
+   próprios chamados pela policy de `tickets` desde a 0012; o portal não
+   acrescenta regra de acesso nenhuma.
+
+**Decisões que valem registro:**
+
+- **Configuração de busca própria** (`portugues_sem_acento`): `portuguese` mais
+  `unaccent`, porque metade de quem digita numa caixa de busca não põe acento —
+  e porque uma coluna gerada exige função imutável, o que `unaccent(text)`
+  sozinha não é. Alterar a configuração do sistema afetaria qualquer busca
+  futura; uma própria, não.
+
+- **O corpo do artigo é texto simples.** Markdown exigiria um renderizador e um
+  sanitizador, e o público inclui `solicitante` de empresa-cliente. Markdown não
+  sanitizado num texto escrito por terceiro é XSS armazenado, servido para o
+  público mais amplo que esta aplicação tem.
+
+- **`views` entrou em `app.audit_ignored_columns()`** — contador de leitura, não
+  fato de negócio. Mesma classe de `last_seen_at` (0031).
+
+- **`kb_feedback` é tabela, não contador.** Contador seria mais simples e
+  deixaria a mesma pessoa votar vinte vezes — e a única pergunta que a base
+  precisa responder sobre si mesma é "quais artigos funcionam".
+
+- **`service_preco_para_cliente()` mora no banco.** Incluído no contrato paga
+  zero, negociado paga o dele, o resto paga a tabela. Repetir essa escolha na
+  aplicação faria o preço mostrado e o cobrado divergirem — o que não é defeito
+  de tela, é problema comercial. E `incluso_no_contrato` com preço é recusado
+  por CHECK: ou está no pacote, ou custa.
+
+- **`app.kb_rascunho_do_chamado()` não cria o artigo**, só monta o texto. Criar
+  automaticamente encheria a base de rascunhos sem revisão — e um artigo errado
+  é pior que artigo nenhum, porque quem o lê para de procurar. A solução vem do
+  último comentário **público**: o último de todos costuma ser nota interna.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -452,7 +510,7 @@ em alguns perfis e fosse esquecida em outros.
 | `trg_protect_default_queue` | `queues` | protege a fila padrão |
 | `trg_assets_history` | `it_assets` | gera eventos de lifecycle |
 | `trg_profiles_no_escalation` | `profiles` | bloqueia auto-promoção de papel |
-| `trg_*_audit` | 38 tabelas | auditoria global |
+| `trg_*_audit` | 41 tabelas | auditoria global |
 | `trg_branches_geocode_staleness` | `branches` | invalida a coordenada quando o endereço muda |
 | `trg_tenants_seed_access_profiles` | `tenants` | cria os 9 perfis do sistema no nascimento do tenant |
 | `trg_profiles_default_access_profile` | `profiles` | atribui o perfil correspondente ao papel |

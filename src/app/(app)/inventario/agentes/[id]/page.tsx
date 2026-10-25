@@ -147,6 +147,7 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
     { data: volumes },
     { data: alertas },
     { data: tenant },
+    { data: ultimaAmostra },
   ] = await Promise.all([
     supabase
       .from('agent_devices')
@@ -198,6 +199,15 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
       .select('agent_remote_url')
       .limit(1)
       .maybeSingle<{ agent_remote_url: string | null }>(),
+    // A amostra mais recente, só pelo tempo ligado: "ligada há 240 dias" é
+    // "ninguém reinicia, então ninguém aplica atualização".
+    supabase
+      .from('agent_metrics_raw')
+      .select('uptime_s')
+      .eq('device_id', id)
+      .order('collected_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{ uptime_s: number | null }>(),
   ])
 
   /* RLS nega devolvendo zero linhas, não erro: máquina de outro tenant e máquina
@@ -221,6 +231,7 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
   const sumiram = lista.filter((p) => new Date(p.last_seen_at).getTime() < corte)
 
   const pontos = completarHoras(horas ?? [], HORAS_DE_GRAFICO)
+  const ligadaS = ultimaAmostra?.uptime_s ?? null
 
   /* Uma linha por volume, com o último estado e a projeção. A projeção usa a
      série inteira dos sete dias; o estado, a amostra mais recente. */
@@ -442,11 +453,12 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
               {dados?.bios?.versao ?? '—'}
               {dados?.bios?.modo ? ` · ${dados.bios.modo.toUpperCase()}` : ''}
             </dd>
+            {/* O tempo ligado vem da SÉRIE TEMPORAL, não do inventário: ele muda
+                a cada segundo, e no inventário desestabilizava o hash de conteúdo
+                — fazendo toda coleta virar um snapshot novo. */}
             <dt className="text-[var(--color-ink-3)]">Ligada há</dt>
             <dd className="text-[var(--color-ink)]">
-              {dados?.sistema?.tempo_ligado_s
-                ? `${Math.floor(dados.sistema.tempo_ligado_s / 86400)} dia(s)`
-                : '—'}
+              {ligadaS ? `${Math.floor(ligadaS / 86400)} dia(s)` : '—'}
             </dd>
           </dl>
 

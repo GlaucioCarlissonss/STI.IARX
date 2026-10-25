@@ -378,7 +378,13 @@ try {
   {
     const ctx = await b.newContext()
     const p = await ctx.newPage()
-    for (const rota of ['/inventario/agentes', '/inventario/software']) {
+    for (const rota of [
+      '/inventario/agentes',
+      '/inventario/software',
+      '/base',
+      '/catalogo',
+      '/portal',
+    ]) {
       await p.goto(BASE + rota, { waitUntil: 'networkidle' })
       ok(p.url().includes('/login'), `${rota}: visitante é mandado para o login`)
     }
