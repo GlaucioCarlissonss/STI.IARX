@@ -109,6 +109,11 @@ export const NAV_GROUPS: readonly NavGroup[] = [
          "Autoatendimento" com dois itens só acrescentaria um cabeçalho. */
       { href: '/base', label: 'Base de conhecimento', permission: 'autoatendimento.base.ver' },
       { href: '/catalogo', label: 'Catálogo de serviços', permission: 'autoatendimento.catalogo.ver' },
+      /* Em Atendimento, e não em Infraestrutura, apesar de a configuração do
+         canal ser trabalho de infraestrutura: quem abre esta tela todo dia é
+         quem atende, para ver de onde os chamados estão chegando. A
+         configuração mora um clique adentro, atrás da permissão de admin. */
+      { href: '/conversas', label: 'Conversas', permission: 'canais.conversas.ver' },
     ],
   },
   {
@@ -157,27 +162,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Integrações',
     items: [
       { href: '/integracoes', label: 'Sistemas de tickets', permission: 'integracoes.hub.ver' },
-      {
-        href: null,
-        label: 'Automação (N8N)',
-        permission: null,
-        soon: true,
-        hint: 'Disparo de fluxos no N8N por webhook. A tabela de integrações já aceita fonte genérica.',
-      },
-      {
-        href: null,
-        label: 'WhatsApp',
-        permission: null,
-        soon: true,
-        hint: 'Abertura e acompanhamento de ticket por WhatsApp.',
-      },
-      {
-        href: null,
-        label: 'Telegram',
-        permission: null,
-        soon: true,
-        hint: 'Notificação e abertura de ticket por Telegram.',
-      },
+      /* `Automação (N8N)`, `WhatsApp` e `Telegram` estavam aqui como "em breve" e
+         SAÍRAM: os três existem, em `Atendimento → Conversas` (migração 0034).
+         Deixá-los aqui prometeria como futuro o que já está pronto, e no grupo
+         errado — este grupo trata de mapear um REGISTRO externo para um chamado,
+         e aqueles três são CONVERSA. O Telegram, em particular, entra pelo canal
+         genérico do N8N, sem adaptador próprio nesta base. */
       {
         href: null,
         label: 'Bancos de dados',

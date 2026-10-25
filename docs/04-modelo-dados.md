@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-74 tabelas e 23 views em `public`, com 182 policies de RLS, mais 3 policies em
+78 tabelas e 24 views em `public`, com 188 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
@@ -428,6 +428,52 @@ Quatro tabelas, e as três reutilizações que evitaram um segundo modelo de dad
   é pior que artigo nenhum, porque quem o lê para de procurar. A solução vem do
   último comentário **público**: o último de todos costuma ser nota interna.
 
+### Canais de conversa (0034)
+Quatro tabelas, e uma decisão que define o módulo: **toda conversa é um chamado.**
+
+| Tabela | Papel |
+|---|---|
+| `channels` | O canal. Token de entrada por **hash**, credencial por **referência** (`secret_ref`) |
+| `channel_contacts` | Quem é o número. `profile_id`, `client_id` e `branch_id` nulos são o caso comum |
+| `channel_conversations` | A thread. **Uma aberta** por contato por canal, por índice único parcial |
+| `channel_messages` | Toda mensagem, nos dois sentidos, com a fila de saída embutida |
+
+**Decisões que valem registro:**
+
+- **A mensagem é gravada ANTES de qualquer efeito.** O WhatsApp reentrega o
+  webhook quando não recebe 200 rápido o bastante — por desenho. Com a gravação
+  primeiro, a reentrega bate no índice único `(channel_id, external_id)` e para
+  ali; com a gravação depois, ela viraria um segundo chamado.
+
+- **Uma conversa aberta por `(channel_id, contact_id)`**, garantido no banco e não
+  na aplicação. Quem manda "bom dia" e "a impressora parou" manda duas mensagens
+  em um segundo, e sem o índice as duas abririam chamados diferentes.
+
+- **Três travas contra o eco**, na trigger que enfileira a resposta a partir de
+  `ticket_comments`: nota interna não sai; comentário que veio de integração não
+  volta; e só enfileira se existir conversa **aberta** para o chamado. Faltando
+  qualquer uma, o sistema conversa consigo mesmo.
+
+- **`channel_ingest()` é `security definer` concedida a `anon`** — não um quarto
+  uso de `service_role` (ADR-011). Quem chama é a Meta, que não tem conta. O
+  isolamento por tenant dentro dela é responsabilidade explícita do código,
+  porque o dono da função tem `BYPASSRLS`.
+
+- **`channel_por_token()` não devolve `tenant_id`.** A rota não precisa dele, e o
+  que ela não recebe ela não pode vazar numa mensagem de erro.
+
+- **O contato casa pelos últimos 8 dígitos** do telefone (ou pelo endereço exato,
+  no e-mail). Oito porque é o que sobrevive a `+55 44 99988-7766`,
+  `044999887766` e `99988-7766` no mesmo cadastro.
+
+- **Contato bloqueado tem a mensagem registrada e não abre chamado.** Descartar
+  seria mais simples e não deixaria rastro para descobrir um bloqueio feito por
+  engano.
+
+- **Conversas e mensagens NÃO são auditadas.** Elas são o próprio registro;
+  auditar gravaria uma segunda cópia de cada mensagem em `audit_log` — a mesma
+  aritmética que tirou as métricas da trilha na 0032.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -510,7 +556,7 @@ em alguns perfis e fosse esquecida em outros.
 | `trg_protect_default_queue` | `queues` | protege a fila padrão |
 | `trg_assets_history` | `it_assets` | gera eventos de lifecycle |
 | `trg_profiles_no_escalation` | `profiles` | bloqueia auto-promoção de papel |
-| `trg_*_audit` | 41 tabelas | auditoria global |
+| `trg_*_audit` | 43 tabelas | auditoria global |
 | `trg_branches_geocode_staleness` | `branches` | invalida a coordenada quando o endereço muda |
 | `trg_tenants_seed_access_profiles` | `tenants` | cria os 9 perfis do sistema no nascimento do tenant |
 | `trg_profiles_default_access_profile` | `profiles` | atribui o perfil correspondente ao papel |

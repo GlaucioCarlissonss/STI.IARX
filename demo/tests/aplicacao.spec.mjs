@@ -370,7 +370,55 @@ try {
   }
 
   // ---------------------------------------------------------------------------
-  console.log('\n=== 10. As telas do módulo continuam atrás do login ===')
+  console.log('\n=== 10. A rota de entrada dos canais ===')
+  // ---------------------------------------------------------------------------
+  /*
+   * Uma rota só, pública, para todos os canais — é por ela que a Meta, o Bitrix24
+   * e o N8N entregam. Três comportamentos dela são decisões, e não detalhes:
+   *
+   *  - token desconhecido responde 404 e NADA mais (sem dizer se o canal existe,
+   *    está pausado ou tem outro tipo);
+   *  - o aperto de mão do WhatsApp só vale para canal de WhatsApp, senão a rota
+   *    viraria um refletor de qualquer texto que alguém pusesse em `hub.challenge`;
+   *  - GET não ingere nada, porque GET é pré-buscado por navegador, por antivírus
+   *    de rede e por aplicativo de mensagem.
+   */
+  {
+    const ctx = await b.newContext()
+    const req = ctx.request
+    const TOKEN_FALSO = 'f'.repeat(64)
+
+    const post = await req.post(`${BASE}/api/canais/${TOKEN_FALSO}`, { data: {} })
+    ok(post.status() === 404, `canal inexistente responde 404 (veio ${post.status()})`)
+
+    const corpo = await post.text()
+    ok(
+      !/pausado|whatsapp|bitrix|n8n|secret|token/i.test(corpo),
+      'e o corpo do 404 não conta nada sobre canal nenhum',
+    )
+
+    // O aperto de mão da Meta num token que não existe: 404, não o challenge.
+    const handshake = await req.get(
+      `${BASE}/api/canais/${TOKEN_FALSO}?hub.mode=subscribe&hub.verify_token=${TOKEN_FALSO}&hub.challenge=1234`,
+    )
+    ok(handshake.status() === 404, `aperto de mão em canal inexistente responde 404 (veio ${handshake.status()})`)
+    ok(
+      !(await handshake.text()).includes('1234'),
+      'e NÃO devolve o challenge: a rota não é um refletor',
+    )
+
+    // Token de tamanho errado nem chega ao banco.
+    const curto = await req.post(`${BASE}/api/canais/abc`, { data: {} })
+    ok(curto.status() === 404, `token de tamanho errado responde 404 (veio ${curto.status()})`)
+
+    const get = await req.get(`${BASE}/api/canais/${TOKEN_FALSO}`)
+    ok(get.status() === 404, `GET sem aperto de mão responde 404 (veio ${get.status()})`)
+
+    await ctx.close()
+  }
+
+  // ---------------------------------------------------------------------------
+  console.log('\n=== 11. As telas do módulo continuam atrás do login ===')
   // ---------------------------------------------------------------------------
   // O contrário da seção 9: as ROTAS do agente são públicas, as TELAS não são.
   // Liberar o prefixo `/api/agent` no guarda de sessão não pode ter aberto o
@@ -384,6 +432,8 @@ try {
       '/base',
       '/catalogo',
       '/portal',
+      '/conversas',
+      '/conversas/canais',
     ]) {
       await p.goto(BASE + rota, { waitUntil: 'networkidle' })
       ok(p.url().includes('/login'), `${rota}: visitante é mandado para o login`)

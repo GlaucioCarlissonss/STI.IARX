@@ -17,6 +17,13 @@ escondido.
 | Tela de resultados | `/satisfacao` |
 | Resposta da pesquisa, sem login | `/avaliar/<token>` |
 | Quem não quer receber desliga por tipo | `/conta` |
+| Drenagem das respostas dos canais de conversa | `drenarSaidaDosCanais()` ([docs/16](16-canais-de-conversa.md)) |
+
+A **drenagem dos canais** roda no mesmo `POST /api/jobs/run`, e por último de
+propósito: os trabalhos de banco acima podem fechar um chamado, e fechar um
+chamado é o que enfileira o último aviso ao cliente. Drenar antes deixaria esse
+aviso para a execução seguinte — uma hora de atraso numa mensagem que diz
+"resolvido".
 
 O **fechamento automático** merece uma nota: `tenants.auto_close_after_days`
 existe desde a migração 0002, é lido pela sessão e **nunca foi executado por

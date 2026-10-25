@@ -500,7 +500,7 @@ export default async function MaquinaPage({ params }: { params: Promise<{ id: st
         ) : (
           <ul className="flex flex-col gap-3">
             {mudancas.map((m) => (
-              <li key={m.quando} className="border-l-2 border-[var(--color-line)] pl-3">
+              <li key={m.quando} className="border-l-2 border-[var(--color-border)] pl-3">
                 <p className="text-xs text-[var(--color-ink-3)]">{formatDateTime(m.quando)}</p>
                 {m.frases.map((f) => (
                   <p key={f} className="text-sm text-[var(--color-ink)]">

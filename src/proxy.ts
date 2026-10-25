@@ -39,6 +39,16 @@ import { NextResponse, type NextRequest } from 'next/server'
  * definer` no banco. É o mesmo desenho de `/avaliar`, e pelo mesmo motivo: quem
  * chama não é uma pessoa com conta.
  */
+/*
+ * `/api/canais` entra pelo mesmo motivo de `/api/agent`: quem chama é a Meta, o
+ * Bitrix24 ou um fluxo do N8N. Nenhum deles tem navegador, cookie ou segue
+ * redirecionamento — e a Meta DESINSCREVE um webhook que devolve erro
+ * repetidamente, então um 307 para `/login` desligaria a integração por conta
+ * própria.
+ *
+ * O que autoriza ali é o token do canal na URL, conferido por função `security
+ * definer` no banco, mais a assinatura do provedor quando ele assina.
+ */
 const PUBLIC_PREFIXES = [
   '/login',
   '/recuperar-senha',
@@ -47,6 +57,7 @@ const PUBLIC_PREFIXES = [
   '/api/health',
   '/api/jobs',
   '/api/agent',
+  '/api/canais',
   '/auth',
 ]
 

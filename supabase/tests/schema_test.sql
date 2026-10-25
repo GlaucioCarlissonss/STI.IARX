@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 166,
-    'catálogo de permissões tem as 166 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 173,
+    'catálogo de permissões tem as 173 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 166,
+  perform app.assert((select count(*) from public.permission_catalog) = 173,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -5740,6 +5740,577 @@ begin
     'nem os preços');
   perform app.assert((select count(*) from public.kb_feedback) = 0,
     'nem os votos');
+end
+$$;
+reset role;
+
+-- =============================================================================
+\echo '=== 38. Canais de conversa: entrada, threading e eco (0034) ==='
+-- =============================================================================
+reset role;
+/*
+ * `reset role` devolve o privilégio, mas NÃO limpa `request.jwt.claims` — ele é
+ * um GUC de sessão e sobrevive às seções. Sem fixar um usuário real aqui, a
+ * trigger de histórico de chamado grava como ator o `sub` que sobrou da seção
+ * anterior (um usuário do tenant 2) e a chave estrangeira recusa.
+ *
+ * Foi assim que isto apareceu: a seção passou nas cinco primeiras asserções e
+ * quebrou na primeira que mexia no status de um chamado.
+ */
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+-- Duas falhas aqui são caras e silenciosas: a reentrega do provedor virando
+-- mensagem duplicada (o atendente lê a mesma pergunta duas vezes), e o eco — a
+-- resposta voltando como pergunta e gerando outra resposta, até a pessoa receber
+-- quarenta mensagens. Nenhuma das duas dá erro.
+
+-- -----------------------------------------------------------------------------
+-- 38.1 O canal precisa saber onde abrir chamado
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_erro boolean := false;
+begin
+  delete from public.channels where tenant_id = v_t;
+
+  begin
+    insert into public.channels (tenant_id, name, kind, inbound_token_hash, abre_chamado)
+    values (v_t, 'Sem destino', 'whatsapp', encode(digest('tok_x', 'sha256'), 'hex'), true);
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'canal que abre chamado sem fila e prioridade é recusado: a mensagem se perderia em silêncio');
+
+  -- Canal em observação pode nascer sem destino: ele não abre chamado nenhum.
+  insert into public.channels (tenant_id, name, kind, inbound_token_hash, abre_chamado)
+  values (v_t, 'Só observando', 'n8n', encode(digest('tok_obs', 'sha256'), 'hex'), false);
+  perform app.assert(true, 'canal em observação nasce sem destino — ele não abre chamado');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.2 A credencial é referência, não valor
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_erro boolean := false;
+begin
+  begin
+    update public.channels
+       set secret_ref = 'EAAG...um-token-de-verdade-aqui'
+     where tenant_id = v_t and name = 'Só observando';
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'secret_ref recusa o que não é nome de variável: o valor mora no ambiente (ADR-009)');
+
+  update public.channels set secret_ref = 'WHATSAPP_TOKEN_MATRIZ'
+   where tenant_id = v_t and name = 'Só observando';
+  perform app.assert(true, 'e aceita o NOME da variável');
+
+  v_erro := false;
+  begin
+    update public.channels set outbound_url = 'http://n8n.interno/webhook'
+     where tenant_id = v_t and name = 'Só observando';
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'a URL de saída precisa ser https: o texto da conversa viaja nela');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.3 A primeira mensagem vira contato, conversa e chamado
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_fila   uuid;
+  v_prio   uuid;
+  v_canal  uuid;
+  v_r      record;
+  v_antes  integer;
+begin
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+
+  insert into public.channels
+    (tenant_id, name, kind, inbound_token_hash, default_queue_id, default_priority_id)
+  values (v_t, 'WhatsApp da matriz', 'whatsapp',
+          encode(digest('tok_whats', 'sha256'), 'hex'), v_fila, v_prio)
+  returning id into v_canal;
+
+  perform app.assert(
+    (select status from public.channel_ingest('tok_que_nao_existe',
+      jsonb_build_object('de', '+5544999887766', 'texto', 'oi'))) = 'unauthorized',
+    'token de canal desconhecido é recusado');
+
+  perform app.assert(
+    (select status from public.channel_ingest('tok_whats',
+      jsonb_build_object('texto', 'oi sem remetente'))) = 'malformed',
+    'mensagem sem remetente é recusada por FORMA, não por autorização');
+
+  select count(*) into v_antes from public.tickets where tenant_id = v_t;
+
+  select * into v_r from public.channel_ingest('tok_whats', jsonb_build_object(
+    'externo', 'wamid.AAA',
+    'de', '+5544999887766',
+    'nome', 'Fulana de Tal',
+    'texto', 'bom dia, a impressora do fiscal parou de imprimir'));
+
+  perform app.assert(v_r.status = 'stored', 'a primeira mensagem é guardada');
+  perform app.assert(v_r.ticket_id is not null, 'e abre um chamado');
+  perform app.assert(
+    (select count(*) from public.tickets where tenant_id = v_t) = v_antes + 1,
+    'exatamente um');
+
+  perform app.assert(
+    (select display_name from public.channel_contacts
+      where channel_id = v_canal and external_id = '+5544999887766') = 'Fulana de Tal',
+    'o contato é criado com o nome do perfil do WhatsApp');
+
+  perform app.assert(
+    (select count(*) from public.channel_conversations
+      where channel_id = v_canal and status = 'aberta') = 1,
+    'e uma conversa aberta');
+
+  -- O título é o começo da mensagem, e não um texto fixo: "Mensagem do WhatsApp"
+  -- em toda a fila não ajuda ninguém a escolher qual atender.
+  perform app.assert(
+    (select title from public.tickets where id = v_r.ticket_id) like 'bom dia, a impressora%',
+    'o título do chamado é o começo da mensagem');
+  perform app.assert(
+    (select source from public.tickets where id = v_r.ticket_id) = 'integration',
+    'e a origem é integração: o chamado não nasceu de alguém na tela');
+  perform app.assert(
+    (select last_inbound_at from public.channels where id = v_canal) is not null,
+    'o canal registra que recebeu');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.4 A reentrega do provedor NÃO duplica nada
+-- -----------------------------------------------------------------------------
+-- O WhatsApp reentrega o webhook quando não recebe 200 rápido o bastante, por
+-- desenho. Sem a idempotência, o atendente lê a mesma pergunta duas vezes.
+do $$
+declare
+  v_t       uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_r       record;
+  v_tickets integer;
+  v_msgs    integer;
+begin
+  select count(*) into v_tickets from public.tickets where tenant_id = v_t;
+  select count(*) into v_msgs from public.channel_messages where tenant_id = v_t;
+
+  select * into v_r from public.channel_ingest('tok_whats', jsonb_build_object(
+    'externo', 'wamid.AAA',
+    'de', '+5544999887766',
+    'texto', 'bom dia, a impressora do fiscal parou de imprimir'));
+
+  perform app.assert(v_r.status = 'duplicate', 'a reentrega é reconhecida');
+  perform app.assert(
+    (select count(*) from public.tickets where tenant_id = v_t) = v_tickets,
+    'e não abre um segundo chamado');
+  perform app.assert(
+    (select count(*) from public.channel_messages where tenant_id = v_t) = v_msgs,
+    'nem grava uma segunda mensagem');
+  perform app.assert(
+    (select count(*) from public.ticket_comments c
+      join public.tickets t on t.id = c.ticket_id
+     where t.tenant_id = v_t and c.external_id = 'wamid.AAA') = 0,
+    'nem um comentário: a mensagem é gravada ANTES de qualquer efeito, e a reentrega para ali');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.5 A segunda mensagem entra no MESMO chamado
+-- -----------------------------------------------------------------------------
+-- É a regra de threading. Sem ela, cada "bom dia" vira um chamado e a fila do
+-- helpdesk vira a caixa de entrada do WhatsApp.
+do $$
+declare
+  v_t       uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_r       record;
+  v_tickets integer;
+  v_ticket  uuid;
+begin
+  select count(*) into v_tickets from public.tickets where tenant_id = v_t;
+
+  select * into v_r from public.channel_ingest('tok_whats', jsonb_build_object(
+    'externo', 'wamid.BBB',
+    'de', '+5544999887766',
+    'texto', 'é a HP do segundo andar'));
+  v_ticket := v_r.ticket_id;
+
+  perform app.assert(v_r.status = 'stored', 'a segunda mensagem é guardada');
+  perform app.assert(
+    (select count(*) from public.tickets where tenant_id = v_t) = v_tickets,
+    'e NÃO abre um segundo chamado');
+
+  perform app.assert(
+    (select count(*) from public.ticket_comments
+      where ticket_id = v_ticket and external_id = 'wamid.BBB') = 1,
+    'ela vira um comentário no chamado existente');
+  perform app.assert(
+    (select visibility from public.ticket_comments where external_id = 'wamid.BBB') = 'public',
+    'público: foi escrito pela pessoa, e ela precisa poder ler a própria pergunta');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.6 Chamado fechado encerra a conversa, e a próxima mensagem abre outro
+-- -----------------------------------------------------------------------------
+-- Sem isto, dois anos de assuntos diferentes se empilhariam no mesmo chamado.
+do $$
+declare
+  v_t       uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_ticket  uuid;
+  v_r       record;
+  v_tickets integer;
+begin
+  select ticket_id into v_ticket from public.channel_conversations
+   where status = 'aberta' and tenant_id = v_t limit 1;
+
+  /* O caminho real da máquina de estados (`ticket_status_transitions`): não dá
+     para ir de `open` direto a `resolved`, e o teste segue o mesmo caminho que a
+     tela segue. */
+  update public.tickets set status = 'assigned',
+         assignee_id = '22220000-0000-4000-8000-000000000002' where id = v_ticket;
+  update public.tickets set status = 'in_progress' where id = v_ticket;
+  -- O fechamento do chamado fecha a conversa pela trigger: uma conversa "aberta"
+  -- cujo chamado foi encerrado há duas semanas é uma linha que mente na tela.
+  update public.tickets set status = 'resolved' where id = v_ticket;
+  perform app.assert(
+    (select status from public.channel_conversations where ticket_id = v_ticket) = 'fechada',
+    'resolver o chamado fecha a conversa, pela trigger');
+
+  select count(*) into v_tickets from public.tickets where tenant_id = v_t;
+  select * into v_r from public.channel_ingest('tok_whats', jsonb_build_object(
+    'externo', 'wamid.CCC',
+    'de', '+5544999887766',
+    'texto', 'outro assunto: preciso de um monitor'));
+
+  perform app.assert(v_r.ticket_id <> v_ticket,
+    'a mensagem seguinte abre um chamado NOVO: o assunto é outro');
+  perform app.assert(
+    (select count(*) from public.tickets where tenant_id = v_t) = v_tickets + 1,
+    'e é só um');
+  perform app.assert(
+    (select count(*) from public.channel_conversations
+      where tenant_id = v_t and status = 'aberta') = 1,
+    'e continua havendo UMA conversa aberta por contato');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.7 O banco recusa duas conversas abertas para o mesmo contato
+-- -----------------------------------------------------------------------------
+-- Duas mensagens simultâneas do mesmo número não podem produzir dois chamados.
+do $$
+declare
+  v_t     uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_conv  public.channel_conversations;
+  v_erro  boolean := false;
+begin
+  select * into v_conv from public.channel_conversations
+   where tenant_id = v_t and status = 'aberta' limit 1;
+
+  begin
+    insert into public.channel_conversations (tenant_id, channel_id, contact_id, status)
+    values (v_t, v_conv.channel_id, v_conv.contact_id, 'aberta');
+  exception when unique_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'o banco recusa uma segunda conversa aberta para o mesmo contato no mesmo canal');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.8 O ECO — a falha clássica deste recurso
+-- -----------------------------------------------------------------------------
+-- A resposta vira comentário, o comentário dispara o envio, o envio volta como
+-- evento, o evento vira comentário... Em minutos a pessoa recebeu quarenta
+-- mensagens.
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_user   uuid := '22220000-0000-4000-8000-000000000002';
+  v_conv   public.channel_conversations;
+  v_ticket uuid;
+  v_antes  integer;
+begin
+  select * into v_conv from public.channel_conversations
+   where tenant_id = v_t and status = 'aberta' limit 1;
+  v_ticket := v_conv.ticket_id;
+
+  select count(*) into v_antes from public.channel_messages
+   where conversation_id = v_conv.id and direction = 'saida';
+
+  -- (a) Comentário público do atendente: VAI para o canal.
+  insert into public.ticket_comments (tenant_id, ticket_id, author_id, body, visibility, source)
+  values (v_t, v_ticket, v_user, 'Bom dia! Já estou a caminho.', 'public', 'ui');
+
+  perform app.assert(
+    (select count(*) from public.channel_messages
+      where conversation_id = v_conv.id and direction = 'saida') = v_antes + 1,
+    'comentário público do atendente vira mensagem na fila de saída');
+  perform app.assert(
+    (select status from public.channel_messages
+      where conversation_id = v_conv.id and direction = 'saida'
+      order by created_at desc limit 1) = 'na_fila',
+    'na fila, não enviada: quem fala com o provedor é a aplicação');
+
+  -- (b) Nota interna: NÃO vai. Vazá-la seria grave.
+  insert into public.ticket_comments (tenant_id, ticket_id, author_id, body, visibility, source)
+  values (v_t, v_ticket, v_user, 'Cliente já atrasou três pagamentos.', 'internal', 'ui');
+
+  perform app.assert(
+    (select count(*) from public.channel_messages
+      where conversation_id = v_conv.id and direction = 'saida') = v_antes + 1,
+    'nota INTERNA não sai para o canal — vazá-la seria grave');
+
+  -- (c) Comentário que É uma mensagem de entrada: NÃO volta.
+  insert into public.ticket_comments
+    (tenant_id, ticket_id, author_id, body, visibility, source, external_id)
+  values (v_t, v_ticket, null, 'obrigada!', 'public', 'integration', 'wamid.DDD');
+
+  perform app.assert(
+    (select count(*) from public.channel_messages
+      where conversation_id = v_conv.id and direction = 'saida') = v_antes + 1,
+    'comentário vindo DO canal não volta para o canal: é a trava do eco');
+
+  -- (d) Mas um comentário de OUTRA integração (tickets, 0009) sai normalmente:
+  -- o que distingue é o external_id, que só a entrada de canal preenche.
+  insert into public.ticket_comments (tenant_id, ticket_id, author_id, body, visibility, source)
+  values (v_t, v_ticket, v_user, 'Sincronizado do Bitrix24.', 'public', 'integration');
+
+  perform app.assert(
+    (select count(*) from public.channel_messages
+      where conversation_id = v_conv.id and direction = 'saida') = v_antes + 2,
+    'e comentário de integração de TICKETS sai: source sozinho não distinguiria');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.9 Comentário em chamado SEM conversa não vira mensagem
+-- -----------------------------------------------------------------------------
+-- A trigger roda em todo comentário da base. Se ela enfileirasse sem conversa, a
+-- fila de saída encheria com a resposta de todo chamado aberto na tela.
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_user   uuid := '22220000-0000-4000-8000-000000000002';
+  v_fila   uuid;
+  v_prio   uuid;
+  v_ticket uuid;
+  v_antes  integer;
+begin
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+  select count(*) into v_antes from public.channel_messages where direction = 'saida';
+
+  insert into public.tickets (tenant_id, title, status, priority_id, queue_id, requester_id)
+  values (v_t, 'Chamado comum, sem canal', 'open', v_prio, v_fila, v_user)
+  returning id into v_ticket;
+
+  insert into public.ticket_comments (tenant_id, ticket_id, author_id, body, visibility, source)
+  values (v_t, v_ticket, v_user, 'Resposta normal.', 'public', 'ui');
+
+  perform app.assert(
+    (select count(*) from public.channel_messages where direction = 'saida') = v_antes,
+    'comentário em chamado sem conversa NÃO vira mensagem de saída');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.10 Contato bloqueado e canal em observação
+-- -----------------------------------------------------------------------------
+-- Nos dois casos a mensagem FICA REGISTRADA e não vira chamado. Registrar em vez
+-- de descartar é o que permite descobrir um bloqueio feito por engano.
+do $$
+declare
+  v_t       uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_r       record;
+  v_tickets integer;
+begin
+  update public.channel_contacts set bloqueado = true
+   where external_id = '+5544999887766';
+  select count(*) into v_tickets from public.tickets where tenant_id = v_t;
+
+  select * into v_r from public.channel_ingest('tok_whats', jsonb_build_object(
+    'externo', 'wamid.EEE', 'de', '+5544999887766', 'texto', 'promoção imperdível'));
+
+  perform app.assert(v_r.status = 'blocked', 'contato bloqueado é reconhecido');
+  perform app.assert(v_r.message_id is not null,
+    'mas a mensagem é REGISTRADA: "sumiu" não deixa rastro para descobrir um bloqueio errado');
+  perform app.assert(
+    (select status from public.channel_messages where id = v_r.message_id) = 'ignorada',
+    'marcada como ignorada');
+  perform app.assert(
+    (select count(*) from public.tickets where tenant_id = v_t) = v_tickets,
+    'e nenhum chamado nasce dela');
+  update public.channel_contacts set bloqueado = false where external_id = '+5544999887766';
+
+  -- Canal em observação: mesmo comportamento, motivo diferente.
+  update public.channels set status = 'ativo' where name = 'Só observando';
+  select * into v_r from public.channel_ingest('tok_obs', jsonb_build_object(
+    'externo', 'n8n-001', 'de', 'telegram:12345', 'texto', 'oi'));
+  perform app.assert(v_r.status = 'logged',
+    'canal em observação registra a mensagem e não abre chamado');
+  perform app.assert(
+    (select count(*) from public.tickets where tenant_id = v_t) = v_tickets,
+    'é o jeito de medir o volume de um número divulgado antes de deixá-lo abrir chamado');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.11 Quem é o número: o casamento com o cadastro
+-- -----------------------------------------------------------------------------
+-- Sem isto, todo chamado vindo do WhatsApp é anônimo — sem cliente, sem filial,
+-- sem SLA e sem pesquisa de satisfação.
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_fila   uuid;
+  v_prio   uuid;
+  v_user   uuid := '22220000-0000-4000-8000-000000000005';  -- Carla, solicitante
+  v_email  text;
+  v_canal  uuid;
+  v_r      record;
+begin
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+  select email into v_email from public.profiles where id = v_user;
+
+  -- (a) Canal de e-mail: o identificador JÁ É o endereço, então o casamento é
+  -- exato.
+  insert into public.channels
+    (tenant_id, name, kind, inbound_token_hash, default_queue_id, default_priority_id)
+  values (v_t, 'suporte@empresa', 'email',
+          encode(digest('tok_mail', 'sha256'), 'hex'), v_fila, v_prio)
+  returning id into v_canal;
+
+  select * into v_r from public.channel_ingest('tok_mail', jsonb_build_object(
+    'externo', 'msgid-001', 'de', v_email, 'texto', 'não consigo entrar no sistema'));
+
+  perform app.assert(
+    (select profile_id from public.channel_contacts
+      where channel_id = v_canal and external_id = v_email) = v_user,
+    'no e-mail, o contato casa com o cadastro pelo endereço');
+  perform app.assert(
+    (select requester_id from public.tickets where id = v_r.ticket_id) = v_user,
+    'e o chamado nasce com o solicitante certo — não anônimo');
+
+  -- (b) WhatsApp: compara só os dígitos, pelos últimos 8. O telefone no cadastro
+  -- vem escrito de seis jeitos, e nenhum deles é o formato da Meta.
+  update public.profiles set phone = '(44) 99988-7766' where id = v_user;
+  delete from public.channel_contacts where external_id = '+554499887766x';
+
+  insert into public.channels
+    (tenant_id, name, kind, inbound_token_hash, default_queue_id, default_priority_id)
+  values (v_t, 'WhatsApp filial', 'whatsapp',
+          encode(digest('tok_w2', 'sha256'), 'hex'), v_fila, v_prio)
+  returning id into v_canal;
+
+  select * into v_r from public.channel_ingest('tok_w2', jsonb_build_object(
+    'externo', 'wamid.FFF', 'de', '5544999887766', 'texto', 'oi de novo'));
+
+  perform app.assert(
+    (select profile_id from public.channel_contacts
+      where channel_id = v_canal and external_id = '5544999887766') = v_user,
+    'no WhatsApp, casa pelos últimos 8 dígitos: é o que sobrevive a DDI e DDD escritos de jeitos diferentes');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 38.12 Quem enxerga, e quem configura
+-- -----------------------------------------------------------------------------
+do $$
+begin
+  perform app.assert(
+    has_function_privilege('anon', 'public.channel_ingest(text, jsonb)', 'execute'),
+    'o provedor manda mensagem sem ter conta — ele é um serviço');
+
+  -- A view de conversas é lida por toda a equipe de atendimento. Ela NÃO pode
+  -- carregar o token de entrada nem a referência da credencial.
+  perform app.assert(
+    not exists (
+      select 1 from information_schema.columns
+      where table_name = 'vw_channel_conversations'
+        and column_name in ('inbound_token_hash', 'secret_ref', 'outbound_url')),
+    'a caixa de conversas NÃO carrega token nem credencial');
+end
+$$;
+
+-- Ana Souza é operadora de TI: lê e responde conversa, não configura canal.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_id uuid;
+  v_n  integer;
+begin
+  perform app.assert(app.has_permission('canais.conversas.ver'),
+    'operador de TI lê conversa: é o trabalho dele');
+  perform app.assert(app.has_permission('canais.conversas.responder'),
+    'e responde');
+  perform app.assert(not app.has_permission('canais.canais.gerenciar'),
+    'mas NÃO liga nem desliga canal: isso guarda credencial');
+  -- Nem abre a tela de configuração: ela mostra QUAL variável de ambiente cada
+  -- canal usa, e isso é mapa da infraestrutura.
+  perform app.assert(not app.has_permission('canais.canais.ver'),
+    'nem abre a tela de configuração, que diz onde mora cada credencial');
+
+  perform app.assert((select count(*) from public.vw_channel_conversations) > 0,
+    'e a caixa de conversas aparece para ele');
+
+  -- Classificar o contato é trabalho de quem atende: é na conversa que se
+  -- descobre quem é o número.
+  select id into v_id from public.channel_contacts limit 1;
+  update public.channel_contacts set display_name = 'Nome corrigido' where id = v_id;
+  get diagnostics v_n = row_count;
+  perform app.assert(v_n = 1, 'ele classifica o contato');
+
+  select id into v_id from public.channels limit 1;
+  update public.channels set status = 'pausado' where id = v_id;
+  get diagnostics v_n = row_count;
+  perform app.assert(v_n = 0,
+    'e não pausa o canal: a negação do RLS chega como zero linhas, não como erro');
+end
+$$;
+
+-- Carla Dias é solicitante: não vê conversa nenhuma.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000005","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.channel_conversations) = 0,
+    'solicitante não lê a caixa de conversas dos outros');
+  perform app.assert((select count(*) from public.channel_messages) = 0,
+    'nem as mensagens');
+  perform app.assert((select count(*) from public.channels) = 0,
+    'nem a configuração dos canais');
+end
+$$;
+
+-- Tenant 2 não vê nada do tenant 1.
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.channels) = 0,
+    'tenant 2 não vê canal do tenant 1');
+  perform app.assert((select count(*) from public.channel_contacts) = 0,
+    'nem os contatos');
+  perform app.assert((select count(*) from public.channel_messages) = 0,
+    'nem as mensagens');
+  perform app.assert((select count(*) from public.vw_channel_conversations) = 0,
+    'nem a caixa de conversas');
 end
 $$;
 reset role;

@@ -388,12 +388,54 @@ Guia de uso em [docs/15](15-autoatendimento.md).
   usam categoria e busca textual. Embeddings são da Onda 6, e um artigo relevante
   achado por categoria vale mais hoje que um artigo perfeito daqui a três meses.
 
-### Onda 5 — Omnichannel (6–10 semanas)
+### Onda 5 — Omnichannel ✅ **executada**
 
-17. WhatsApp pela API oficial da Meta. **Não** por biblioteca não-oficial: elas
-    são banidas, e o produto cai junto.
-18. E-mail entrante virando ticket.
-19. Chat no portal.
+Guia de uso em [docs/16](16-canais-de-conversa.md).
+
+17. ✅ WhatsApp pela API oficial da Meta (Cloud API v21). **Não** por biblioteca
+    não-oficial: elas são banidas, e o produto cai junto.
+18. ✅ E-mail entrante virando ticket, com qualquer provedor de recebimento.
+19. ⚠️ Chat no portal: **não foi feito**, e o motivo está abaixo.
+
+**Acrescentado ao escopo a pedido:** Bitrix24 e N8N como canais de conversa.
+
+**O que mudou em relação ao que estava planejado aqui, e por quê:**
+
+- **O N8N virou a peça mais importante da onda.** O plano listava três canais;
+  ligá-los um a um é trabalho sem fim, porque o quarto pedido será Telegram, o
+  quinto Slack e o sexto SMS. O N8N (ou Make, ou Zapier, ou um script) já resolve
+  isso para toda a internet — faltava ter para onde mandar e de onde receber. Com
+  um webhook genérico de entrada e uma URL genérica de saída, qualquer canal entra
+  **sem esta base precisar conhecê-lo**. É o único dos quatro que funciona sem
+  conta verificada, sem aprovação e sem cobrança por mensagem, e é por ele que se
+  deve começar.
+
+- **Não há caixa de resposta nos canais, e isso é a decisão central.** Uma tela
+  estilo aplicativo de mensagens criaria **dois lugares para atender a mesma
+  coisa**: "este cliente já foi respondido?" passaria a ter duas respostas, o SLA
+  contaria de um jeito na fila e de outro no chat, e a pesquisa de satisfação
+  ignoraria metade do atendimento. Toda conversa é um chamado; o atendente
+  responde no chamado e a resposta volta pelo canal de onde veio.
+
+- **Bitrix24 por webhook, e não pelo conector nativo (`imconnector`).** O conector
+  aparece como canal no Contact Center e é melhor para quem vive dentro do
+  Bitrix24, mas exige publicar e manter um aplicativo. O webhook funciona hoje,
+  com o que o cliente já tem. A escolha fica registrada em
+  [docs/16](16-canais-de-conversa.md) para não ser refeita do zero quando o
+  segundo cliente pedir o conector.
+
+- **O chat no portal não foi feito, e não por falta de tempo.** Ele é a quarta
+  superfície de atendimento (fila, portal, WhatsApp, chat) e a única que exige
+  presença: um chat sem ninguém do outro lado é pior que nenhum chat, porque
+  promete resposta imediata. Com os canais prontos, quem quer conversar já tem
+  WhatsApp e e-mail — e os dois deixam registro. O chat entra quando houver
+  operação para atendê-lo.
+
+- **Honestidade sobre o que não foi verificado:** nenhuma chamada real a provedor
+  nenhum. Não há credencial da Meta, do Bitrix24 nem de provedor de e-mail neste
+  ambiente. Os payloads dos testes vêm da documentação oficial, copiados, e a
+  primeira ligação real pode exigir ajuste de nome de campo — por isso os
+  adaptadores registram o que não souberam ler em vez de descartar.
 
 ### Onda 6 — IA (3–5 semanas)
 

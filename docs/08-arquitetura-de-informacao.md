@@ -47,15 +47,25 @@ destino, não categoria.
 | Grupo | Itens |
 |---|---|
 | — | Visão geral |
-| **Atendimento** | Tickets · Abrir ticket · Filas · SLA e prazos |
+| — | Portal |
+| **Atendimento** | Tickets · Abrir ticket · Filas · SLA e prazos · Satisfação · Base de conhecimento · Catálogo de serviços · Conversas |
 | **Financeiro** | Títulos a pagar · Títulos a receber · Contas bancárias · Centros de custo · Fluxo de caixa |
-| **Infraestrutura** | Inventário de TI · Telefonia · Links de internet · Mapa das filiais |
+| **Infraestrutura** | Inventário de TI · Agentes nas máquinas · Software instalado · Telefonia · Links de internet · Mapa das filiais |
 | **Cadastros** | Clientes e filiais · Fornecedores e contratos |
-| **Integrações** | Sistemas de tickets · *Automação (N8N)* · *WhatsApp* · *Telegram* · *Bancos de dados* · *Pagamento bancário* · *Recebimento bancário* |
+| **Integrações** | Sistemas de tickets · *Bancos de dados* · *Pagamento bancário* · *Recebimento bancário* |
 | **Administração** | Usuários · Perfis de acesso · Painéis de TV |
 | — | Minha conta |
 
 *Itálico* = previsto, sem tela ainda.
+
+**`Automação (N8N)`, `WhatsApp` e `Telegram` saíram de Integrações**, e não por
+mudança de ideia sobre o menu: os três foram entregues (migração 0034) como
+**canais de conversa**, em `Atendimento → Conversas`. Mantê-los ali anunciaria
+como futuro o que já existe. E o grupo Integrações trata de mapear um *registro*
+externo para um chamado, enquanto aqueles três são *conversa* — públicos
+diferentes, no mesmo menu. O Telegram não tem item próprio em lugar nenhum: ele
+entra pelo canal genérico do N8N, que é exatamente o motivo de aquele canal
+existir.
 
 ## 4. Nomenclatura: as decisões e o porquê
 

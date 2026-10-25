@@ -67,7 +67,7 @@ describe('visibleNavGroups', () => {
   })
 
   it('item previsto NÃO faz o grupo aparecer sozinho', () => {
-    // Integrações tem 6 itens "em breve" e 1 real. Sem o real, o grupo todo sai.
+    // Integrações tem 3 itens "em breve" e 1 real. Sem o real, o grupo todo sai.
     const semIntegracoes = conceder('helpdesk.tickets.ver')
     const grupos = visibleNavGroups(semIntegracoes)
     expect(grupos.map((g) => g.label)).not.toContain('Integrações')
@@ -77,7 +77,7 @@ describe('visibleNavGroups', () => {
     const comHub = conceder('integracoes.hub.ver')
     const integracoes = visibleNavGroups(comHub).find((g) => g.label === 'Integrações')
     expect(integracoes).toBeDefined()
-    expect(integracoes!.items.filter((i) => i.soon).length).toBe(6)
+    expect(integracoes!.items.filter((i) => i.soon).length).toBe(3)
   })
 
   it('quem não alcança nada ainda vê a Visão geral, o portal e a própria conta', () => {
@@ -145,14 +145,34 @@ describe('NAV_GROUPS', () => {
     expect(conta!.permission).toBeNull()
   })
 
-  it('os 7 subgrupos de integração pedidos estão no menu', () => {
+  it('os 7 assuntos de integração pedidos continuam cobertos pelo menu', () => {
+    /*
+     * O pedido original (docs/01) listava sete assuntos de integração, e por um
+     * tempo os sete eram sete itens "em breve" no grupo Integrações.
+     *
+     * Três deles — N8N, WhatsApp e Telegram — FORAM ENTREGUES na migração 0034,
+     * e não como integração: como CANAL DE CONVERSA, em `Atendimento →
+     * Conversas`. Eles saíram do grupo Integrações porque anunciar como futuro o
+     * que já existe é pior que não anunciar, e porque aquele grupo trata de
+     * mapear um registro externo para um chamado — outro assunto.
+     *
+     * O Telegram não tem adaptador próprio e nem precisa: ele entra pelo canal
+     * genérico do N8N, que é o motivo de aquele canal existir.
+     *
+     * Este teste guarda a cobertura do pedido, não o formato dela: cada assunto
+     * tem de estar em algum lugar do menu — entregue ou anunciado.
+     */
     const integracoes = NAV_GROUPS.find((g) => g.label === 'Integrações')!
-    expect(integracoes.items).toHaveLength(7)
-    for (const esperado of ['N8N', 'WhatsApp', 'Telegram', 'Bancos de dados', 'Pagamento', 'Recebimento']) {
+    expect(integracoes.items).toHaveLength(4)
+    for (const esperado of ['Bancos de dados', 'Pagamento', 'Recebimento']) {
       expect(
         integracoes.items.some((i) => i.label.includes(esperado)),
         `falta o subgrupo ${esperado}`,
       ).toBe(true)
     }
+
+    const conversas = NAV_ITEMS.find((i) => i.href === '/conversas')
+    expect(conversas, 'N8N, WhatsApp e Telegram foram entregues como Conversas').toBeDefined()
+    expect(conversas!.permission).toBe('canais.conversas.ver')
   })
 })

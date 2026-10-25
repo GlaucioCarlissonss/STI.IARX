@@ -69,6 +69,7 @@ export const MODULE_LABEL: Record<string, string> = {
   integracoes: 'Integrações',
   tv: 'Painéis de TV',
   autoatendimento: 'Autoatendimento',
+  canais: 'Canais de conversa',
 }
 
 /*
@@ -222,6 +223,31 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
      o que essa pessoa veio fazer. */
   act('autoatendimento', 'catalogo', 'pedir', 'Pedir um serviço', 'solicitante'),
   act('autoatendimento', 'catalogo', 'gerenciar', 'Cadastrar serviços e preços', 'gestor'),
+
+  /* --- Canais de conversa -------------------------------------------------- */
+  /* Módulo próprio, e não telas dentro de `integracoes`: aquele módulo trata de
+     mapear um REGISTRO externo (uma tarefa do Bitrix24) para um chamado, campo a
+     campo. Este trata de CONVERSA — remetente, texto, e em qual chamado a
+     mensagem entra. São públicos diferentes: ali mexe quem configura mapeamento,
+     aqui lê quem atende. */
+  mod('canais', 'atendente'),
+  scr('canais', 'conversas', 'Conversas', 'atendente'),
+  /* Teto `atendente` porque ler e responder conversa É atender: não faria sentido
+     que quem trabalha a fila precisasse de permissão extra para ler a pergunta
+     que chegou pelo WhatsApp. */
+  act('canais', 'conversas', 'ver', 'Ler as conversas', 'atendente'),
+  act('canais', 'conversas', 'responder', 'Responder e classificar contatos', 'atendente'),
+
+  scr('canais', 'canais', 'Configuração dos canais', 'admin'),
+  /* Teto `admin` nas duas: o canal guarda a REFERÊNCIA da credencial e emite o
+     token de entrada. É configuração de infraestrutura, da mesma natureza que
+     emitir token de painel de TV.
+     `ver` separado de `gerenciar` não é cerimônia — é a convenção de toda tela
+     do catálogo, e aqui ela tem uso: abrir a tela mostra qual variável de
+     ambiente cada canal usa, e isso é uma leitura que vale conceder sem o poder
+     de desligar o WhatsApp da empresa. */
+  act('canais', 'canais', 'ver', 'Consultar os canais configurados', 'admin'),
+  act('canais', 'canais', 'gerenciar', 'Ligar e desligar canais', 'admin'),
 
   /* --- Telefonia --------------------------------------------------------- */
   mod('telefonia', 'visualizador'),

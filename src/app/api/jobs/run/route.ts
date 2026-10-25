@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { provedorConfigurado } from '@/lib/mail/provedor'
 import { drenarCaixaDeSaida, type ClienteDaCaixa } from '@/lib/mail/caixa-de-saida'
+import { drenarSaidaDosCanais, type ClienteDaSaida } from '@/lib/canais/saida'
 
 /**
  * O disparador dos trabalhos agendados.
@@ -114,9 +115,19 @@ export async function POST(request: Request) {
     origem,
   )
 
+  /*
+   * A saída dos canais drena por ÚLTIMO, e é dependência, não preferência: os
+   * trabalhos acima criam chamado e comentário (o fechamento automático, o
+   * convite de avaliação), e comentário público num chamado com conversa aberta
+   * vira mensagem na fila pela trigger da 0034. Drenar antes deles deixaria essa
+   * resposta esperando o ciclo seguinte.
+   */
+  const canais = await drenarSaidaDosCanais(supabase as unknown as ClienteDaSaida)
+
   return NextResponse.json({
     executado_em: new Date().toISOString(),
     ...resultados,
     email: envio,
+    canais,
   })
 }

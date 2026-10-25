@@ -77,7 +77,7 @@ export function GraficoHoras({
       </figcaption>
 
       {comDado.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-[var(--color-line)] px-3 py-6 text-center text-sm text-[var(--color-ink-3)]">
+        <p className="rounded-lg border border-dashed border-[var(--color-border)] px-3 py-6 text-center text-sm text-[var(--color-ink-3)]">
           Nenhuma amostra nas últimas {pontos.length} horas. A máquina pode estar desligada, ou o
           agente pode ter parado.
         </p>
@@ -102,7 +102,7 @@ export function GraficoHoras({
               x2={L}
               y1={A - (v / 100) * A}
               y2={A - (v / 100) * A}
-              stroke="var(--color-line)"
+              stroke="var(--color-border)"
               strokeWidth="1"
               vectorEffect="non-scaling-stroke"
             />

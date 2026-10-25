@@ -195,7 +195,7 @@ export default async function BasePage({
               className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                 status === valor
                   ? 'border-[var(--color-brand)] bg-[var(--color-brand)] text-white'
-                  : 'border-[var(--color-line)] text-[var(--color-ink-2)] hover:bg-[var(--color-surface-2)]'
+                  : 'border-[var(--color-border)] text-[var(--color-ink-2)] hover:bg-[var(--color-surface-2)]'
               }`}
             >
               {rotulo}

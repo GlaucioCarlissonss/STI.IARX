@@ -145,7 +145,7 @@ export default async function ArtigoPage({ params }: { params: Promise<{ id: str
         <div className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-ink)]">
           {artigo.body}
         </div>
-        <p className="mt-6 border-t border-[var(--color-line)] pt-3 text-xs text-[var(--color-ink-3)]">
+        <p className="mt-6 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-ink-3)]">
           {artigo.author?.full_name ? `Escrito por ${artigo.author.full_name}. ` : ''}
           {artigo.published_at
             ? `Publicado em ${formatDate(artigo.published_at)}.`
