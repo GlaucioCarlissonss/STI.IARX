@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-80 tabelas e 26 views em `public`, com 192 policies de RLS, mais 3 policies em
+83 tabelas e 28 views em `public`, com 202 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 
@@ -560,6 +560,46 @@ espera e fecha quando sai, creditando só os minutos de expediente. Um botão de
 índice único de pausa aberta. O que faltava ali era **leitura**: o chamado
 mostrava o distintivo "pausado" sem dizer desde quando nem por quê.
 
+### Projetos e cronograma (0037)
+Primeiro módulo trazido do GSTI.IARX. Três tabelas e duas views.
+
+| Tabela | Papel |
+|---|---|
+| `projects` | Projeto com cronograma mensal. Cliente obrigatório, filial opcional (projeto de grupo atravessa unidades) |
+| `project_tasks` | Tarefas em até 3 níveis, com hierarquia garantida por trigger |
+| `project_members` | Quem está no projeto. Nome livre, porque fornecedor entra sem ter conta aqui |
+
+**Decisões que valem registro:**
+
+- **Competência é `date` preso ao dia 1** (`app.eh_competencia`), e não texto
+  `AAAA-MM` como no original — lá o SQLite não tem tipo de mês. Com data de
+  verdade, comparação e diferença em meses viram aritmética em vez de
+  manipulação de string, e `2026-03-15` é recusado.
+
+- **A hierarquia é garantida pelo BANCO.** O schema do GSTI diz, em comentário,
+  que *"profundidade e ciclo o SQLite não expressa em CHECK"*, e valida no
+  domínio. `trg_task_hierarquia` recusa pai de outro projeto, ciclo e o quarto
+  nível — contando a **subárvore que vem junto**. A diferença importa porque
+  validação de aplicação é pulada por importação e por correção manual, e ciclo
+  faz o Gantt entrar em laço infinito.
+
+- **Atraso e desvio moram em view, nunca em coluna.** Atraso muda sozinho com a
+  passagem do mês: uma coluna precisaria de um trabalho agendado só para
+  envelhecer o número, e estaria errada entre uma execução e outra.
+
+- **`proj_concluido_tem_fim_real`.** Sem ele, "concluído" vira rótulo sem desvio
+  nenhum para medir: o cronograma mostraria a barra planejada sem a realizada e
+  o projeto pareceria entregue.
+
+- **`fk_task_parent` é `on delete restrict`.** Excluir tarefa principal é
+  bloqueado, não cascateado — em cascata, "excluir 1 tarefa" apagaria a
+  subárvore inteira em silêncio.
+
+- **Duas permissões de escrita em tarefa.** `editar` (gestor) planeja; `executar`
+  (atendente) marca andamento. A policy `tasks_update` aceita as duas, porque
+  exigir papel de gestor para dizer "terminei" faria o cronograma envelhecer no
+  gargalo de quem o administra.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -642,7 +682,7 @@ em alguns perfis e fosse esquecida em outros.
 | `trg_protect_default_queue` | `queues` | protege a fila padrão |
 | `trg_assets_history` | `it_assets` | gera eventos de lifecycle |
 | `trg_profiles_no_escalation` | `profiles` | bloqueia auto-promoção de papel |
-| `trg_*_audit` | 45 tabelas | auditoria global |
+| `trg_*_audit` | 47 tabelas | auditoria global |
 | `trg_branches_geocode_staleness` | `branches` | invalida a coordenada quando o endereço muda |
 | `trg_tenants_seed_access_profiles` | `tenants` | cria os 9 perfis do sistema no nascimento do tenant |
 | `trg_profiles_default_access_profile` | `profiles` | atribui o perfil correspondente ao papel |

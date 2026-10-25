@@ -119,6 +119,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
          quem atende, para ver de onde os chamados estão chegando. A
          configuração mora um clique adentro, atrás da permissão de admin. */
       { href: '/conversas', label: 'Conversas', permission: 'canais.conversas.ver' },
+      /* Projetos fica em Atendimento, e não num grupo próprio: o cronograma de
+         TI é trabalho da mesma equipe que atende, e um grupo com um item só
+         acrescentaria um cabeçalho e nada mais. Veio do GSTI.IARX. */
+      { href: '/projetos', label: 'Projetos', permission: 'projetos.projetos.ver' },
     ],
   },
   {

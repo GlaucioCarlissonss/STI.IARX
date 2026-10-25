@@ -71,6 +71,7 @@ export const MODULE_LABEL: Record<string, string> = {
   autoatendimento: 'Autoatendimento',
   canais: 'Canais de conversa',
   auditoria: 'Auditoria',
+  projetos: 'Projetos',
   ia: 'Sugestões de IA',
 }
 
@@ -295,6 +296,21 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
      operador da plataforma: o agendador é infraestrutura compartilhada, sem
      `tenant_id`. A tela diz isso em vez de parecer vazia por defeito. */
   act('auditoria', 'trabalhos', 'ver', 'Acompanhar os trabalhos agendados', 'admin'),
+
+  /* --- Projetos ----------------------------------------------------------- */
+  /* Primeiro módulo trazido do GSTI.IARX. Esta base não tinha nada de projeto —
+     era a única lacuna limpa dos três módulos daquele sistema. */
+  mod('projetos', 'visualizador'),
+  scr('projetos', 'projetos', 'Projetos e cronograma', 'visualizador'),
+  act('projetos', 'projetos', 'ver', 'Consultar projetos e cronograma', 'visualizador'),
+  /* `executar` é separada de `editar` e tem teto `atendente`: quem FAZ a tarefa
+     marca o andamento e registra o mês de entrega. Exigir papel de gestor para
+     dizer "terminei" faria o cronograma envelhecer no gargalo de quem o
+     administra. */
+  act('projetos', 'projetos', 'executar', 'Atualizar andamento de tarefa', 'atendente'),
+  act('projetos', 'projetos', 'criar', 'Criar projeto', 'gestor'),
+  act('projetos', 'projetos', 'editar', 'Editar projeto, tarefas e envolvidos', 'gestor'),
+  act('projetos', 'projetos', 'excluir', 'Excluir projeto', 'gestor'),
 
   /* --- Telefonia --------------------------------------------------------- */
   mod('telefonia', 'visualizador'),

@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 190,
-    'catálogo de permissões tem as 190 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 197,
+    'catálogo de permissões tem as 197 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 190,
+  perform app.assert((select count(*) from public.permission_catalog) = 197,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -6876,6 +6876,321 @@ begin
   delete from public.job_runs where job = 'teste_0036';
 end
 $$;
+
+-- =============================================================================
+\echo '=== 41. Projetos e cronograma (0037) ==='
+-- =============================================================================
+reset role;
+/* `reset role` não limpa `request.jwt.claims` — ver a nota da seção 38. */
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+-- Primeiro módulo trazido do GSTI.IARX. O que se testa aqui é o que aquele
+-- sistema NÃO podia garantir no banco: o schema dele diz, em comentário, que
+-- "profundidade e ciclo o SQLite não expressa em CHECK". O PostgreSQL expressa, e
+-- a diferença importa porque validação de aplicação é pulada por importação, por
+-- correção manual e por qualquer caminho de escrita que não passe pela função
+-- certa — e ciclo faz o Gantt entrar em laço infinito.
+
+-- -----------------------------------------------------------------------------
+-- 41.1 Competência é mês, não dia
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c    uuid;
+  v_erro boolean := false;
+begin
+  select id into v_c from public.clients where tenant_id = v_t and deleted_at is null limit 1;
+
+  begin
+    insert into public.projects (tenant_id, client_id, name, start_month, planned_end_month)
+    values (v_t, v_c, 'Dia 15 não é competência', '2026-03-15', '2026-06-01');
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'competência no dia 15 é recusada: mês é mês, e fingir precisão de dia produz um Gantt que mente');
+
+  perform app.assert(app.meses_entre('2026-01-01', '2026-04-01') = 3, 'a diferença em meses conta');
+  perform app.assert(app.meses_entre('2026-04-01', '2026-01-01') = -3, 'e tem sinal');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 41.2 Fim antes do início, e concluído sem entrega
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c    uuid;
+  v_erro boolean := false;
+begin
+  select id into v_c from public.clients where tenant_id = v_t and deleted_at is null limit 1;
+
+  begin
+    insert into public.projects (tenant_id, client_id, name, start_month, planned_end_month)
+    values (v_t, v_c, 'Para antes de começar', '2026-06-01', '2026-03-01');
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'fim planejado anterior ao início é recusado');
+
+  /*
+   * Concluído sem fim real seria um rótulo que alguém marca e o cronograma
+   * continua mostrando a barra planejada sem a realizada: o projeto PARECE
+   * entregue e não tem desvio nenhum para medir.
+   */
+  v_erro := false;
+  begin
+    insert into public.projects (tenant_id, client_id, name, start_month, planned_end_month, status)
+    values (v_t, v_c, 'Concluído sem data', '2026-01-01', '2026-03-01', 'concluido');
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'projeto concluído sem fim real é recusado: é o fim real que vira o desvio');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 41.3 Atraso e desvio: derivados, nunca digitados
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c   uuid;
+  v_p   uuid;
+  v_vw  record;
+begin
+  select id into v_c from public.clients where tenant_id = v_t and deleted_at is null limit 1;
+  delete from public.projects where tenant_id = v_t;
+
+  -- Fim planejado três meses atrás, sem entrega: atrasado.
+  insert into public.projects (tenant_id, client_id, name, start_month, planned_end_month, status)
+  values (v_t, v_c, 'Atrasado',
+          (date_trunc('month', now()) - interval '6 months')::date,
+          (date_trunc('month', now()) - interval '3 months')::date,
+          'em_andamento')
+  returning id into v_p;
+
+  select * into v_vw from public.vw_projects where id = v_p;
+  perform app.assert(v_vw.atrasado, 'projeto que passou do prazo sem entrega aparece atrasado');
+  perform app.assert(v_vw.meses_atraso = 3, 'e o atraso é de 3 meses, calculado de now()');
+
+  /* Registrado o fim real, o atraso VIRA desvio: não há mais atraso a acusar. */
+  update public.projects
+     set actual_end_month = (date_trunc('month', now()) - interval '1 month')::date,
+         status = 'concluido'
+   where id = v_p;
+  select * into v_vw from public.vw_projects where id = v_p;
+  perform app.assert(not v_vw.atrasado, 'com fim real, o projeto deixa de acusar atraso');
+  perform app.assert(v_vw.desvio_meses = 2, 'e passa a registrar desvio de 2 meses');
+
+  /* Entrega adiantada dá desvio NEGATIVO — e isso precisa sobreviver, porque é a
+     informação que distingue "entregou antes" de "entregou na data". */
+  update public.projects
+     set actual_end_month = (date_trunc('month', now()) - interval '5 months')::date
+   where id = v_p;
+  select * into v_vw from public.vw_projects where id = v_p;
+  perform app.assert(v_vw.desvio_meses = -2, 'entrega adiantada dá desvio negativo');
+
+  -- Cancelado nunca acusa atraso: um projeto que a empresa decidiu não fazer
+  -- não é um prazo perdido.
+  update public.projects set status = 'cancelado', actual_end_month = null where id = v_p;
+  select * into v_vw from public.vw_projects where id = v_p;
+  perform app.assert(not v_vw.atrasado and v_vw.meses_atraso = 0,
+    'cancelado não acusa atraso');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 41.4 A hierarquia que o SQLite não podia garantir
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c      uuid;
+  v_p      uuid;
+  v_p2     uuid;
+  v_n1     uuid;
+  v_n2     uuid;
+  v_n3     uuid;
+  v_fora   uuid;
+  v_raiz2  uuid;
+  v_filha2 uuid;
+  v_erro   boolean := false;
+begin
+  select id into v_c from public.clients where tenant_id = v_t and deleted_at is null limit 1;
+  delete from public.projects where tenant_id = v_t;
+
+  insert into public.projects (tenant_id, client_id, name, start_month, planned_end_month)
+  values (v_t, v_c, 'Hierarquia', '2026-01-01', '2026-12-01') returning id into v_p;
+  insert into public.projects (tenant_id, client_id, name, start_month, planned_end_month)
+  values (v_t, v_c, 'Outro projeto', '2026-01-01', '2026-12-01') returning id into v_p2;
+
+  insert into public.project_tasks (tenant_id, project_id, name, start_month, planned_end_month)
+  values (v_t, v_p, 'Nível 1', '2026-01-01', '2026-02-01') returning id into v_n1;
+  insert into public.project_tasks (tenant_id, project_id, name, start_month, planned_end_month, parent_task_id)
+  values (v_t, v_p, 'Nível 2', '2026-02-01', '2026-03-01', v_n1) returning id into v_n2;
+  insert into public.project_tasks (tenant_id, project_id, name, start_month, planned_end_month, parent_task_id)
+  values (v_t, v_p, 'Nível 3', '2026-03-01', '2026-04-01', v_n2) returning id into v_n3;
+  perform app.assert(true, 'três níveis são aceitos');
+
+  -- O quarto, não.
+  begin
+    insert into public.project_tasks (tenant_id, project_id, name, start_month, planned_end_month, parent_task_id)
+    values (v_t, v_p, 'Nível 4', '2026-04-01', '2026-05-01', v_n3);
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'o quarto nível é recusado PELO BANCO — no GSTI isso só era validado na aplicação, e importação pulava');
+
+  -- Ciclo: a tarefa de nível 1 passando a ter como pai a sua própria neta.
+  v_erro := false;
+  begin
+    update public.project_tasks set parent_task_id = v_n3 where id = v_n1;
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'ciclo é recusado: sem isso o Gantt entra em laço infinito e o sintoma é a tela que não carrega');
+
+  -- Pai de outro projeto: um cronograma não agrupa por fora de si.
+  insert into public.project_tasks (tenant_id, project_id, name, start_month, planned_end_month)
+  values (v_t, v_p2, 'De outro projeto', '2026-01-01', '2026-02-01') returning id into v_fora;
+  v_erro := false;
+  begin
+    update public.project_tasks set parent_task_id = v_fora where id = v_n2;
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro, 'tarefa principal de outro projeto é recusada');
+
+  /*
+   * Mover uma tarefa que JÁ TEM duas gerações abaixo para debaixo de outra raiz
+   * é recusado mesmo que ela própria coubesse: a subárvore vem junto. É a regra
+   * que o cálculo ingênuo de profundidade erraria.
+   */
+  insert into public.project_tasks (tenant_id, project_id, name, start_month, planned_end_month)
+  values (v_t, v_p, 'Outra raiz', '2026-01-01', '2026-02-01') returning id into v_raiz2;
+  insert into public.project_tasks (tenant_id, project_id, name, start_month, planned_end_month, parent_task_id)
+  values (v_t, v_p, 'Filha da outra raiz', '2026-02-01', '2026-03-01', v_raiz2) returning id into v_filha2;
+
+  v_erro := false;
+  begin
+    update public.project_tasks set parent_task_id = v_filha2 where id = v_n1;
+  exception when check_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'mover uma tarefa com duas gerações abaixo é recusado: a subárvore conta na profundidade');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 41.5 Excluir tarefa principal é bloqueado, não cascateado
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_p    uuid;
+  v_pai  uuid;
+  v_erro boolean := false;
+begin
+  select id into v_p from public.projects
+   where tenant_id = v_t and name = 'Hierarquia' and deleted_at is null;
+  select id into v_pai from public.project_tasks
+   where project_id = v_p and name = 'Nível 1';
+
+  /*
+   * Em cascata, uma confirmação de "excluir 1 tarefa" apagaria a subárvore
+   * inteira em silêncio — exatamente o que a regra de auditoria não admite. A
+   * chave estrangeira é `on delete restrict`.
+   */
+  begin
+    delete from public.project_tasks where id = v_pai;
+  exception when foreign_key_violation then
+    v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'excluir tarefa com subtarefas é BLOQUEADO, não cascateado: a subárvore não some em silêncio');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 41.6 Quem pode o quê
+-- -----------------------------------------------------------------------------
+set role rls_tester;
+
+-- Ana Souza é operadora de TI: executa tarefa, não planeja cronograma.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_n integer;
+  v_t uuid;
+begin
+  perform app.assert(app.has_permission('projetos.projetos.ver'), 'operador de TI vê os projetos');
+  perform app.assert(app.has_permission('projetos.projetos.executar'),
+    'e atualiza o andamento da tarefa que executou');
+  perform app.assert(not app.has_permission('projetos.projetos.editar'),
+    'mas não mexe no cronograma');
+  perform app.assert(not app.has_permission('projetos.projetos.criar'),
+    'nem cria projeto');
+
+  /* Executar é escrita de verdade, e precisa funcionar: é a política
+     `tasks_update`, que aceita `editar` OU `executar`. Sem ela, o cronograma
+     envelheceria no gargalo de quem o administra. */
+  select id into v_t from public.project_tasks where deleted_at is null limit 1;
+  update public.project_tasks set status = 'em_andamento' where id = v_t;
+  get diagnostics v_n = row_count;
+  perform app.assert(v_n = 1, 'e consegue marcar a tarefa como em andamento');
+
+  /*
+   * Aqui a negação chega como ERRO, e não como zero linhas — e a diferença é
+   * real: `with check` violado num INSERT levanta exceção, enquanto `using`
+   * violado num UPDATE ou DELETE simplesmente não encontra a linha. As duas
+   * convenções convivem nesta base, e é por isso que toda escrita confere
+   * `length` do `.select()` E trata o erro.
+   */
+  declare
+    v_erro boolean := false;
+  begin
+    begin
+      insert into public.projects (tenant_id, client_id, name, start_month, planned_end_month)
+      select 'a0000000-0000-4000-8000-000000000001', c.id, 'Não deveria', '2026-01-01', '2026-02-01'
+        from public.clients c limit 1;
+    exception when insufficient_privilege or check_violation then
+      v_erro := true;
+    end;
+    perform app.assert(v_erro, 'e não cria projeto: o RLS recusa a inserção');
+  end;
+end
+$$;
+
+-- Jorge Lima é gestor de TI: planeja.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(app.has_permission('projetos.projetos.criar'), 'gestor de TI cria projeto');
+  perform app.assert(app.has_permission('projetos.projetos.editar'), 'e edita o cronograma');
+  perform app.assert(app.has_permission('projetos.projetos.excluir'), 'e exclui');
+  perform app.assert((select count(*) from public.vw_projects) > 0,
+    'e enxerga os projetos do próprio ambiente');
+end
+$$;
+
+-- Tenant 2 não vê projeto do tenant 1.
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.vw_projects) = 0,
+    'tenant 2 não vê projeto do tenant 1');
+  perform app.assert((select count(*) from public.vw_project_tasks) = 0,
+    'nem as tarefas');
+end
+$$;
+reset role;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

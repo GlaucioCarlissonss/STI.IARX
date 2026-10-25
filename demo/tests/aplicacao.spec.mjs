@@ -477,6 +477,7 @@ try {
       '/auditoria',
       '/auditoria/trabalhos',
       '/sla/horarios',
+      '/projetos',
     ]) {
       await p.goto(BASE + rota, { waitUntil: 'networkidle' })
       ok(p.url().includes('/login'), `${rota}: visitante é mandado para o login`)
