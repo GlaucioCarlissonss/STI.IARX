@@ -40,7 +40,7 @@ Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 | **Geolocalização** | Endereço estruturado obrigatório, geocodificação com nível de precisão, tratamento das 6 exceções, mapa em satélite e log append-only de cada tentativa |
 | **Usuários** | 6 papéis, visibilidade por filial (1 ou N), proteção contra auto-escalonamento, criação de conta com senha temporária e troca de senha em `/conta` |
 | **Integration Hub** | Handler Bitrix24 e handler genérico, idempotência, retry com backoff, supressão de eco, logs e mapeamento editável |
-| **Auditoria** | Trigger em 50 tabelas + histórico dedicado de tickets |
+| **Auditoria** | Trigger em 51 tabelas + histórico dedicado de tickets |
 | **Foco por empresa** | Seletor no cabeçalho que estreita treze telas de uma vez. É visualização, não autorização — o isolamento entre tenants continua sendo o RLS |
 | **Tema claro e escuro** | Segue o sistema por padrão, com escolha explícita que vence a preferência do sistema. Os dois temas passam em AA, verificado por teste |
 | **Avisos de SLA** | Atenção, crítico e estourado por e-mail, com caixa de saída, nova tentativa e opt-out por pessoa. Uma mensagem por estado e por ciclo do chamado — nunca duas |
@@ -52,7 +52,7 @@ Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 | **Agente nas máquinas** | Serviço em Go (Windows, Linux e macOS) que coleta inventário de hardware e software, concilia com o cadastro **sem duplicar ativo** e nunca sobrescreve o que uma pessoa digitou. Token por máquina, revogável uma a uma |
 | **Canais de conversa** | WhatsApp pela API oficial da Meta, e-mail, Bitrix24 e um canal genérico para o N8N — que liga Telegram, Slack ou SMS sem esta base precisar conhecê-los. Toda conversa vira chamado, e a resposta volta pelo canal de onde a pergunta veio |
 | **Sugestões de IA** | Resposta, classificação e artigo — **sugeridos, nunca aplicados**. Toda sugestão nasce pendente e aceitar é ato humano, com autor e data. Credencial por referência, teto de gasto mensal por empresa, e tudo continua funcionando sem chave nenhuma |
-| **Trilha de auditoria** | Quem mudou o quê, em 50 tabelas, com filtro por registro e por ação e exportação em CSV. A trigger grava desde a primeira migração; a tela de leitura chegou na 0036 |
+| **Trilha de auditoria** | Quem mudou o quê, em 51 tabelas, com filtro por registro e por ação e exportação em CSV. A trigger grava desde a primeira migração; a tela de leitura chegou na 0036 |
 | **Expediente e feriados** | As horas em que o prazo de SLA corre, com faixas por dia (o almoço são duas faixas) e feriados com data. Sem feriado cadastrado, um chamado aberto na véspera de Natal vence no dia 25 |
 | **Trabalhos agendados** | Quando cada trabalho rodou pela última vez e se deu certo — porque trabalho parado é invisível: não há erro, simplesmente nada acontece |
 | **Exportação em CSV** | Trilha, telefonia e custódia. Gerada **no servidor**, com o escopo de RLS de quem pediu — e não as 50 linhas da página visível |
@@ -170,7 +170,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 546 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação cronograma de projetos e rateio do orçamento
-npm run db:validate   # migrações + seed + 1005 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 1027 asserções em PostgreSQL real
 ```
 
 Mais duas suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -227,7 +227,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 42 migrações
+  migrations/         # 43 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -258,7 +258,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado na última entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 581 testes unitários e 1005 asserções de banco passando, mais 44
+apontamentos, 581 testes unitários e 1027 asserções de banco passando, mais 44
 asserções no protótipo e 60 na aplicação, em navegador — incluindo a aritmética
 de horário útil conferida contra 8 cenários (almoço, fim de semana, feriado,
 fora de expediente).
@@ -315,7 +315,7 @@ aceitável. A resolução depende de uma atualização do Next.
 | [01 — Requisitos](docs/01-requisitos.md) | Requisitos rastreáveis, matriz de permissões, lacunas e decisões por padrão |
 | [02 — Benchmarking](docs/02-benchmarking.md) | Freshservice, Jira SM, Zendesk, GLPI, ManageEngine — padrões adotados e 10 antipatterns evitados |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Visão geral e 12 ADRs com alternativas rejeitadas |
-| [04 — Modelo de dados](docs/04-modelo-dados.md) | 88 tabelas, funções, triggers, views e estratégia de índices |
+| [04 — Modelo de dados](docs/04-modelo-dados.md) | 89 tabelas, funções, triggers, views e estratégia de índices |
 | [05 — Bitrix24](docs/05-integracao-bitrix24.md) | Estudo da API, mapeamento, configuração passo a passo e limitações |
 | [06 — Lacunas e Roadmap](docs/06-lacunas-e-roadmap.md) | Especificação dos 11 módulos pendentes, cronograma em lotes e 14 lacunas globais |
 | [07 — Financeiro e Permissões](docs/07-financeiro-e-permissoes.md) | Permissões granulares, financeiro (contas a pagar/receber, fluxo de caixa) e controle de despesas: 9 módulos no template, matriz de permissões e 15 lacunas |

@@ -50,8 +50,13 @@ export default async function CatalogoPage() {
 
   const supabase = await createClient()
 
-  const [{ data: itens }, { data: categorias }, { data: filas }, { data: prioridades }] =
-    await Promise.all([
+  const [
+    { data: itens },
+    { data: categorias },
+    { data: filas },
+    { data: prioridades },
+    { data: perfis },
+  ] = await Promise.all([
       supabase
         .from('vw_service_catalog')
         .select(
@@ -86,6 +91,17 @@ export default async function CatalogoPage() {
             .order('sort_order')
             .returns<{ id: string; label: string }[]>()
         : Promise.resolve({ data: [] as { id: string; label: string }[] }),
+      /* Perfis de acesso, para restringir quem aprova um serviço. Só os ativos:
+         oferecer um perfil desativado criaria um serviço que ninguém pode
+         aprovar — e a trava viraria um beco. */
+      podeGerenciar
+        ? supabase
+            .from('access_profiles')
+            .select('id, name')
+            .eq('is_active', true)
+            .order('name')
+            .returns<{ id: string; name: string }[]>()
+        : Promise.resolve({ data: [] as { id: string; name: string }[] }),
     ])
 
   const lista = itens ?? []
@@ -187,6 +203,7 @@ export default async function CatalogoPage() {
           categorias={categorias ?? []}
           filas={filas ?? []}
           prioridades={prioridades ?? []}
+          perfis={perfis ?? []}
         />
       )}
     </>

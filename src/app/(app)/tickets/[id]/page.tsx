@@ -12,6 +12,7 @@ import { CommentForm } from './comment-form'
 import { Attachments, type AttachmentRecord } from '@/components/attachments'
 import { SugestoesDaBase, type Sugestao } from './sugestoes'
 import { PainelDeIA, type SugestaoNaTela } from './painel-de-ia'
+import { PainelDeAprovacao, type AprovacaoNaTela } from './aprovacao'
 import {
   VinculosDoChamado,
   type AtivoVinculado,
@@ -59,6 +60,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
   const podeVincular = await allowed('helpdesk.tickets.vincular')
   const podeVerIA = await allowed('ia.sugestoes.ver')
   const podeUsarIA = await allowed('ia.sugestoes.usar')
+  const podeAprovar = await allowed('autoatendimento.catalogo.aprovar')
 
   const [
     { data: comments },
@@ -76,6 +78,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
     { data: pausas },
     { data: candidatosAtivos },
     { data: candidatosLinhas },
+    { data: aprovacao },
   ] =
     await Promise.all([
       supabase
@@ -195,6 +198,23 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
             .limit(300)
             .returns<{ id: string; phone_number: string }[]>()
         : Promise.resolve({ data: [] }),
+      /* A aprovação do pedido, quando houver. `maybeSingle` porque é no máximo
+         uma: `uq_service_approval_ticket` garante um pedido por chamado. */
+      supabase
+        .from('service_approvals')
+        .select(
+          'status, requested_at, decided_at, motivo, pedinte:requested_by(full_name), decisor:decided_by(full_name), servico:service_id(name, aprovador_profile_id, perfil:aprovador_profile_id(name))',
+        )
+        .eq('ticket_id', id)
+        .maybeSingle<{
+          status: 'pendente' | 'aprovado' | 'recusado'
+          requested_at: string
+          decided_at: string | null
+          motivo: string | null
+          pedinte: { full_name: string } | null
+          decisor: { full_name: string } | null
+          servico: { name: string; perfil: { name: string } | null } | null
+        }>(),
     ])
 
   const allowedStatuses = (transitions ?? []).map((t) => t.to_status as EnrichedTicket['status'])
@@ -250,6 +270,28 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
         primeiro ensinaria a equipe a pular a base — e a base deixaria de ser
         alimentada, que é o único jeito de ela servir para alguma coisa.
       */}
+      {/* A aprovação vem ANTES de tudo que é de atendimento: enquanto ela está
+          pendente, não há atendimento a fazer — e o painel diz isso em vez de
+          deixar a equipe procurar por que o chamado não anda. */}
+      {aprovacao && (
+        <PainelDeAprovacao
+          ticketId={id}
+          podeDecidir={podeAprovar}
+          aprovacao={
+            {
+              status: aprovacao.status,
+              requested_at: aprovacao.requested_at,
+              requested_by_name: aprovacao.pedinte?.full_name ?? null,
+              decided_at: aprovacao.decided_at,
+              decided_by_name: aprovacao.decisor?.full_name ?? null,
+              motivo: aprovacao.motivo,
+              servico: aprovacao.servico?.name ?? 'O serviço pedido',
+              perfil_exigido: aprovacao.servico?.perfil?.name ?? null,
+            } satisfies AprovacaoNaTela
+          }
+        />
+      )}
+
       {isAgent && podeVerIA && (
         <PainelDeIA
           ticketId={id}

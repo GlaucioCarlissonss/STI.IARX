@@ -239,6 +239,25 @@ bash scripts/validate-migrations.sh && python3 scripts/conferir-colunas.py
 > conjunto. Quem fosse "voltar para antes da mudança de ontem" escolheria um
 > desses. Agora é uma instrução, uma versão.
 
+> **A aprovação de pedido fechou na migração 0043** — e veio na frente da fila
+> por um motivo que não estava escrito aqui: `service_catalog.requer_aprovacao`
+> existia desde a 0033, a tela de pedido mostrava em destaque que "o chamado é
+> aberto na hora e fica aguardando", e **nada acontecia**. O chamado era criado
+> e atendido como qualquer outro. A coluna era decoração, e a tela, uma promessa
+> falsa — que é pior que um recurso ausente, porque ninguém descobre por erro:
+> descobre pelo serviço executado.
+>
+> O bloqueio registrado ("quem aprova o quê é decisão do cliente") continua
+> sendo do cliente, mas deixou de bloquear: virou cadastro. Em branco, aprovam
+> gestores e administradores; preenchido com um perfil de acesso, só quem tem
+> aquele perfil — e ter a permissão não basta.
+>
+> Duas asserções acharam defeitos durante a implementação: o relógio do SLA
+> corria durante a aprovação (a trigger de pausa da 0006 só roda em `update`, e
+> o chamado já nasce em espera), e a trigger nova disparava **antes** da que
+> cria o `sla_tracking`, porque triggers do mesmo evento disparam em ordem
+> alfabética.
+
 Nada aqui é "falta de tempo" — cada um tem um motivo.
 
 | Pendência | Por que continua aberta |
@@ -247,7 +266,6 @@ Nada aqui é "falta de tempo" — cada um tem um motivo.
 | **PWA do portal, identidade visual por cliente, domínio próprio** | É o "módulo maior" do LG-08. Nenhum deles muda o que o solicitante consegue fazer — mudam onde ele faz |
 | **Chat (portal e chatbot)** | Quarta superfície de atendimento, e a única que exige presença. Chat sem ninguém do outro lado promete resposta imediata e não entrega |
 | **Embeddings / semelhança semântica** | Dependência nova para melhorar um passo que não é o gargalo. O gargalo é a base ter poucos artigos |
-| **Fluxo de aprovação de pedido de serviço** | `approval_rules` serve ao financeiro. Estendê-la ao catálogo exige decidir quem aprova o quê, e isso é decisão do cliente |
 | **PDF/XLSX** | Duas bibliotecas por um formato que, hoje, ninguém pediu nominalmente |
 | **Player de áudio e vídeo em anexo (M5)** | Cosmético, e o navegador já abre o arquivo |
 | **LG-01 (dado sensível de saúde), LG-03 (antivírus), LG-10 (pausa configurável), LG-13 (área em tickets)** | São **decisões pendentes**, não código pendente. Cada uma precisa de uma resposta do cliente antes de virar implementação |

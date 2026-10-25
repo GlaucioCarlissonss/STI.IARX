@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 209,
-    'catálogo de permissões tem as 209 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 210,
+    'catálogo de permissões tem as 210 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 209,
+  perform app.assert((select count(*) from public.permission_catalog) = 210,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -8548,6 +8548,315 @@ begin
   select count(*) into v_depois from public.integration_mappings where integration_id = v_int;
   perform app.assert(v_depois = v_antes,
     'operadora não restaura mapeamento: nada é apagado e nada é inserido');
+end
+$$;
+reset role;
+
+-- =============================================================================
+\echo '=== 47. Aprovação de pedido de serviço (0043) ==='
+-- =============================================================================
+reset role;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+-- `service_catalog.requer_aprovacao` existia desde a 0033, a tela prometia uma
+-- trava — "o chamado é aberto na hora e fica aguardando" — e NADA acontecia. O
+-- chamado era criado e atendido como qualquer outro. O que se prova aqui é que
+-- a promessa passou a ser verdade.
+
+-- -----------------------------------------------------------------------------
+-- 47.1 O pedido nasce travado, e o registro nasce junto
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_serv uuid;
+  v_livre uuid;
+  v_prio uuid;
+  v_fila uuid;
+  v_dono uuid := '22220000-0000-4000-8000-000000000002';
+  v_tk   uuid;
+  v_tk2  uuid;
+begin
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+
+  insert into public.service_catalog (tenant_id, name, requer_aprovacao)
+  values (v_t, 'Compra de notebook', true) returning id into v_serv;
+  insert into public.service_catalog (tenant_id, name, requer_aprovacao)
+  values (v_t, 'Troca de toner', false) returning id into v_livre;
+
+  insert into public.tickets
+    (tenant_id, title, priority_id, queue_id, requester_id, service_id)
+  values (v_t, 'Pedido: notebook', v_prio, v_fila, v_dono, v_serv)
+  returning id into v_tk;
+
+  /*
+   * `before insert`, e não um `update` depois: o chamado nunca existe em
+   * `open`. Um instante nesse estado bastaria para a distribuição automática
+   * pegá-lo — e aí a trava existiria no papel.
+   */
+  perform app.assert(
+    (select status from public.tickets where id = v_tk) = 'waiting_approval',
+    'pedido de serviço que exige aprovação NASCE aguardando, nunca em aberto');
+
+  perform app.assert(
+    (select count(*) from public.service_approvals where ticket_id = v_tk) = 1,
+    'e o registro da aprovação nasce junto, pendente');
+
+  perform app.assert(
+    (select status from public.service_approvals where ticket_id = v_tk) = 'pendente',
+    'com status pendente e sem autor de decisão');
+
+  -- O serviço que NÃO exige aprovação continua como sempre foi.
+  insert into public.tickets
+    (tenant_id, title, priority_id, queue_id, requester_id, service_id)
+  values (v_t, 'Pedido: toner', v_prio, v_fila, v_dono, v_livre)
+  returning id into v_tk2;
+
+  perform app.assert(
+    (select status from public.tickets where id = v_tk2) = 'open',
+    'serviço sem exigência de aprovação não ganha trava nenhuma');
+  perform app.assert(
+    (select count(*) from public.service_approvals where ticket_id = v_tk2) = 0,
+    'nem registro de aprovação');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 47.2 O relógio do SLA fica parado enquanto espera
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t  uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tk uuid;
+begin
+  select id into v_tk from public.tickets
+   where tenant_id = v_t and title = 'Pedido: notebook';
+
+  /*
+   * O acordo é sobre o tempo de ATENDIMENTO, e o atendimento não começou.
+   * Deixar o relógio correr cobraria da equipe o prazo de uma decisão que não é
+   * dela — e o estouro apareceria no relatório de SLA como falha de quem
+   * atende.
+   */
+  perform app.assert(app.status_pauses_sla('waiting_approval'),
+    'aguardando aprovação pausa o relógio, como todo estado de espera');
+  perform app.assert(
+    (select is_paused from public.sla_tracking where ticket_id = v_tk),
+    'e a pausa está aberta no chamado');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 47.3 Não existe caminho para atender sem aprovar
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tk   uuid;
+  v_erro boolean := false;
+begin
+  select id into v_tk from public.tickets
+   where tenant_id = v_t and title = 'Pedido: notebook';
+
+  /*
+   * A transição `waiting_approval -> in_progress` não existe de propósito.
+   * Atender um pedido que ainda não foi aprovado é exatamente o que a trava
+   * impede; deixar a transição aberta a tornaria uma sugestão.
+   */
+  begin
+    update public.tickets set status = 'in_progress' where id = v_tk;
+  exception when others then v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'não dá para colocar em atendimento um pedido que ainda não foi aprovado');
+
+  perform app.assert(
+    (select count(*) from public.ticket_status_transitions
+      where from_status = 'waiting_approval') = 2,
+    'de aguardando aprovação só se sai para dois lugares: andar ou fechar');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 47.4 Aprovar: uma transação, três efeitos
+-- -----------------------------------------------------------------------------
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tk   uuid;
+  v_cmt  integer;
+begin
+  select id into v_tk from public.tickets
+   where tenant_id = v_t and title = 'Pedido: notebook';
+
+  select count(*) into v_cmt from public.ticket_comments where ticket_id = v_tk;
+
+  perform app.assert(public.decidir_pedido(v_tk, true) = 'open',
+    'aprovar devolve o chamado para aberto');
+
+  perform app.assert(
+    (select status from public.service_approvals where ticket_id = v_tk) = 'aprovado',
+    'o registro fica aprovado');
+  perform app.assert(
+    (select decided_by is not null and decided_at is not null
+       from public.service_approvals where ticket_id = v_tk),
+    'com autor E data — decisão sem autor é o que ninguém reconstrói depois');
+  perform app.assert(
+    (select count(*) from public.ticket_comments where ticket_id = v_tk) = v_cmt + 1,
+    'e o porquê fica NO CHAMADO, não só numa tabela que a tela do chamado não mostra');
+  perform app.assert(
+    not (select is_paused from public.sla_tracking where ticket_id = v_tk),
+    'o relógio volta a correr');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 47.5 Decidir duas vezes é recusado, e a mensagem diz o que já houve
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_tk   uuid;
+  v_msg  text;
+begin
+  select id into v_tk from public.tickets
+   where tenant_id = v_t and title = 'Pedido: notebook';
+
+  /* Não é erro de quem clicou: é a tela aberta em duas abas. */
+  begin
+    perform public.decidir_pedido(v_tk, false, 'mudei de ideia');
+    perform app.assert(false, 'decidir duas vezes deveria ser recusado');
+  exception when invalid_parameter_value then
+    get stacked diagnostics v_msg = message_text;
+  end;
+  perform app.assert(v_msg like '%já foi aprovado%',
+    'e a mensagem diz o que já aconteceu, em vez de "erro"');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 47.6 Recusa sem motivo é recusada
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_serv uuid;
+  v_prio uuid;
+  v_fila uuid;
+  v_dono uuid := '22220000-0000-4000-8000-000000000002';
+  v_tk   uuid;
+  v_erro boolean := false;
+begin
+  reset role;
+  select id into v_serv from public.service_catalog
+   where tenant_id = v_t and name = 'Compra de notebook';
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+  select id into v_fila from public.queues where tenant_id = v_t and is_system_default;
+
+  insert into public.tickets
+    (tenant_id, title, priority_id, queue_id, requester_id, service_id)
+  values (v_t, 'Pedido: segundo notebook', v_prio, v_fila, v_dono, v_serv)
+  returning id into v_tk;
+
+  set local role rls_tester;
+  begin
+    perform public.decidir_pedido(v_tk, false, '  ');
+  exception when others then v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'recusar sem motivo é recusado: "foi negado" sem porquê traz o mesmo pedido de volta');
+
+  perform app.assert(
+    (select status from public.service_approvals where ticket_id = v_tk) = 'pendente',
+    'e o pedido continua pendente depois da tentativa');
+
+  perform app.assert(public.decidir_pedido(v_tk, false, 'Fora do orçamento deste trimestre.') = 'closed',
+    'com motivo, a recusa fecha o chamado');
+  perform app.assert(
+    (select motivo from public.service_approvals where ticket_id = v_tk)
+      = 'Fora do orçamento deste trimestre.',
+    'e o motivo fica gravado');
+end
+$$;
+reset role;
+
+-- -----------------------------------------------------------------------------
+-- 47.7 Quem decide: a permissão E o perfil exigido pelo serviço
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_serv   uuid;
+  v_perfil uuid;
+begin
+  select id into v_serv from public.service_catalog
+   where tenant_id = v_t and name = 'Compra de notebook';
+
+  -- Um perfil de acesso que o gestor de TI não tem.
+  select id into v_perfil from public.access_profiles
+   where tenant_id = v_t and id <> coalesce(
+     (select access_profile_id from public.profiles
+       where id = '22220000-0000-4000-8000-000000000002'),
+     '00000000-0000-4000-8000-000000000000')
+   limit 1;
+
+  update public.service_catalog set aprovador_profile_id = v_perfil where id = v_serv;
+end
+$$;
+
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_serv uuid;
+begin
+  select id into v_serv from public.service_catalog
+   where tenant_id = 'a0000000-0000-4000-8000-000000000001' and name = 'Compra de notebook';
+
+  /*
+   * A decisão do cliente ("quem aprova o quê") virou cadastro — e o cadastro
+   * manda. Com perfil exigido, ter a permissão não basta: é isso que permite a
+   * um ambiente dizer "compra acima de X é só o diretor" sem uma linha de
+   * código nova.
+   */
+  perform app.assert(not app.pode_aprovar_servico(v_serv),
+    'ter a permissão não basta quando o serviço exige um perfil que a pessoa não tem');
+end
+$$;
+
+-- Ana Souza é operadora: não tem a permissão, e isso basta para barrar.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(not app.has_permission('autoatendimento.catalogo.aprovar'),
+    'operadora não aprova pedido de serviço');
+end
+$$;
+reset role;
+
+-- -----------------------------------------------------------------------------
+-- 47.8 A escrita direta na tabela de aprovação não existe
+-- -----------------------------------------------------------------------------
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_n integer;
+begin
+  /*
+   * Só `select` é concedido. Um `update` direto marcaria "aprovado" sem mexer
+   * no chamado, e o pedido ficaria aprovado e parado — o estado que ninguém
+   * consegue distinguir de um defeito. A decisão passa pela função ou não
+   * acontece.
+   */
+  update public.service_approvals set status = 'aprovado';
+  get diagnostics v_n = row_count;
+  perform app.assert(v_n = 0, 'nenhuma linha de aprovação é alterável direto');
+exception when insufficient_privilege then
+  perform app.assert(true, 'a tabela recusa escrita direta');
 end
 $$;
 reset role;

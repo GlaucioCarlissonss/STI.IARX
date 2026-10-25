@@ -14,6 +14,7 @@ export type TicketStatus =
   | 'in_progress'
   | 'waiting_requester'
   | 'waiting_third_party'
+  | 'waiting_approval'
   | 'resolved'
   | 'closed'
 

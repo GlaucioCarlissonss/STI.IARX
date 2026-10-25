@@ -32,7 +32,7 @@ outro nome, a divergência está registrada explicitamente em vez de duplicada.
 ## O que já está implementado desta especificação
 
 A migração `0013_areas_anexos_links.sql` entrega **a camada de dados** do que é
-inequívoco, validada contra PostgreSQL real (eram 397 asserções à época; hoje são 1005). O
+inequívoco, validada contra PostgreSQL real (eram 397 asserções à época; hoje são 1027). O
 que falta em cada módulo é
 a **interface** — e, nos casos marcados, a decisão do operador.
 
@@ -1407,7 +1407,7 @@ decisão nova.
 
 ### O que a auditoria já resolve
 
-`audit_log` cobre por trigger 50 tabelas, incluindo `sla_definitions`, `queues`,
+`audit_log` cobre por trigger 51 tabelas, incluindo `sla_definitions`, `queues`,
 `integrations` e `integration_mappings`. Os requisitos de "histórico de alterações" de M1
 e M10 são, portanto, **de interface** — precisam de tela lendo `audit_log`, não de
 modelagem nova. Isso reduz o custo real desses dois módulos em relação ao que o escopo

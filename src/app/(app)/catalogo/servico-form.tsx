@@ -43,11 +43,13 @@ export function ServicoForm({
   categorias,
   filas,
   prioridades,
+  perfis,
   className = '',
 }: {
   categorias: { id: string; name: string }[]
   filas: { id: string; name: string }[]
   prioridades: { id: string; label: string }[]
+  perfis: { id: string; name: string }[]
   className?: string
 }) {
   const [state, action] = useActionState(salvarServico, {})
@@ -195,6 +197,26 @@ export function ServicoForm({
             Precisa de aprovação antes de executar
           </label>
         </div>
+
+        <Field
+          label="Quem aprova"
+          htmlFor="aprovador_profile_id"
+          hint="Só vale quando o serviço precisa de aprovação. Em branco, aprovam gestores e administradores — que é a resposta certa na maioria dos ambientes."
+        >
+          <select
+            id="aprovador_profile_id"
+            name="aprovador_profile_id"
+            defaultValue=""
+            className={inputClass}
+          >
+            <option value="">Gestores e administradores</option>
+            {perfis.map((p) => (
+              <option key={p.id} value={p.id}>
+                Só quem tem o perfil &quot;{p.name}&quot;
+              </option>
+            ))}
+          </select>
+        </Field>
 
         {state.error && <ErrorNote>{state.error}</ErrorNote>}
         {state.success && (

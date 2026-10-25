@@ -18,6 +18,7 @@ export const ticketStatusLabel: Record<TicketStatus, string> = {
   in_progress: 'Em andamento',
   waiting_requester: 'Aguardando solicitante',
   waiting_third_party: 'Aguardando terceiro',
+  waiting_approval: 'Aguardando aprovação',
   resolved: 'Resolvido',
   closed: 'Fechado',
 }
@@ -30,6 +31,7 @@ export const ticketStatusTone: Record<TicketStatus, 'neutral' | 'info' | 'warn' 
   in_progress: 'info',
   waiting_requester: 'warn',
   waiting_third_party: 'warn',
+  waiting_approval: 'warn',
   resolved: 'good',
   closed: 'neutral',
 }

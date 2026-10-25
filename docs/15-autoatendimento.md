@@ -236,6 +236,26 @@ de quantos artigos já tenha.
 | PWA / aplicativo instalável | A tela existe e é o que ele embrulha. O PWA é trabalho de empacotamento (manifesto, service worker, modo offline), e sem o portal pronto não havia o que empacotar. |
 | Construtor visual de formulário | Projeto em si. Adiaria o catálogo inteiro para melhorar a vida de quem cadastra um serviço por mês. |
 | Semelhança semântica nas sugestões | Exige embeddings e um modelo — é a Onda 6. Um artigo relevante achado por categoria vale mais hoje que um artigo perfeito daqui a três meses. |
-| Aprovação do pedido de serviço | O campo `requer_aprovacao` existe e o chamado nasce marcado, mas o fluxo de aprovação **não foi construído** — ele deveria reaproveitar `approval_rules`, que hoje serve só ao financeiro. Está escrito aqui para não parecer pronto. |
+| ~~Aprovação do pedido de serviço~~ | **Construída na migração 0043.** O que estava escrito aqui era pior do que "não foi construído": a tela de pedido afirmava que o chamado ficaria aguardando, e ele não ficava — nascia como qualquer outro e era atendido. Ver abaixo. |
+
+### A aprovação, desde a 0043
+
+Um serviço marcado como "precisa de aprovação" faz o chamado **nascer** em
+`waiting_approval` — não em aberto com uma etiqueta. A diferença é que não
+existe caminho para atendê-lo: a transição `waiting_approval → in_progress` não
+existe, e de lá só se sai aprovando (volta a `open`) ou recusando (vai para
+`closed`, com o motivo obrigatório registrado como comentário público no
+próprio chamado).
+
+**O relógio do SLA fica parado enquanto espera.** O acordo é sobre o tempo de
+atendimento, e o atendimento não começou; cobrar da equipe o tempo da decisão
+seria cobrar o prazo de uma decisão que não é dela.
+
+**Quem aprova é cadastro, não código.** Em branco, aprovam gestores e
+administradores. Preenchido com um perfil de acesso, só quem tem aquele perfil
+— e ter a permissão `autoatendimento.catalogo.aprovar` não basta. É o que
+permite a um ambiente dizer "isto só o diretor aprova" sem uma linha de código
+nova, e era exatamente o ponto que mantinha este item parado como "decisão do
+cliente".
 | Formatação no corpo do artigo | Exigiria renderizador e sanitizador num texto lido por gente de fora da equipe. |
 | Versionamento de artigo | `audit_log` já registra cada edição com o valor anterior. Uma tela de "comparar versões" é outra coisa, e ninguém pediu ainda. |

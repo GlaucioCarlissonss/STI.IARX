@@ -169,6 +169,7 @@ const servicoSchema = z.object({
     .union([z.literal(''), z.coerce.number().int().min(1).max(2000)])
     .transform((v) => (v === '' ? null : v)),
   requer_aprovacao: z.coerce.boolean(),
+  aprovador_profile_id: optionalUuid,
   is_active: z.coerce.boolean(),
   campos: z.string().trim(),
 })
@@ -192,6 +193,7 @@ export async function salvarServico(_prev: ActionState, formData: FormData): Pro
     unidade: formData.get('unidade') ?? '',
     prazo_horas: formData.get('prazo_horas') ?? '',
     requer_aprovacao: formData.get('requer_aprovacao') === 'on',
+    aprovador_profile_id: formData.get('aprovador_profile_id') ?? '',
     is_active: formData.get('is_active') === 'on',
     campos: formData.get('campos') ?? '[]',
   })

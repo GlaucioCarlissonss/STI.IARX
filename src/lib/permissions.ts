@@ -243,6 +243,11 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
      o que essa pessoa veio fazer. */
   act('autoatendimento', 'catalogo', 'pedir', 'Pedir um serviço', 'solicitante'),
   act('autoatendimento', 'catalogo', 'gerenciar', 'Cadastrar serviços e preços', 'gestor'),
+  /* `requer_aprovacao` existia desde a 0033 e a tela prometia uma trava que não
+     existia: o chamado era criado e atendido como qualquer outro. A chave
+     governa quem desfaz a trava — e o serviço ainda pode exigir um perfil de
+     acesso específico, por cima dela. */
+  act('autoatendimento', 'catalogo', 'aprovar', 'Aprovar ou recusar pedido de serviço', 'gestor'),
 
   /* --- Canais de conversa -------------------------------------------------- */
   /* Módulo próprio, e não telas dentro de `integracoes`: aquele módulo trata de
