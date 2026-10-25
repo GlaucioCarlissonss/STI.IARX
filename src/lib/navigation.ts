@@ -92,6 +92,14 @@ export const NAV_GROUPS: readonly NavGroup[] = [
        * chamado livre.
        */
       { href: '/portal', label: 'Portal', permission: null },
+      /*
+       * A visão de resultado fica aqui em cima, solta, e não dentro de
+       * Financeiro ou de Projetos — porque ela não pertence a nenhum dos dois.
+       * Ela compila financeiro, SLA e projetos sob um recorte só, e pendurá-la
+       * num dos módulos diria ao leitor do menu que é uma tela daquele módulo.
+       * É um destino, como a Visão geral, e não uma categoria.
+       */
+      { href: '/resultado', label: 'Visão de resultado', permission: 'gestao.resultado.ver' },
     ],
   },
   {

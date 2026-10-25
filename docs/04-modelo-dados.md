@@ -640,6 +640,44 @@ projetos, ele **lê o que já existe** em vez de duplicar.
   está no banco desde a 0018 e **nunca teve uma linha**: sem seed e sem tela, o
   campo "Categoria" do título a pagar sempre teve uma opção só, a vazia.
 
+### Visão de resultado (0039)
+Terceira peça do GSTI.IARX, e a única sem tabela nenhuma: duas funções e uma
+coluna acrescentada a `vw_it_budget_monthly`. É relatório sobre o que já existe.
+
+| Objeto | Papel |
+|---|---|
+| `gestao_resultado(cliente, competência)` | Os indicadores dos três módulos sob o **mesmo recorte** |
+| `gestao_gasto_por_filial(cliente, competência)` | O detalhe do financeiro, que tem de fechar no indicador |
+| `vw_it_budget_monthly.scenario_key` | A coluna que mantém a simulação fora do total |
+
+**Decisões que valem registro:**
+
+- **Uma função, e não três consultas na tela.** O recorte precisa ser o mesmo
+  nos três. Com três consultas montadas na tela, um filtro que diverge produz
+  números que não conversam — e ninguém percebe, porque cada um parece certo
+  sozinho. Montado no banco, o consolidado vira **asserção de schema**, que é a
+  única forma de provar que ele soma o que diz somar.
+
+- **A conformidade é derivada de `sum(tickets_with_sla)` e
+  `sum(resolution_breaches)`**, e não da coluna `resolution_compliance_pct` de
+  `vw_sla_compliance`. Aquela coluna é por fila, e **a média de percentuais por
+  fila não é o percentual do conjunto**: uma fila com um chamado pesaria tanto
+  quanto uma com duzentos. No caso do teste, a diferença é de quarenta pontos.
+
+- **Zero chamado com acordo devolve `null`, não 100.** "Nenhum estouro em nenhum
+  chamado coberto" é ausência de medida, não conformidade perfeita — e escrever
+  100% faria do mês sem acordo o melhor mês do ano.
+
+- **`security invoker`, como todo o resto.** `security definer` aqui seria uma
+  quarta exceção ao ADR-011, e a pior delas: entregaria num único chamado o
+  custo, os projetos e o atendimento de um cliente de outro tenant.
+
+- **`scenario_key` cumpre um contrato que era só comentário.** A 0038 dizia que
+  o cenário `oficial` alimenta os indicadores e os outros convivem sem
+  contaminar os totais — e nenhuma consulta filtrava, porque só existia o
+  oficial. No dia do primeiro cenário de simulação, todo total de gasto passaria
+  a somar a simulação junto com o real, sempre **para mais**.
+
 ## 3. Padrões estruturais
 
 ### 3.1 Chave composta `(id, tenant_id)`
@@ -768,7 +806,7 @@ entre tenants.
 
 `supabase/tests/schema_test.sql` roda contra um banco semeado, com um papel
 **sem `BYPASSRLS`** — como superusuário, todo teste de isolamento passaria
-trivialmente e não provaria nada. São 397 asserções cobrindo cobertura de RLS,
+trivialmente e não provaria nada. São 956 asserções cobrindo cobertura de RLS,
 isolamento entre tenants, visibilidade por filial, comentário interno oculto do
 solicitante, escalonamento de privilégio, máquina de estados, fila padrão,
 precedência de SLA, pausa/retomada, idempotência, numeração, views, tokens de TV,

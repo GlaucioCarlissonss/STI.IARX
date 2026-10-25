@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 201,
-    'catálogo de permissões tem as 201 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 204,
+    'catálogo de permissões tem as 204 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 201,
+  perform app.assert((select count(*) from public.permission_catalog) = 204,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -7503,6 +7503,334 @@ begin
     (select count(*) from public.it_budget_closings
       where tenant_id = 'a0000000-0000-4000-8000-000000000001') = 0,
     'nem os fechamentos');
+end
+$$;
+reset role;
+
+-- =============================================================================
+\echo '=== 43. Visão de resultado: os três sob o mesmo recorte (0039) ==='
+-- =============================================================================
+reset role;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+
+-- Um indicador consolidado só vale se ele somar o que diz somar. Como ninguém
+-- confere uma soma de três módulos olhando a tela, é aqui que ela é provada.
+--
+-- Tudo nesta seção acontece sobre um cliente PRÓPRIO, criado aqui. É o que
+-- permite contar em números exatos sem apagar o que as seções anteriores
+-- montaram — e o recorte por cliente é justamente o que está sendo testado.
+
+-- -----------------------------------------------------------------------------
+-- 43.1 O financeiro: o detalhe fecha no indicador, e a simulação fica de fora
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c      uuid := 'cc000000-0000-4000-8000-000000000043';
+  v_cen    uuid;
+  v_sim    uuid;
+  v_cat    uuid;
+  v_f1     uuid;
+  v_f2     uuid;
+  v_comp   date := date_trunc('month', now())::date;
+  v_r      record;
+  v_soma   numeric;
+  v_linhas integer;
+begin
+  select id into v_cat from public.expense_categories where tenant_id = v_t and is_active limit 1;
+
+  insert into public.clients (id, tenant_id, legal_name, trade_name)
+  values (v_c, v_t, 'Resultado Consolidado Ltda', 'Visão de resultado')
+  on conflict (id) do nothing;
+
+  insert into public.branches (tenant_id, client_id, name)
+  values (v_t, v_c, 'Matriz do resultado') returning id into v_f1;
+  insert into public.branches (tenant_id, client_id, name)
+  values (v_t, v_c, 'Filial do resultado') returning id into v_f2;
+
+  -- O cenário oficial nasce com o cliente (0038).
+  select id into v_cen from public.it_budget_scenarios where client_id = v_c and key = 'oficial';
+  perform app.assert(v_cen is not null, 'o cliente nasce com o cenário oficial');
+
+  -- Um cenário de simulação. Ele existe justamente para NÃO aparecer.
+  insert into public.it_budget_scenarios (tenant_id, client_id, key, name)
+  values (v_t, v_c, 'simulacao', 'Simulação de corte')
+  returning id into v_sim;
+
+  insert into public.it_cost_entries
+    (tenant_id, client_id, branch_id, expense_category_id, scenario_id, competence,
+     amount, natureza, classificacao)
+  values
+    -- A competência em exame: 1.000 + 500 + 250 = 1.750.
+    (v_t, v_c, v_f1,  v_cat, v_cen, v_comp,                               1000.00, 'pontual_unica', 'despesa'),
+    (v_t, v_c, v_f2,  v_cat, v_cen, v_comp,                                500.00, 'pontual_unica', 'investimento'),
+    (v_t, v_c, null,  v_cat, v_cen, v_comp,                                250.00, 'pontual_unica', 'despesa'),
+    -- O mês anterior, base da variação.
+    (v_t, v_c, v_f1,  v_cat, v_cen, (v_comp - interval '1 month')::date,  1200.00, 'pontual_unica', 'despesa'),
+    -- Compromisso: dentro da janela de doze meses, e fora dela.
+    (v_t, v_c, v_f1,  v_cat, v_cen, (v_comp + interval '2 months')::date,  300.00, 'pontual_unica', 'despesa'),
+    (v_t, v_c, v_f1,  v_cat, v_cen, (v_comp + interval '12 months')::date, 400.00, 'pontual_unica', 'despesa'),
+    (v_t, v_c, v_f1,  v_cat, v_cen, (v_comp + interval '14 months')::date, 900.00, 'pontual_unica', 'despesa'),
+    -- E a simulação, na MESMA competência, com um valor que não passaria
+    -- despercebido se vazasse para o indicador.
+    (v_t, v_c, v_f1,  v_cat, v_sim, v_comp,                              99999.00, 'pontual_unica', 'despesa');
+
+  select * into v_r from public.gestao_resultado(v_c, v_comp);
+
+  perform app.assert(v_r.gasto_mes = 1750.00,
+    'o gasto do mês soma os lançamentos da competência');
+  /*
+   * O caso que esta asserção protege: um cenário de simulação somando junto com
+   * o real. O erro é sempre para MAIS, e ninguém desconfia de um número que
+   * subiu — ele é lido como "o custo cresceu".
+   */
+  perform app.assert(v_r.gasto_mes < 99999.00,
+    'e o cenário de simulação NÃO entra: ele existe para conviver sem contaminar');
+  perform app.assert(v_r.gasto_despesa = 1250.00 and v_r.gasto_investimento = 500.00,
+    'despesa e investimento se separam, e somam o total');
+  perform app.assert(v_r.gasto_mes_anterior = 1200.00,
+    'o mês anterior é o mês anterior, e não o acumulado');
+  /* 300 + 400: o lançamento de catorze meses fica fora da janela, e o da própria
+     competência não é compromisso — já é gasto. */
+  perform app.assert(v_r.compromisso_12m = 700.00,
+    'o compromisso são os doze meses SEGUINTES já lançados, nem mais nem menos');
+
+  /*
+   * O contrato de leitura do painel: a soma do detalhe conferida contra o
+   * indicador. Aqui ela é provada; na tela, ela é exibida.
+   */
+  select coalesce(sum(total), 0), count(*) into v_soma, v_linhas
+    from public.gestao_gasto_por_filial(v_c, v_comp);
+  perform app.assert(v_soma = v_r.gasto_mes,
+    'a soma do detalhe por filial fecha EXATAMENTE no indicador');
+  perform app.assert(v_linhas = 3,
+    'e o detalhe tem as duas filiais mais a linha do grupo — lançamento sem filial não some');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 43.2 A conformidade é do CONJUNTO, não a média das filas
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c      uuid := 'cc000000-0000-4000-8000-000000000043';
+  v_dono   uuid := '22220000-0000-4000-8000-000000000001';
+  v_prio   uuid;
+  v_fila_a uuid;
+  v_fila_b uuid;
+  v_id     uuid;
+  v_comp   date := date_trunc('month', now())::date;
+  v_r      record;
+  v_media  numeric;
+begin
+  select id into v_prio from public.ticket_priorities where tenant_id = v_t order by sort_order limit 1;
+  select id into v_fila_a from public.queues where tenant_id = v_t and is_system_default;
+
+  insert into public.queues (tenant_id, name, slug)
+  values (v_t, 'Fila de volume baixo', 'volume-baixo')
+  returning id into v_fila_b;
+
+  /*
+   * Fila A: vinte chamados com acordo, dois estourados  → 90%.
+   * Fila B: um chamado com acordo, ele estourado        →  0%.
+   *
+   * A média das filas dá 45%. O conjunto dá (21-3)/21 = 85,7%.
+   *
+   * Este é o erro que a 0039 evita ao NÃO usar `resolution_compliance_pct` da
+   * view: aquela coluna é por fila, e a média de percentuais por fila não é o
+   * percentual do conjunto. Uma fila com um chamado pesaria tanto quanto uma
+   * com duzentos — e o indicador do cliente ficaria a quarenta pontos da
+   * verdade.
+   */
+  for i in 1..20 loop
+    insert into public.tickets (tenant_id, client_id, title, priority_id, queue_id, requester_id)
+    values (v_t, v_c, format('Fila A #%s', i), v_prio, v_fila_a, v_dono)
+    returning id into v_id;
+    update public.sla_tracking
+       set coverage = 'covered', resolution_breached = (i <= 2)
+     where ticket_id = v_id;
+  end loop;
+
+  insert into public.tickets (tenant_id, client_id, title, priority_id, queue_id, requester_id)
+  values (v_t, v_c, 'Fila B #1', v_prio, v_fila_b, v_dono)
+  returning id into v_id;
+  update public.sla_tracking
+     set coverage = 'covered', resolution_breached = true
+   where ticket_id = v_id;
+
+  select * into v_r from public.gestao_resultado(v_c, v_comp);
+
+  perform app.assert(v_r.sla_tickets = 21 and v_r.sla_com_acordo = 21 and v_r.sla_fora = 3,
+    'os chamados são contados um a um, nas duas filas');
+
+  select round(avg(s.resolution_compliance_pct), 1) into v_media
+    from public.vw_sla_compliance s
+   where s.client_id = v_c and date_trunc('month', s.period)::date = v_comp;
+
+  perform app.assert(v_r.sla_conformidade = 85.7,
+    'a conformidade é a do conjunto: (21-3)/21');
+  perform app.assert(v_r.sla_conformidade <> v_media,
+    format('e NÃO a média das filas, que aqui daria %s%%', v_media));
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 43.3 Sem chamado com acordo, a conformidade é NULA — e não 100%
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_c    uuid := 'cc000000-0000-4000-8000-000000000043';
+  v_comp date := date_trunc('month', now())::date;
+  v_r    record;
+begin
+  update public.sla_tracking st
+     set coverage = 'uncovered', resolution_breached = false
+    from public.tickets t
+   where t.id = st.ticket_id and t.client_id = v_c;
+
+  select * into v_r from public.gestao_resultado(v_c, v_comp);
+
+  /*
+   * "Nenhum estouro em nenhum chamado coberto" é ausência de medida, não
+   * conformidade perfeita. Escrever 100% faria do mês sem acordo o melhor mês
+   * do ano — justamente o mês em que alguém deveria perguntar o que houve.
+   */
+  perform app.assert(v_r.sla_com_acordo = 0 and v_r.sla_conformidade is null,
+    'sem chamado com acordo a conformidade é NULA, e não 100%');
+  perform app.assert(v_r.sla_tickets = 21,
+    'mas os chamados continuam contados: eles existiram, só não tinham acordo');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 43.4 Projetos: atraso derivado, entrega conferida
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c    uuid := 'cc000000-0000-4000-8000-000000000043';
+  v_comp date := date_trunc('month', now())::date;
+  v_r    record;
+  v_det  integer;
+begin
+  insert into public.projects
+    (tenant_id, client_id, name, start_month, planned_end_month, actual_end_month, status)
+  values
+    -- Previsto para três meses atrás e sem entrega: atrasado, e ninguém marcou.
+    (v_t, v_c, 'Troca de links',   (v_comp - interval '6 months')::date,
+                                   (v_comp - interval '3 months')::date, null, 'em_andamento'),
+    -- Entregue depois do previsto: entregue, fora do prazo.
+    (v_t, v_c, 'Inventário geral', (v_comp - interval '8 months')::date,
+                                   (v_comp - interval '5 months')::date,
+                                   (v_comp - interval '3 months')::date, 'concluido'),
+    -- Entregue antes: entregue, no prazo.
+    (v_t, v_c, 'Padrão de backup', (v_comp - interval '4 months')::date,
+                                   (v_comp - interval '1 month')::date,
+                                   (v_comp - interval '2 months')::date, 'concluido');
+
+  select * into v_r from public.gestao_resultado(v_c, v_comp);
+
+  perform app.assert(v_r.projetos_total = 3, 'os três projetos do cliente são contados');
+  /* Atraso não é um campo: é o mês previsto contra hoje. Um projeto parado vira
+     atrasado sozinho, com a passagem do mês, sem ninguém tocar nele. */
+  perform app.assert(v_r.projetos_atrasados = 1,
+    'o atrasado é derivado, e é um só');
+  perform app.assert(v_r.projetos_entregues = 2 and v_r.projetos_entregues_no_prazo = 1,
+    'entregue e entregue no prazo são contas diferentes');
+
+  select count(*) into v_det from public.vw_projects p
+   where p.client_id = v_c and p.atrasado;
+  perform app.assert(v_det = v_r.projetos_atrasados,
+    'e o detalhe da tela usa o MESMO recorte do indicador: a lista fecha na conta');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 43.5 O recorte é por CLIENTE, e a competência fechada é dita
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_t      uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_c      uuid := 'cc000000-0000-4000-8000-000000000043';
+  v_outro  uuid;
+  v_comp   date := date_trunc('month', now())::date;
+  v_r      record;
+begin
+  /*
+   * O mesmo mês, outro cliente: nada do que foi montado acima pode aparecer. É
+   * o recorte que a tela promete — "cliente e competência valem para os três".
+   *
+   * O vizinho recebe um lançamento e um projeto PRÓPRIOS, em vez de ficar
+   * vazio: um cliente sem nada devolveria zero mesmo que o filtro não
+   * existisse. Com números próprios e pequenos, o vazamento apareceria.
+   */
+  v_outro := 'cc000000-0000-4000-8000-000000000044';
+  insert into public.clients (id, tenant_id, legal_name, trade_name)
+  values (v_outro, v_t, 'Vizinha do Resultado Ltda', 'Vizinha');
+  insert into public.it_cost_entries
+    (tenant_id, client_id, expense_category_id, scenario_id, competence, amount,
+     natureza, classificacao)
+  select v_t, v_outro,
+         (select id from public.expense_categories where tenant_id = v_t and is_active limit 1),
+         (select id from public.it_budget_scenarios where client_id = v_outro and key = 'oficial'),
+         v_comp, 10.00, 'pontual_unica', 'despesa';
+  insert into public.projects
+    (tenant_id, client_id, name, start_month, planned_end_month, status)
+  values (v_t, v_outro, 'Projeto da vizinha', v_comp,
+          (v_comp + interval '2 months')::date, 'em_andamento');
+
+  select * into v_r from public.gestao_resultado(v_outro, v_comp);
+  perform app.assert(v_r.gasto_mes = 10.00 and v_r.projetos_total = 1 and v_r.sla_tickets = 0,
+    'outro cliente devolve o que é dele, e nada do vizinho: o recorte vale para os três');
+
+  select * into v_r from public.gestao_resultado(v_c, v_comp);
+  perform app.assert(not v_r.competencia_fechada,
+    'a competência aberta é dita aberta');
+
+  insert into public.it_budget_closings (tenant_id, client_id, competence, closed_by)
+  values (v_t, v_c, v_comp, '22220000-0000-4000-8000-000000000001');
+
+  select * into v_r from public.gestao_resultado(v_c, v_comp);
+  /* A tela escreve isso em destaque, e é o que faz um resultado divulgado
+     continuar valendo: fechada, a competência não muda mais. */
+  perform app.assert(v_r.competencia_fechada,
+    'e a fechada é dita fechada — o número divulgado não muda mais');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 43.6 `security invoker`: a visão de resultado não é uma porta dos fundos
+-- -----------------------------------------------------------------------------
+/*
+ * A função é `security invoker` de propósito. `security definer` aqui seria uma
+ * quarta exceção ao ADR-011 — e a pior delas, porque entregaria num único
+ * chamado o custo, os projetos e o atendimento de um cliente de outro tenant.
+ */
+set role rls_tester;
+set request.jwt.claims = '{"sub":"33330000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+declare
+  v_c    uuid := 'cc000000-0000-4000-8000-000000000043';
+  v_comp date := date_trunc('month', now())::date;
+  v_r    record;
+begin
+  select * into v_r from public.gestao_resultado(v_c, v_comp);
+  perform app.assert(
+    v_r.gasto_mes = 0 and v_r.projetos_total = 0 and v_r.sla_tickets = 0,
+    'outro tenant recebe ZERO da visão de resultado: ela passa pelas policies de quem chama');
+  perform app.assert(
+    (select count(*) from public.gestao_gasto_por_filial(v_c, v_comp)) = 0,
+    'e nenhuma linha do detalhe por filial');
+end
+$$;
+
+-- E a operadora, dentro do mesmo tenant, não alcança a tela.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(not app.has_permission('gestao.resultado.ver'),
+    'operadora não abre a visão de resultado: ela compila três módulos de gestão');
 end
 $$;
 reset role;

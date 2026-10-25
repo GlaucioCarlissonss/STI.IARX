@@ -72,6 +72,7 @@ export const MODULE_LABEL: Record<string, string> = {
   canais: 'Canais de conversa',
   auditoria: 'Auditoria',
   projetos: 'Projetos',
+  gestao: 'Gestão',
   ia: 'Sugestões de IA',
 }
 
@@ -311,6 +312,18 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('projetos', 'projetos', 'criar', 'Criar projeto', 'gestor'),
   act('projetos', 'projetos', 'editar', 'Editar projeto, tarefas e envolvidos', 'gestor'),
   act('projetos', 'projetos', 'excluir', 'Excluir projeto', 'gestor'),
+
+  /* --- Visão de resultado --------------------------------------------------- */
+  /* Módulo próprio com uma tela só, e isso é deliberado: ela atravessa
+     financeiro, projetos e SLA, e pendurá-la em qualquer um deles diria que
+     pertence àquele — quem concedesse a chave estaria concedendo mais do que
+     imagina.
+
+     A chave governa só o ACESSO À TELA. O que cada bloco mostra continua
+     governado pela permissão do módulo de origem. */
+  mod('gestao', 'gestor'),
+  scr('gestao', 'resultado', 'Visão de resultado', 'gestor'),
+  act('gestao', 'resultado', 'ver', 'Abrir a visão de resultado', 'gestor'),
 
   /* --- Telefonia --------------------------------------------------------- */
   mod('telefonia', 'visualizador'),

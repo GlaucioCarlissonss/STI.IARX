@@ -233,6 +233,15 @@ responde pelo custo da TI é ele; título a pagar continua sendo de quem paga. �
 - **Os cenários alternativos existem no banco e não na tela.** `it_budget_scenarios`
   aceita quantos cenários o cliente quiser, e a tela usa sempre o `oficial`.
   Comparar dois cenários lado a lado é a próxima tela, não a primeira.
+
+  > **Corrigido na 0039.** O contrato — "o `oficial` alimenta os indicadores; os
+  > outros convivem sem contaminar os totais" — estava só no comentário da
+  > tabela: nem a tela nem a view filtravam por cenário, porque até então só
+  > existia o oficial. No dia em que o primeiro cenário de simulação fosse
+  > criado, todo total de gasto passaria a somar a simulação junto com o real —
+  > sempre **para mais**, e ninguém desconfia de um número que subiu. A 0039
+  > acrescenta `scenario_key` a `vw_it_budget_monthly` e o filtro passou a ser
+  > explícito nas duas telas, com asserção de schema.
 - **As metas gravam e não são cobradas.** `it_budget_targets` guarda o teto, e
   nenhuma tela ainda compara o gasto contra ele. Sem a comparação, a meta é um
   cadastro inerte — e é o próximo passo mais barato deste módulo.

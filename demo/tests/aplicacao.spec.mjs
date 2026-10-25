@@ -479,6 +479,10 @@ try {
       '/sla/horarios',
       '/projetos',
       '/financeiro/orcamento',
+      /* A visão de resultado compila custo, projetos e atendimento de um
+         cliente num lugar só — é a tela deste repositório com mais coisa junta
+         por metro quadrado, e a que menos pode responder a um visitante. */
+      '/resultado',
     ]) {
       await p.goto(BASE + rota, { waitUntil: 'networkidle' })
       ok(p.url().includes('/login'), `${rota}: visitante é mandado para o login`)

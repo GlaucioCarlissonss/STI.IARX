@@ -42,12 +42,18 @@ suporte.
 **Destino fora de grupo.** `Visão geral` e `Minha conta` não têm cabeçalho: são
 destino, não categoria.
 
+A `Visão de resultado` fica ali pelo mesmo motivo, e por um a mais: ela compila
+financeiro, SLA e projetos sob um recorte só. Pendurá-la em Financeiro ou em
+Atendimento diria ao leitor do menu que é uma tela daquele módulo — e quem
+concedesse a permissão estaria concedendo mais do que imagina.
+
 ## 3. A estrutura
 
 | Grupo | Itens |
 |---|---|
 | — | Visão geral |
 | — | Portal |
+| — | Visão de resultado |
 | **Atendimento** | Tickets · Abrir ticket · Filas · SLA e prazos · Expediente e feriados · Satisfação · Base de conhecimento · Catálogo de serviços · Conversas · Projetos |
 | **Financeiro** | Títulos a pagar · Títulos a receber · Contas bancárias · Centros de custo · Fluxo de caixa · Orçamento de TI |
 | **Infraestrutura** | Inventário de TI · Agentes nas máquinas · Software instalado · Telefonia · Links de internet · Mapa das filiais |

@@ -128,6 +128,9 @@ export default async function OrcamentoPage({
       )
       .eq('client_id', clienteId)
       .eq('competence', competencia)
+      /* O mesmo recorte do consolidado logo abaixo: a lista e os totais da tela
+         precisam somar a mesma coisa, ou a tela discorda de si mesma. */
+      .eq('scenario_key', 'oficial')
       .order('amount', { ascending: false })
       .returns<Lancamento[]>(),
     /* O consolidado lê os doze meses, e não só a competência aberta: a série é o
@@ -138,6 +141,11 @@ export default async function OrcamentoPage({
         'competence, total, total_despesa, total_investimento, total_manual, total_planilha, total_projecao, total_titulos, total_compartilhado',
       )
       .eq('client_id', clienteId)
+      /* Só o cenário oficial. É o contrato da 0038 — "o `oficial` alimenta os
+         indicadores; os outros convivem sem contaminar os totais" — e sem este
+         filtro a série somaria simulação com real no dia em que o primeiro
+         cenário alternativo existisse. */
+      .eq('scenario_key', 'oficial')
       .order('competence')
       .returns<Consolidado[]>(),
     supabase
