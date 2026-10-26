@@ -28,24 +28,43 @@ modelo de dados.
 **Sete grupos, no máximo.** É o teto prático de uma barra lateral que se lê de
 relance. O que se usa todo dia fica no topo; configuração, no fim.
 
-**Sempre expandido, sem acordeão.** O menu já chega filtrado por permissão: um
-solicitante vê seis itens, não vinte e cinco. Acordeão custaria um clique para
-alcançar qualquer coisa e criaria estado ("qual grupo estava aberto?") para
-resolver um problema de altura que a filtragem já resolve. Onde a lista fica longa
-— perfil de administrador — o cabeçalho de grupo é o que a vista usa para pular; e
-escondido dentro de um acordeão ele não serviria para isso.
+**Grupos que abrem e fecham, com uma setinha.** Esta decisão foi revertida, e
+vale registrar o que ela substituiu.
+
+O texto anterior dizia *"sempre expandido, sem acordeão"*, e o argumento era
+bom: o menu já chega filtrado por permissão, então o acordeão custaria um clique
+para resolver um problema de altura que a filtragem já resolvia.
+
+O que o argumento não pesava: **para quem enxerga tudo, a lista passou de vinte
+e cinco para trinta e três itens em oito grupos.** Nesse tamanho o cabeçalho
+deixa de servir para a vista pular — vira mais uma linha de ruído — e a barra
+passa a rolar, que é quando um menu começa a esconder sem avisar e sem oferecer
+nada em troca.
+
+As duas objeções originais continuam válidas, e foram respondidas em vez de
+ignoradas:
+
+| Objeção | Resposta |
+|---|---|
+| "custa um clique para alcançar qualquer coisa" | Tudo chega **aberto** na primeira visita. A barra encolhe por escolha de quem usa, não por decisão de quem programou |
+| "cria estado: qual grupo estava aberto?" | O estado é por grupo, em `localStorage`, e o grupo da **tela atual abre sozinho** — estar numa tela e não ver onde ela fica seria pior que desrespeitar a preferência |
+
+É `<details>`/`<summary>`, não um acordeão escrito à mão: vem com teclado,
+`aria-expanded` e busca-na-página do navegador de graça.
 
 **Grupo vazio desaparece inteiro, cabeçalho incluído.** Cabeçalho sozinho anuncia
 a existência de um módulo sem dar acesso a ele, e isso só gera pergunta para o
 suporte.
 
-**Destino fora de grupo.** `Visão geral` e `Minha conta` não têm cabeçalho: são
-destino, não categoria.
+**Destino fora de grupo.** `Visão geral`, `Portal` e `Minha conta` não têm
+cabeçalho: são destino, não categoria. E, agora que os grupos fecham, há um
+motivo a mais — **o que é destino de todo mundo não pode depender de alguém ter
+aberto a gaveta certa.**
 
-A `Visão de resultado` fica ali pelo mesmo motivo, e por um a mais: ela compila
-financeiro, SLA e projetos sob um recorte só. Pendurá-la em Financeiro ou em
-Atendimento diria ao leitor do menu que é uma tela daquele módulo — e quem
-concedesse a permissão estaria concedendo mais do que imagina.
+A `Visão de resultado` saiu do topo e foi para **Gestão**, junto de Projetos. O
+argumento antigo (ela não pertence a Financeiro nem a Atendimento) continua de
+pé; o que mudou é que agora existe um grupo que é exatamente dela — a pergunta
+"como a TI está indo", em vez de "o que está acontecendo agora".
 
 ## 3. A estrutura
 
@@ -53,14 +72,44 @@ concedesse a permissão estaria concedendo mais do que imagina.
 |---|---|
 | — | Visão geral |
 | — | Portal |
-| — | Visão de resultado |
-| **Atendimento** | Tickets · Abrir ticket · Filas · SLA e prazos · Expediente e feriados · Satisfação · Base de conhecimento · Catálogo de serviços · Conversas · Projetos |
+| **Atendimento** | Tickets · Abrir ticket · Filas · SLA e prazos · Expediente e feriados · Satisfação · Conversas |
+| **Autoatendimento** | Base de conhecimento · Catálogo de serviços |
+| **Gestão** | Visão de resultado · Projetos |
+| **Inventário e monitoramento** | Inventário de TI · Agentes nas máquinas · Software instalado · Telefonia · Links de internet · Mapa das filiais |
 | **Financeiro** | Títulos a pagar · Títulos a receber · Contas bancárias · Centros de custo · Fluxo de caixa · Orçamento de TI |
-| **Infraestrutura** | Inventário de TI · Agentes nas máquinas · Software instalado · Telefonia · Links de internet · Mapa das filiais |
-| **Cadastros** | Clientes e filiais · Fornecedores e contratos |
+| **Clientes e contratos** | Clientes e filiais · Fornecedores e contratos |
 | **Integrações** | Sistemas de tickets · *Bancos de dados* · *Pagamento bancário* · *Recebimento bancário* |
-| **Administração** | Usuários · Perfis de acesso · Painéis de TV · Sugestões de IA · Trilha de alterações · Trabalhos agendados |
+| **Administração** | Usuários · Preferências do ambiente · Perfis de acesso · Painéis de TV · Sugestões de IA · Trilha de alterações · Trabalhos agendados |
 | — | Minha conta |
+
+### Por que estes grupos, e não outros
+
+O agrupamento segue as **áreas que as fontes atribuem ao Milvus** — o
+concorrente que [docs/12](12-paridade-milvus.md) inventariou com referência:
+help desk, omnichannel, base de conhecimento, catálogo de serviços, portal/ESM,
+gestão de contratos, inventário com agente e monitoramento, dashboards e
+integrações.
+
+Daí três renomeações e duas separações:
+
+| Antes | Agora | Por quê |
+|---|---|---|
+| `Infraestrutura` | `Inventário e monitoramento` | É o nome da área no Milvus, e é mais exato: "infraestrutura" descreve o que as coisas **são**; este grupo responde o que se **faz** com elas |
+| `Cadastros` | `Clientes e contratos` | "Cadastro" é o que a tela faz, não o que ela guarda. Obrigava a abrir para descobrir o conteúdo |
+| Base e catálogo dentro de `Atendimento` | Grupo `Autoatendimento` | As duas não servem a quem atende, servem a quem pergunta. Enquanto a barra era sempre expandida, um grupo de dois itens era um cabeçalho a mais; com grupos recolhíveis, é uma linha |
+| `Projetos` dentro de `Atendimento` | Grupo `Gestão`, com a Visão de resultado | Cronograma e resultado respondem à mesma pergunta, e não é a de quem atende |
+
+**O que eu não consegui confirmar, e registro para não virar requisito
+inventado:** a **barra lateral literal do Milvus** não aparece em nenhuma fonte
+pública alcançável — nem documentação, nem resenha. O que está acima segue as
+**áreas** que as fontes atribuem ao produto, não uma captura de tela do menu
+deles. Meia hora de demonstração resolveria a diferença, e é o mesmo aviso que a
+docs/12 já fazia sobre o resto do inventário.
+
+**Duas divergências deliberadas:** `Financeiro` e `Gestão` não têm
+correspondente no Milvus. São o que a docs/12 §2.1 chama de *"o que seria
+burrice perder"* — apagá-los para parecer com o concorrente seria copiar o mapa
+e jogar fora o território.
 
 *Itálico* = previsto, sem tela ainda.
 
@@ -134,7 +183,7 @@ Quem não alcança bloco nenhum recebe um aviso explícito, em vez de uma tela v
 
 | O que | Onde |
 |---|---|
-| Teto de 7 grupos, rótulo e href únicos, permissão existente no catálogo | `src/lib/navigation.test.ts` |
+| Teto de 8 grupos, nenhum grupo com um item só, rótulo e href únicos, permissão existente no catálogo | `src/lib/navigation.test.ts` |
 | Grupo desaparece inteiro; previsto não faz grupo aparecer; ordem preservada | `src/lib/navigation.test.ts` |
 | Destino pós-negação nunca é tela negada, e nunca é `/conta` como 1ª opção | `src/lib/navigation.test.ts` |
 | Estrutura do protótipo idêntica à da aplicação | `src/lib/permissions.demo.test.ts` |
@@ -143,6 +192,7 @@ Quem não alcança bloco nenhum recebe um aviso explícito, em vez de uma tela v
 | Links some do menu de quem não tem `conectividade`; Operador de TI não cadastra | `demo/tests/prototipo.spec.mjs` §12 |
 | Área com nome repetido é recusada sem diferenciar maiúsculas | `demo/tests/prototipo.spec.mjs` §13 |
 | Operador de TI consulta o parque e não transfere custódia | `demo/tests/prototipo.spec.mjs` §14 |
+| **O menu abre e fecha**: clique, setinha girando, preferência que persiste, grupo da tela atual abrindo sozinho, Enter no teclado | `demo/tests/local/menu.spec.mjs` |
 
 O teste de navegador não é enfeite: foi ele que achou `ROLE_RANK` invertido no
 protótipo e as regras de perfil paradas antes da migração 0020 — dois defeitos cujo

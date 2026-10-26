@@ -48,7 +48,12 @@ const irPara = async texto => {
 
 console.log('\n=== 1. Menu em grupos ===')
 await trocar('u1')
-const grupos = await p.$$eval('.nav-group', hs => hs.map(h => h.textContent.trim()))
+/* O cabeçalho do grupo passou a ser um `<summary>` com a setinha dentro, e a
+   setinha entra no `textContent`. Tirá-la aqui mantém a asserção falando do
+   RÓTULO, que é o que ela sempre quis dizer. */
+const grupos = await p.$$eval('.nav-group', (hs) =>
+  hs.map((h) => h.textContent.replace(/[\u203a\s]+/, '').trim()),
+)
 console.log('  grupos:', grupos.join(' | '))
 ok(grupos.length >= 6 && grupos.length <= 7, `${grupos.length} grupos — dentro do teto de 7`)
 ok(grupos.includes('Financeiro') && grupos.includes('Integrações'), 'Financeiro e Integrações presentes')
@@ -58,7 +63,9 @@ ok(previstos.length === 6, `${previstos.length} itens previstos: só as 6 integr
 
 console.log('\n=== 2. Grupo desaparece inteiro quando nada é alcançável ===')
 await trocar('u6')  // Operador Financeiro
-const gruposFin = await p.$$eval('.nav-group', hs => hs.map(h => h.textContent.trim()))
+const gruposFin = await p.$$eval('.nav-group', (hs) =>
+  hs.map((h) => h.textContent.replace(/[\u203a\s]+/, '').trim()),
+)
 console.log('  grupos:', gruposFin.join(' | ') || '(nenhum)')
 ok(!gruposFin.includes('Atendimento'), 'Operador Financeiro NÃO vê o grupo Atendimento')
 ok(!gruposFin.includes('Administração'), 'nem o grupo Administração')

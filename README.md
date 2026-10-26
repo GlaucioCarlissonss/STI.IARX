@@ -185,6 +185,7 @@ node demo/tests/aplicacao.spec.mjs   # 61 asserções na aplicação: tema, font
 bash scripts/preparar-banco-local.sh
 node demo/tests/local/telas.spec.mjs      # 37 telas autenticadas, uma a uma
 node demo/tests/local/aprovacao.spec.mjs  # o fluxo de aprovação com três pessoas
+node demo/tests/local/menu.spec.mjs       # o menu que abre e fecha, e lembra
 ```
 
 A segunda cobre só as rotas públicas: `src/proxy.ts` guarda toda rota, e sem um

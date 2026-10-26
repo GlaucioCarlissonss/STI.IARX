@@ -19,13 +19,33 @@ import { can } from './permissions'
  * onde a vista descansar. Com 25 itens previstos, agrupar deixou de ser estética.
  *
  * **Agrupamento por trabalho, não por tabela.** Os grupos respondem "o que eu
- * vim fazer aqui": atender, cobrar e pagar, cuidar do parque, cadastrar,
- * conectar, administrar. Um menu espelhando o modelo de dados obrigaria quem usa
- * a conhecer o modelo de dados.
+ * vim fazer aqui": atender, resolver sozinho, acompanhar o resultado, cuidar do
+ * parque, cobrar e pagar, cadastrar, conectar, administrar. Um menu espelhando
+ * o modelo de dados obrigaria quem usa a conhecer o modelo de dados.
  *
- * **Sete grupos.** É o teto prático de uma barra lateral que se lê de relance.
- * Ordem: o que se usa todo dia no topo, configuração no fim. `Visão geral` fica
- * fora de grupo porque é destino, não categoria.
+ * **Oito grupos, e eles abrem e fecham.** Enquanto a barra era sempre expandida,
+ * sete era o teto prático — além disso ela rolava, e um menu que rola esconde
+ * sem avisar. Com os grupos recolhíveis (`nav-group.tsx`) o custo de um grupo a
+ * mais deixou de ser N linhas e passou a ser uma. Ordem: o que se usa todo dia
+ * no topo, configuração no fim. `Visão geral` e `Portal` ficam fora de grupo
+ * porque são destino, não categoria — e porque o que está sempre à vista não
+ * pode depender de alguém ter aberto a gaveta certa.
+ *
+ * **O agrupamento segue as ÁREAS do Milvus**, que é o concorrente que a
+ * docs/12 inventariou com fonte: help desk, omnichannel, base de conhecimento,
+ * catálogo de serviços, portal/ESM, gestão de contratos, inventário com agente
+ * e monitoramento, dashboards e integrações.
+ *
+ * Registro o que NÃO consegui confirmar, para não virar requisito inventado: a
+ * **barra lateral literal do Milvus** não aparece em nenhuma fonte pública que
+ * eu tenha alcançado — nem em documentação, nem nas resenhas. O que está abaixo
+ * segue as áreas que as fontes atribuem ao produto, não uma captura de tela do
+ * menu deles. Meia hora de demonstração resolveria a diferença.
+ *
+ * Duas divergências deliberadas: **Financeiro** e **Gestão** (resultado e
+ * projetos) não têm correspondente no Milvus. São o que a docs/12 §2.1 chama de
+ * "o que seria burrice perder" — apagá-los para parecer com o concorrente seria
+ * copiar o mapa e jogar fora o território.
  *
  * **"Títulos a pagar", não "Contas a pagar".** No mesmo grupo existe
  * `Contas bancárias`. A palavra "contas" significando duas coisas diferentes a
@@ -92,14 +112,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
        * chamado livre.
        */
       { href: '/portal', label: 'Portal', permission: null },
-      /*
-       * A visão de resultado fica aqui em cima, solta, e não dentro de
-       * Financeiro ou de Projetos — porque ela não pertence a nenhum dos dois.
-       * Ela compila financeiro, SLA e projetos sob um recorte só, e pendurá-la
-       * num dos módulos diria ao leitor do menu que é uma tela daquele módulo.
-       * É um destino, como a Visão geral, e não uma categoria.
-       */
-      { href: '/resultado', label: 'Visão de resultado', permission: 'gestao.resultado.ver' },
     ],
   },
   {
@@ -117,19 +129,35 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       /* "Satisfação" e não "CSAT": a sigla é jargão de quem mede, e quem abre a
          tela quer saber se as pessoas gostaram do atendimento. */
       { href: '/satisfacao', label: 'Satisfação', permission: 'helpdesk.satisfacao.ver' },
-      /* No grupo de Atendimento, e não num grupo próprio: as duas telas servem
-         ao mesmo trabalho — o chamado que não precisa ser aberto. Um grupo
-         "Autoatendimento" com dois itens só acrescentaria um cabeçalho. */
+      /* Fica em Atendimento, e não em Infraestrutura, apesar de a configuração
+         do canal ser trabalho de infraestrutura: quem abre esta tela todo dia é
+         quem atende, para ver de onde os chamados estão chegando. É o
+         "omnichannel" que o Milvus trata como área de destaque — aqui ele é
+         uma porta de entrada do mesmo atendimento, não um lugar separado. */
+      { href: '/conversas', label: 'Conversas', permission: 'canais.conversas.ver' },
+    ],
+  },
+  {
+    /* Base de conhecimento, catálogo e portal são TRÊS áreas distintas no
+       Milvus, e a razão é a mesma que vale aqui: elas não servem a quem atende,
+       servem a quem pergunta. Enquanto a barra era sempre expandida, um grupo
+       de dois itens era um cabeçalho a mais; com grupos recolhíveis, é uma
+       linha — e o nome do grupo passa a dizer para que as duas telas existem. */
+    label: 'Autoatendimento',
+    items: [
       { href: '/base', label: 'Base de conhecimento', permission: 'autoatendimento.base.ver' },
       { href: '/catalogo', label: 'Catálogo de serviços', permission: 'autoatendimento.catalogo.ver' },
-      /* Em Atendimento, e não em Infraestrutura, apesar de a configuração do
-         canal ser trabalho de infraestrutura: quem abre esta tela todo dia é
-         quem atende, para ver de onde os chamados estão chegando. A
-         configuração mora um clique adentro, atrás da permissão de admin. */
-      { href: '/conversas', label: 'Conversas', permission: 'canais.conversas.ver' },
-      /* Projetos fica em Atendimento, e não num grupo próprio: o cronograma de
-         TI é trabalho da mesma equipe que atende, e um grupo com um item só
-         acrescentaria um cabeçalho e nada mais. Veio do GSTI.IARX. */
+    ],
+  },
+  {
+    /* Não tem correspondente no Milvus, e é de propósito: a visão de resultado
+       compila financeiro, SLA e projetos sob um recorte só, e o cronograma veio
+       do GSTI.IARX. São o que a docs/12 §2.1 chama de "o que seria burrice
+       perder" — ficam juntos porque respondem à mesma pergunta, que é como a
+       TI está indo, e não o que está acontecendo agora. */
+    label: 'Gestão',
+    items: [
+      { href: '/resultado', label: 'Visão de resultado', permission: 'gestao.resultado.ver' },
       { href: '/projetos', label: 'Projetos', permission: 'projetos.projetos.ver' },
     ],
   },
@@ -156,7 +184,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     ],
   },
   {
-    label: 'Infraestrutura',
+    /* "Inventário e monitoramento", e não "Infraestrutura": é o nome da área no
+       Milvus, e é mais exato. "Infraestrutura" descreve o que as coisas SÃO;
+       este grupo responde o que se faz com elas — saber o que existe, e saber
+       se está de pé. Telefonia, links e mapa entram porque são parque também:
+       a pergunta "a filial está no ar?" não separa computador de link. */
+    label: 'Inventário e monitoramento',
     items: [
       { href: '/inventario', label: 'Inventário de TI', permission: 'inventario.ativos.ver' },
       /* Logo abaixo do inventário e não dentro dele: são duas perguntas. O
@@ -172,7 +205,11 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     ],
   },
   {
-    label: 'Cadastros',
+    /* "Clientes e contratos", e não "Cadastros": cadastro é o que a tela faz,
+       não o que ela guarda — e "gestão de contratos" é uma área nomeada no
+       Milvus, com prazo, condição e histórico. O rótulo antigo obrigava a abrir
+       para descobrir o que tinha dentro. */
+    label: 'Clientes e contratos',
     items: [
       { href: '/clientes', label: 'Clientes e filiais', permission: 'clientes.grupos.ver' },
       { href: '/fornecedores', label: 'Fornecedores e contratos', permission: 'fornecedores.cadastro.ver' },

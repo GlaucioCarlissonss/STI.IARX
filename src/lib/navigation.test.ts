@@ -108,8 +108,26 @@ describe('visibleNavGroups', () => {
 })
 
 describe('NAV_GROUPS', () => {
-  it('no máximo 7 grupos com rótulo — é o teto de uma barra que se lê de relance', () => {
-    expect(NAV_GROUPS.filter((g) => g.label !== null).length).toBeLessThanOrEqual(7)
+  it('no máximo 8 grupos com rótulo — o teto subiu quando eles passaram a fechar', () => {
+    /*
+     * Eram 7 enquanto a barra era sempre expandida: além disso ela rolava, e um
+     * menu que rola esconde sem avisar. Com os grupos recolhíveis, o custo de
+     * um grupo a mais é UMA linha, não N — e o teto passou a ser de leitura, não
+     * de altura: oito cabeçalhos ainda se leem de relance; quinze, não.
+     */
+    expect(NAV_GROUPS.filter((g) => g.label !== null).length).toBeLessThanOrEqual(8)
+  })
+
+  it('todo grupo com rótulo tem pelo menos dois itens', () => {
+    /*
+     * Um grupo de um item só é um cabeçalho que não agrupa nada — e, com
+     * acordeão, é um clique para revelar uma linha. Quando sobra um item só,
+     * ele pertence a outro grupo ou ao topo, fora de grupo.
+     */
+    for (const grupo of NAV_GROUPS) {
+      if (grupo.label === null) continue
+      expect(grupo.items.length, `"${grupo.label}" tem um item só`).toBeGreaterThanOrEqual(2)
+    }
   })
 
   it('toda permissão de menu existe no catálogo', () => {

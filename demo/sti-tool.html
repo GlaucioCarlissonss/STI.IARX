@@ -91,8 +91,17 @@
   /* Cabeçalho de grupo do menu: pequeno, em caixa alta, sem peso visual que
      compita com o item. É o ponto onde a vista pula ao procurar. */
   .nav-group { font-size:.66rem; font-weight:700; text-transform:uppercase;
-    letter-spacing:.06em; color:var(--ink-3); margin:.9rem 0 .25rem; padding:0 .75rem; }
-  .side .nav-group:first-child { margin-top:0; }
+    letter-spacing:.06em; color:var(--ink-3); margin:.9rem 0 .25rem;
+    padding:.25rem .75rem; display:flex; align-items:center; gap:.4rem;
+    cursor:pointer; list-style:none; border-radius:.5rem; }
+  .nav-group::-webkit-details-marker { display:none; }
+  .nav-group:hover { background:var(--surface-2); color:var(--ink-2); }
+  .side details:first-child .nav-group { margin-top:0; }
+  /* A setinha. `aria-hidden` porque o <summary> já anuncia o estado: lê-la em
+     voz alta diria "sinal de maior", que não acrescenta nada a "recolhido". */
+  .nav-seta { display:inline-block; font-size:.8rem; line-height:1;
+    transition:transform .15s; }
+  details[open] > .nav-group .nav-seta { transform:rotate(90deg); }
   /* Item previsto. `<span>`, não `<button disabled>`: botão desabilitado sai da
      ordem de tabulação sem explicar por quê, e o leitor de tela anuncia "botão
      indisponível", que não informa nada. Aqui o selo está no texto lido. */
@@ -5568,7 +5577,7 @@
       ['centros','Centros de custo',false,'financeiro.centros_custo.ver'],
       ['fluxo-caixa','Fluxo de caixa',true,'financeiro.fluxo_caixa.ver'],
     ]],
-    ['Infraestrutura', [
+    ['Inventário e monitoramento', [
       ['inventario','Inventário de TI',false,'inventario.ativos.ver'],
       ['telefonia','Telefonia',false,'telefonia.linhas.ver'],
       /* Ganhou chave própria na migração 0022, junto com a tela da aplicação —
@@ -5576,7 +5585,7 @@
       ['links','Links de internet',true,'conectividade.links.ver'],
       ['mapas','Mapa das filiais',false,'mapas.geolocalizacao.ver'],
     ]],
-    ['Cadastros', [
+    ['Clientes e contratos', [
       ['clientes','Clientes e filiais',false,'clientes.grupos.ver'],
       ['fornecedores','Fornecedores e contratos',false,'fornecedores.cadastro.ver'],
     ]],
@@ -5626,14 +5635,51 @@
   let current = 'novidades';
   const wallVisible = () => !document.getElementById('wall-stage').classList.contains('hidden');
 
+  /* O abre/fecha de cada grupo, lembrado entre visitas.
+     Chave pelo RÓTULO e não pelo índice: índice muda quando um grupo entra no
+     meio, e a preferência de "Financeiro" passaria a valer para "Integrações"
+     sem ninguém ter mexido em nada. */
+  const chaveDoGrupo = (rotulo) => 'sti.demo.menu.' + rotulo
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+  function grupoAberto(rotulo, temAtivo) {
+    /* O grupo da tela atual abre sozinho, mesmo tendo sido fechado antes: estar
+       numa tela e não ver onde ela fica é pior que desrespeitar a preferência.
+       E o padrão é ABERTO — um menu que chega fechado obriga a caçar antes de
+       conhecer. */
+    if (temAtivo) return true;
+    try {
+      const v = localStorage.getItem(chaveDoGrupo(rotulo));
+      return v === null ? true : v === '1';
+    } catch { return true; }
+  }
+
   function renderNav() {
-    document.getElementById('nav').innerHTML = visibleNavGroups().map(([rotulo, itens]) => `
-      ${rotulo ? `<h2 class="nav-group">${esc(rotulo)}</h2>` : ''}
-      ${itens.map(([k,l,isNew,perm,soon,hint]) => soon
+    document.getElementById('nav').innerHTML = visibleNavGroups().map(([rotulo, itens]) => {
+      const corpo = itens.map(([k,l,isNew,perm,soon,hint]) => soon
         ? `<span class="nav-soon" title="${esc(hint||'')}">${esc(l)}<em>em breve</em></span>`
         : `<button type="button" data-view="${k}"${current===k?' aria-current="page"':''}>
-            ${esc(l)}${isNew?'<span class="tag-new">novo</span>':''}</button>`).join('')}
-    `).join('');
+            ${esc(l)}${isNew?'<span class="tag-new">novo</span>':''}</button>`).join('');
+
+      /* Grupo sem rótulo não tem o que abrir: são os destinos soltos — Visão
+         geral, Minha conta — e o que é destino de todo mundo não pode depender
+         de alguém ter aberto a gaveta certa. */
+      if (!rotulo) return corpo;
+
+      const temAtivo = itens.some(([k]) => k === current);
+      return `<details${grupoAberto(rotulo, temAtivo) ? ' open' : ''} data-grupo="${esc(rotulo)}">
+        <summary class="nav-group"><span class="nav-seta" aria-hidden="true">\u203a</span>${esc(rotulo)}</summary>
+        ${corpo}
+      </details>`;
+    }).join('');
+
+    document.getElementById('nav').querySelectorAll('details[data-grupo]').forEach(d => {
+      d.addEventListener('toggle', () => {
+        try { localStorage.setItem(chaveDoGrupo(d.dataset.grupo), d.open ? '1' : '0'); }
+        catch { /* navegação privada: funciona igual, só não lembra */ }
+      });
+    });
   }
   function renderWhoami() {
     const sel = document.getElementById('acting-user');

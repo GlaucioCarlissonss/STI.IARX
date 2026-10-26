@@ -1,48 +1,50 @@
 import type { NavGroup, NavItem } from '@/lib/navigation'
 import { NavLink } from './nav-link'
+import { NavGroup as GrupoExpansivel } from './nav-group'
 
 /**
- * Barra lateral agrupada.
+ * Barra lateral agrupada, com grupos que abrem e fecham.
  *
- * **Sempre expandida, sem acordeão.** O menu já chega filtrado por permissão:
- * um solicitante vê seis itens, não vinte e cinco. Acordeão custaria um clique
- * para alcançar qualquer coisa e criaria estado — "qual grupo estava aberto?" —
- * para resolver um problema de altura que a filtragem já resolve. Onde a lista
- * fica longa (perfil de administrador), o cabeçalho de grupo é o que a vista usa
- * para pular; escondido dentro de um acordeão ele não serviria para isso.
+ * ## A decisão mudou, e vale registrar o que ela substituiu
  *
- * Continua Server Component: a decisão de o que mostrar é do servidor. Só o
- * realce do item ativo é cliente, dentro do `NavLink`, porque depende da rota.
+ * Esta barra foi escrita "sempre expandida, sem acordeão", e o argumento era
+ * bom: o menu já chega filtrado por permissão, então um acordeão custaria um
+ * clique para resolver um problema de altura que a filtragem já resolvia.
+ *
+ * O que o argumento não pesava: **para quem enxerga tudo, a lista passou de
+ * vinte e cinco para trinta e três itens** em oito grupos. Nesse tamanho o
+ * cabeçalho deixa de servir para a vista pular — vira mais uma linha de ruído —
+ * e a barra passa a rolar, que é quando um menu começa a esconder coisa sem
+ * avisar — e sem oferecer nada em troca.
+ *
+ * O acordeão devolve o cabeçalho ao seu trabalho: ele vira o alvo. E as duas
+ * objeções originais continuam válidas, então foram respondidas em vez de
+ * ignoradas — o grupo da tela atual abre sozinho, e **tudo chega aberto na
+ * primeira visita**; a barra encolhe por escolha de quem usa, e a escolha
+ * persiste (ver `nav-group.tsx`).
+ *
+ * Continua Server Component: a decisão de O QUE mostrar é do servidor. Só o
+ * abre/fecha e o realce do item ativo são cliente, porque dependem da rota.
  */
 export function SidebarNav({ groups }: { groups: NavGroup[] }) {
   return (
     <ul className="flex flex-col gap-4">
       {groups.map((grupo, i) => {
         /*
-         * O rótulo do grupo era um `<h2>`, e o menu vem ANTES do `<main>` no
-         * documento. Quem navega por títulos — que é como se lê uma tela com
-         * leitor de tela — ouvia "Atendimento, Financeiro, Infraestrutura…"
-         * antes do `<h1>` da página, e a hierarquia do documento começava no
-         * nível 2. Rótulo de grupo de menu não é título de seção da página.
-         *
-         * Vira texto comum com `id`, e a lista aponta para ele com
-         * `aria-labelledby`: ao entrar no grupo o leitor anuncia "Atendimento,
-         * lista com 4 itens" — mais informação do que o `<h2>` dava, e sem
-         * nenhuma linha no índice de títulos.
+         * O rótulo do grupo nunca foi `<h2>`, e continua não sendo: o menu vem
+         * ANTES do `<main>`, e quem navega por títulos ouviria "Atendimento,
+         * Financeiro…" antes do `<h1>` da página. Agora ele é o `<summary>` do
+         * grupo — que é alvo de clique e de teclado, e anuncia o estado sem
+         * entrar no índice de títulos.
          */
-        const rotuloId = `nav-grupo-${i}`
-        return (
-        <li key={grupo.label ?? `solto-${i}`}>
-          {grupo.label && (
-            <p
-              id={rotuloId}
-              className="mb-1 px-3 text-[0.68rem] font-semibold uppercase tracking-wider text-[var(--color-ink-3)]"
-            >
-              {grupo.label}
-            </p>
-          )}
+        const lista = (
           <ul
-            aria-labelledby={grupo.label ? rotuloId : undefined}
+            /* Era `aria-labelledby` apontando para o `<p>` do rótulo. O `<p>`
+               virou `<summary>`, e uma referência para um id que não existe
+               mais não falha em lugar nenhum — só deixa a lista sem nome para
+               quem usa leitor de tela. `aria-label` diz a mesma coisa sem
+               depender de outro elemento. */
+            aria-label={grupo.label ?? undefined}
             className="flex flex-col gap-0.5"
           >
             {grupo.items.map((item) => (
@@ -53,11 +55,43 @@ export function SidebarNav({ groups }: { groups: NavGroup[] }) {
               </li>
             ))}
           </ul>
-        </li>
+        )
+
+        /* Grupo sem rótulo não tem o que abrir: são os destinos soltos do topo,
+           que precisam estar sempre à vista. */
+        if (!grupo.label) {
+          return <li key={`solto-${i}`}>{lista}</li>
+        }
+
+        return (
+          <li key={grupo.label}>
+            <GrupoExpansivel
+              id={identificador(grupo.label)}
+              label={grupo.label}
+              hrefs={grupo.items.flatMap((item) => (item.href ? [item.href] : []))}
+            >
+              {lista}
+            </GrupoExpansivel>
+          </li>
         )
       })}
     </ul>
   )
+}
+
+/**
+ * O identificador que guarda o abre/fecha.
+ *
+ * Vem do RÓTULO, e não do índice do grupo: índice muda quando um grupo é
+ * acrescentado no meio, e a preferência de "Financeiro" passaria a valer para
+ * "Integrações" sem que ninguém mexesse em nada.
+ */
+function identificador(rotulo: string): string {
+  return rotulo
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
 }
 
 /**
