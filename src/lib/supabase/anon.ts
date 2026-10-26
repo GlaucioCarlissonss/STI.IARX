@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import { modoLocal } from '@/lib/db/modo'
+import { criarClienteAnonimo } from '@/lib/db/cliente'
 
 /**
  * Cliente anônimo, sem sessão e sem cookie.
@@ -26,10 +28,18 @@ import { createClient } from '@supabase/supabase-js'
  * não há sessão a renovar, e um `Set-Cookie` na resposta só confundiria quem
  * fosse depurar. Este não toca em cookie nenhum.
  */
-export function createAnonClient() {
+function clienteAnonimo() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { auth: { persistSession: false, autoRefreshToken: false } },
   )
+}
+
+export function createAnonClient(): ReturnType<typeof clienteAnonimo> {
+  if (modoLocal()) {
+    return criarClienteAnonimo() as unknown as ReturnType<typeof clienteAnonimo>
+  }
+
+  return clienteAnonimo()
 }

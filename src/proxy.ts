@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { modoLocal } from '@/lib/db/modo'
 
 /**
  * Renova a sessão do Supabase a cada navegação e barra acesso anônimo.
@@ -64,6 +65,18 @@ const PUBLIC_PREFIXES = [
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })
 
+  /*
+   * Modo local: a sessão é um cookie assinado, e conferi-lo é verificar o HMAC
+   * — não há token para revalidar contra um servidor de autenticação. O resto
+   * da função (quem é público, para onde redirecionar) é idêntico, e é
+   * deliberado que seja: a regra de acesso não pode depender do driver.
+   */
+  if (modoLocal()) {
+    const { conferir, nomeDoCookie } = await import('@/lib/db/sessao')
+    const conteudo = conferir(request.cookies.get(nomeDoCookie())?.value)
+    return decidir(request, response, conteudo ? { id: conteudo.sub } : null)
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -88,6 +101,16 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
+
+  return decidir(request, response, user ? { id: user.id } : null)
+}
+
+/** A regra de acesso, igual nos dois modos. */
+function decidir(
+  request: NextRequest,
+  response: NextResponse,
+  user: { id: string } | null,
+) {
 
   const { pathname } = request.nextUrl
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))

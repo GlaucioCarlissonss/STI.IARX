@@ -203,7 +203,13 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
       supabase
         .from('service_approvals')
         .select(
-          'status, requested_at, decided_at, motivo, pedinte:requested_by(full_name), decisor:decided_by(full_name), servico:service_id(name, aprovador_profile_id, perfil:aprovador_profile_id(name))',
+          /* Os embutes de chave COMPOSTA vão pelo nome da constraint, não pelo
+             nome da coluna: `(service_id, tenant_id)` é o padrão desta base
+             (ADR-001), e a forma `coluna(...)` só resolve chave de uma coluna
+             só. `requested_by` e `decided_by` seguem pela coluna porque são
+             chaves simples — e duas para `profiles`, o que torna o nome da
+             tabela ambíguo. */
+          'status, requested_at, decided_at, motivo, pedinte:requested_by(full_name), decisor:decided_by(full_name), servico:service_catalog!fk_sa_service(name, perfil:access_profiles!fk_sc_aprovador(name))',
         )
         .eq('ticket_id', id)
         .maybeSingle<{

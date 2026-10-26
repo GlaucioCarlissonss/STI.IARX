@@ -24,3 +24,6 @@ supabase/.temp
 # Binários e pacotes do agente (agente/empacotamento/construir.sh).
 # São artefatos de publicação: versionados num release, não no repositório.
 agente/dist/
+
+# Modo local (docs/22): banco de desenvolvimento e anexos em disco.
+.local-storage/

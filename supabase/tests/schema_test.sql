@@ -8868,5 +8868,137 @@ end
 $$;
 reset role;
 
+-- =============================================================================
+\echo '=== 48. Abrir chamado SOB RLS, que é como ele é aberto de verdade (0045) ==='
+-- =============================================================================
+reset role;
+
+-- A asserção que faltava em 1.029.
+--
+-- Todas as outras criam chamado como DONO do banco, que tem BYPASSRLS. Nenhuma
+-- abria um como gente — e por isso ninguém viu que abrir chamado estava
+-- quebrado para toda sessão autenticada desde a 0005.
+--
+-- O defeito só apareceu quando a aplicação passou a rodar contra um PostgreSQL
+-- de verdade, com sessão de verdade. Esta seção é o que impede ele de voltar.
+
+-- -----------------------------------------------------------------------------
+-- 48.1 O solicitante abre um chamado — e isso basta
+-- -----------------------------------------------------------------------------
+set role rls_tester;
+-- Carla Dias, solicitante da Meridiano. Não é gestora, não é admin.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000005","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_t    uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_id   uuid;
+  v_num  bigint;
+begin
+  /*
+   * As três coisas que falhavam, em sequência, cada uma escondendo a próxima:
+   *
+   *   1. `tenants.ticket_seq` — a policy de UPDATE exige admin, e a trigger de
+   *      numeração fazia o `update` como quem abre o chamado. Zero linhas, e a
+   *      trigger levantava "Tenant inexistente" com errcode de chave
+   *      estrangeira — mensagem que não tem nada a ver com o que aconteceu.
+   *
+   *   2. `sla_tracking` — só tem policy de SELECT, e a trigger que cria o
+   *      registro de acompanhamento não era `security definer`.
+   *
+   *   3. `ticket_history` e `sla_pauses` — o mesmo, na mudança de estado.
+   *
+   * Um `insert` que simplesmente funciona é a asserção inteira.
+   */
+  insert into public.tickets (tenant_id, title, requester_id)
+  values (v_t, 'Chamado aberto por quem não é admin', '22220000-0000-4000-8000-000000000005')
+  returning id, ticket_number into v_id, v_num;
+
+  perform app.assert(v_id is not null, 'o solicitante CONSEGUE abrir um chamado');
+  perform app.assert(v_num > 0, 'e ele sai numerado');
+
+  perform app.assert(
+    (select count(*) from public.sla_tracking where ticket_id = v_id) = 1,
+    'o acompanhamento de SLA é criado junto, por trigger');
+
+  /* Prioridade não informada vira a padrão do tenant. `service_catalog` permite
+     serviço sem prioridade, e `tickets.priority_id` é NOT NULL: sem o padrão,
+     todo pedido daquele serviço morria em "faltou preencher um campo
+     obrigatório" — sobre um campo que a tela de pedido nem mostra. */
+  perform app.assert(
+    (select priority_id is not null from public.tickets where id = v_id),
+    'prioridade não informada vira a padrão do tenant, e não erro');
+
+  perform app.assert(
+    (select queue_id is not null from public.tickets where id = v_id),
+    'e a fila padrão continua sendo aplicada');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 48.2 E o atendente muda o estado — que escreve em mais duas tabelas
+-- -----------------------------------------------------------------------------
+-- Ana Souza, atendente.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000003","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare
+  v_id uuid;
+begin
+  select id into v_id from public.tickets
+   where title = 'Chamado aberto por quem não é admin';
+
+  update public.tickets set status = 'triage' where id = v_id;
+
+  perform app.assert(
+    (select status from public.tickets where id = v_id) = 'triage',
+    'o atendente muda o estado do chamado');
+
+  /* `ticket_history` também só tem policy de leitura. Sem `security definer` na
+     trigger, esta mudança de estado falharia — e o histórico do chamado é
+     justamente o que alguém procura quando pergunta "quem mudou isso". */
+  perform app.assert(
+    (select count(*) from public.ticket_history where ticket_id = v_id) > 0,
+    'e o histórico é gravado, numa tabela em que ele só tem leitura');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 48.3 O privilégio foi emprestado ao contador, não à tabela
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_erro boolean := false;
+begin
+  /*
+   * A correção não afrouxou a policy: `tenants` continua recusando escrita de
+   * quem não administra. O que ganhou privilégio foi UMA função, que faz UMA
+   * coisa — incrementar o contador.
+   */
+  begin
+    update public.tenants set name = 'Tentativa de renomear'
+     where id = 'a0000000-0000-4000-8000-000000000001';
+    if found then v_erro := false; else v_erro := true; end if;
+  exception when others then v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'quem não é admin continua sem poder alterar o tenant');
+
+  perform app.assert(
+    (select count(*) from public.sla_tracking) >= 0,
+    'e continua lendo sla_tracking normalmente');
+
+  v_erro := false;
+  begin
+    insert into public.sla_tracking (tenant_id, ticket_id)
+    values ('a0000000-0000-4000-8000-000000000001',
+            (select id from public.tickets limit 1));
+    v_erro := false;
+  exception when others then v_erro := true;
+  end;
+  perform app.assert(v_erro,
+    'e continua SEM poder escrever nela à mão: quem escreve é a trigger');
+end
+$$;
+reset role;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

@@ -35,8 +35,20 @@ export interface PontoDaSerie {
  * e 250 KB comprimidos, e há um teste que falha se a rota passar de 700 KB.
  * Isto é um componente de servidor que não manda JavaScript nenhum.
  *
- * O `<title>` dentro de cada barra entrega o contexto do ponto ao ponteiro —
- * que é metade do contrato de leitura do painel do GSTI — sem uma linha de JS.
+ * ## Por que o contexto do ponteiro NÃO está dentro do SVG
+ *
+ * A primeira versão punha um `<title>` dentro de cada barra — a forma canônica
+ * de dar tooltip a um elemento SVG, e sem uma linha de JavaScript. Ela quebrou
+ * a hidratação da página inteira: **o React 19 trata `<title>` como metadado de
+ * documento e o iça para o `<head>`**, inclusive quando ele está dentro de um
+ * `<svg>`. O sintoma foi o erro #418 no console, com a tela parecendo correta —
+ * e só apareceu porque esta página passou a ser aberta num navegador de verdade.
+ *
+ * É também o motivo de `grafico-horas.tsx` usar `aria-label` e nunca `<title>`:
+ * aquela decisão estava certa, e agora está explicada.
+ *
+ * O contexto do ponto foi para o atributo `title` dos links de mês, que são
+ * `<a>` de verdade — onde o navegador mostra tooltip e o React não iça nada.
  */
 export function SerieDoResultado({
   pontos,
@@ -117,15 +129,7 @@ export function SerieDoResultado({
             stroke={i === indiceAtivo ? 'none' : 'var(--color-brand)'}
             strokeWidth={i === indiceAtivo ? 0 : 1}
             vectorEffect="non-scaling-stroke"
-          >
-            {/* O contexto do ponto, no ponteiro, sem JavaScript nenhum. */}
-            <title>
-              {rotulos[i]}: {emReais(gastos[i]!)}
-              {pontos[i]!.projetos_atrasados > 0
-                ? ` · ${pontos[i]!.projetos_atrasados} projeto(s) em atraso`
-                : ''}
-            </title>
-          </rect>
+          />
         ))}
 
         {/* ---- Quadro de baixo: a conformidade ---- */}
@@ -168,12 +172,7 @@ export function SerieDoResultado({
               cy={m.y}
               r="3"
               fill={m.valor >= meta ? 'var(--color-ok-ink)' : 'var(--color-breach-ink)'}
-            >
-              <title>
-                {rotulos[m.indice]}: {m.valor.toFixed(1).replace('.', ',')}% de conformidade em{' '}
-                {pontos[m.indice]!.com_acordo} chamado(s) com acordo
-              </title>
-            </circle>
+            />
           ))}
         </g>
       </svg>
@@ -186,6 +185,11 @@ export function SerieDoResultado({
             key={p.competencia}
             href={href({ competencia: p.competencia })}
             aria-current={i === indiceAtivo ? 'page' : undefined}
+            title={`${rotulos[i]}: ${emReais(p.gasto)}${
+              p.conformidade === null
+                ? ' · sem chamado com acordo'
+                : ` · ${p.conformidade.toFixed(1).replace('.', ',')}% de conformidade em ${p.com_acordo} chamado(s)`
+            }${p.projetos_atrasados > 0 ? ` · ${p.projetos_atrasados} projeto(s) em atraso` : ''}`}
             className={`flex flex-1 flex-col items-center rounded py-1 text-center text-[10px] leading-tight hover:bg-[var(--color-surface-2)] ${
               i === indiceAtivo
                 ? 'font-semibold text-[var(--color-brand-ink)]'
@@ -207,7 +211,8 @@ export function SerieDoResultado({
 
       <p className="mt-2 text-xs text-[var(--color-ink-3)]">
         Barras: gasto do mês. Linha: conformidade de SLA, com a meta tracejada — mês sem chamado
-        coberto é <strong>buraco</strong>, não queda. O número vermelho sob o mês é a quantidade de
+        coberto é <strong>buraco</strong>, não queda. Passe o ponteiro sobre o mês, abaixo, para
+        ver os três números daquele ponto. O número vermelho sob o mês é a quantidade de
         projetos que estavam em atraso naquele mês.{' '}
         <strong>A coincidência entre as três não é causa</strong>; os quadros são separados
         justamente para não afirmar que é.

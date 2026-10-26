@@ -170,7 +170,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 546 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação cronograma de projetos e rateio do orçamento
-npm run db:validate   # migrações + seed + 1029 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 1039 asserções em PostgreSQL real
 ```
 
 Mais duas suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -178,7 +178,13 @@ Chromium e, no caso da segunda, de um build:
 
 ```bash
 node demo/tests/prototipo.spec.mjs   # 44 asserções de permissão no protótipo
-node demo/tests/aplicacao.spec.mjs   # 59 asserções na aplicação: tema, fontes, foco, 360px, peso do JS, rotas do agente, dos canais e da exportação
+node demo/tests/aplicacao.spec.mjs   # 61 asserções na aplicação: tema, fontes, foco, 360px, peso do JS, rotas do agente, dos canais e da exportação
+
+# E, com o modo local de pé (docs/22), as telas AUTENTICADAS — que até esta
+# entrega nunca tinham sido abertas com dado real:
+bash scripts/preparar-banco-local.sh
+node demo/tests/local/telas.spec.mjs      # 37 telas autenticadas, uma a uma
+node demo/tests/local/aprovacao.spec.mjs  # o fluxo de aprovação com três pessoas
 ```
 
 A segunda cobre só as rotas públicas: `src/proxy.ts` guarda toda rota, e sem um
@@ -227,7 +233,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 44 migrações
+  migrations/         # 45 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -258,7 +264,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado na última entrega: build de produção limpo, `tsc` e `eslint` sem
-apontamentos, 586 testes unitários e 1029 asserções de banco passando, mais 44
+apontamentos, 626 testes unitários e 1039 asserções de banco passando, mais 44
 asserções no protótipo e 60 na aplicação, em navegador — incluindo a aritmética
 de horário útil conferida contra 8 cenários (almoço, fim de semana, feriado,
 fora de expediente).
@@ -333,3 +339,4 @@ aceitável. A resolução depende de uma atualização do Next.
 | [19 — Projetos](docs/19-modulo-de-projetos.md) | O primeiro módulo vindo do GSTI.IARX: por que um dos três veio inteiro, um entra lendo o que existe e um não entra |
 | [20 — Orçamento de TI](docs/20-orcamento-de-ti.md) | A camada de planejamento sobre os títulos a pagar: competência, fechamento mensal, parcelamento que fecha na conta e consumo compartilhado |
 | [21 — Visão de resultado](docs/21-visao-de-resultado.md) | Financeiro, SLA e projetos numa tela só: por que o recorte é montado no banco, por que a conformidade é do conjunto e não a média das filas, e por que a tela confere a si mesma |
+| [22 — Modo local, sem Supabase](docs/22-modo-local-sem-supabase.md) | Como a aplicação roda contra um PostgreSQL direto, por que o RLS continua valendo, e os cinco defeitos que só apareceram quando ela foi aberta num navegador |

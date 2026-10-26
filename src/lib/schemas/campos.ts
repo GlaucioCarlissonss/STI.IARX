@@ -9,11 +9,30 @@ import { z } from 'zod'
  * apareceria como campo "preenchido com nada" nos relatórios).
  */
 
-/** `""` → `null`; qualquer outro texto passa aparado. */
+/**
+ * `""` e AUSENTE → `null`; qualquer outro texto passa aparado.
+ *
+ * ## Por que `null` entra junto com `""`
+ *
+ * Porque `formData.get('campo')` devolve `null` quando o campo **não existe no
+ * formulário** — e isso é comum e legítimo: o `<input name="id">` só aparece na
+ * edição, não no cadastro; `parent_task_id` só aparece na subtarefa.
+ *
+ * Sem aceitar `null`, o Zod recusa com *"expected string, received null"* — uma
+ * mensagem que fala do tipo e não do campo, numa tela onde a pessoa não deixou
+ * nada em branco. Foi assim que o formulário de **cadastro de serviço** passou
+ * de uma onda inteira sem nunca ter criado um serviço: ele não tem campo `id`,
+ * e a validação morria antes de chegar ao banco.
+ *
+ * Ausente e vazio querem dizer a mesma coisa para um valor opcional. Tratá-los
+ * diferente só criava uma armadilha para quem escrevesse o próximo formulário.
+ */
 export const emptyToNull = z
-  .string()
-  .trim()
-  .transform((v) => (v === '' ? null : v))
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((v) => {
+    const texto = (v ?? '').trim()
+    return texto === '' ? null : texto
+  })
 
 /**
  * Um UUID obrigatório vindo de `<select>` ou de campo oculto.

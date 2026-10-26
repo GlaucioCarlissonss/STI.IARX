@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import { modoLocal } from '@/lib/db/modo'
+import { criarClienteDeServico } from '@/lib/db/cliente'
 
 /**
  * Cliente com `service_role` — IGNORA COMPLETAMENTE O RLS.
@@ -12,7 +14,20 @@ import { createClient } from '@supabase/supabase-js'
  * Se você não consegue justificar por que o cliente de sessão não serve,
  * então ele serve — use `lib/supabase/server`.
  */
-export function createAdminClient() {
+function clienteDeServico(chave: string) {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, chave, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+}
+
+export function createAdminClient(): ReturnType<typeof clienteDeServico> {
+  /* Em modo local o papel `service_role` existe no PostgreSQL com `bypassrls`,
+     exatamente como no Supabase — então o aviso acima continua valendo
+     inteiro, e não há chave de serviço para guardar. */
+  if (modoLocal()) {
+    return criarClienteDeServico() as unknown as ReturnType<typeof clienteDeServico>
+  }
+
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!serviceKey) {
     throw new Error(
@@ -20,7 +35,5 @@ export function createAdminClient() {
     )
   }
 
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
+  return clienteDeServico(serviceKey)
 }

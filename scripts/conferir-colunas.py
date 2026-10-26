@@ -45,11 +45,30 @@ for raiz, _, arquivos in os.walk(os.path.join(RAIZ, 'src')):
             lista = m.group(2) or m.group(3) or m.group(4) or ''
             # Relação aninhada — `ticket:tickets(title, client_id)` — descreve
             # OUTRA tabela. Fora, senão toda junção vira falso positivo.
+            #
+            # O NOME do embute sai junto com os parênteses. Só os parênteses
+            # deixavam `ticket_comments(body)` virar a "coluna" ticket_comments:
+            # a forma com apelido escapava pelo `:` e a forma sem apelido não
+            # escapava por nada.
             while '(' in lista:
                 a = lista.index('(')
-                f = lista.find(')', a)
+                # Fecha CONTANDO profundidade: embute dentro de embute —
+                # `conversa:x(contato:y(z))` — faria o primeiro ')' fechar o de
+                # dentro, e sobraria um parêntese solto virando "coluna".
+                prof, f = 0, -1
+                for j in range(a, len(lista)):
+                    if lista[j] == '(':
+                        prof += 1
+                    elif lista[j] == ')':
+                        prof -= 1
+                        if prof == 0:
+                            f = j
+                            break
                 if f < 0: break
-                lista = lista[:a] + lista[f + 1:]
+                i = a
+                while i > 0 and (lista[i - 1].isalnum() or lista[i - 1] in '_!:'):
+                    i -= 1
+                lista = lista[:i] + lista[f + 1:]
             if tabela not in colunas:
                 continue  # view ou tabela de outro schema
             linha = texto[:m.start()].count('\n') + 1

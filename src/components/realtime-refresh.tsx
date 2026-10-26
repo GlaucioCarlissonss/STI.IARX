@@ -28,6 +28,22 @@ export function RealtimeRefresh({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    /*
+     * Modo local (sem Supabase): não há WebSocket para escutar, e tentar abrir
+     * um contra a URL de reserva enche o console de erro a cada navegação —
+     * ruído permanente, que é o que esconde o erro de verdade quando ele vem.
+     *
+     * A troca é por recarga periódica. Ela é pior: chega atrasada e custa uma
+     * requisição por intervalo, mesmo quando nada mudou. Mas é honesta sobre o
+     * que entrega, e o gatilho continua sendo um `router.refresh()` — o mesmo
+     * caminho, com outro despertador.
+     */
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL ||
+        process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
+      const periodico = setInterval(() => router.refresh(), Math.max(debounceMs * 10, 15000))
+      return () => clearInterval(periodico)
+    }
+
     const supabase = createClient()
 
     const channel = supabase

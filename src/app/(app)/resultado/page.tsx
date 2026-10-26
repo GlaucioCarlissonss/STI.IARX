@@ -565,13 +565,17 @@ export default async function ResultadoPage({
           ) : (
             <Table
               label="Conformidade por fila"
+              /* O último cabeçalho não pode repetir "Chamados": `Table` usa o
+                 texto como chave de React, e chave repetida faz a hidratação
+                 falhar — que foi como este defeito apareceu, como erro #418 no
+                 console e nada de errado na tela. */
               head={[
                 'Fila',
                 'Chamados',
                 'Com acordo',
                 'Fora do prazo',
                 'Conformidade',
-                'Chamados',
+                'Abrir',
               ]}
             >
               {filas.map((f) => {
