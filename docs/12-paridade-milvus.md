@@ -68,6 +68,48 @@ tocar na fundação.
 | **Preço** | A partir de R$ 95/mês; planos Básico, Popular e Elite; teste de 7 dias | [portalsoftware](https://portalsoftware.com.br/software/milvus-ti) |
 | **Conformidade** | Afirmam ISO 27001 | blog do fornecedor |
 
+### 1.1 As integrações, pela própria página de preços deles
+
+Esta seção é mais nova que o resto do inventário, e a fonte é melhor: é página
+do fornecedor, não resenha de terceiro. A
+[página de preços](https://milvus.com.br/precos) lista as integrações
+disponíveis, e a [página do ChatGPT](https://milvus.com.br/chat-gpt) diz onde a
+credencial é colada.
+
+| O que o Milvus integra | O que existe aqui | Situação |
+|---|---|---|
+| **Zabbix** | `link_availability_events.source = 'zabbix'` desde a 0021 — a tabela espera o evento, o webhook não existe | ⚠️ A queda é registrada à mão. A Edge Function está adiada em [docs/18](18-revisao-e-lacunas-fechadas.md) §5 por falta de um Zabbix para testar contra |
+| **Google / Office 365 / Active Directory** | Nada. O login é e-mail e senha | ❌ **Lacuna nova**, e não estava neste mapa antes. Sem entrada única e sem provisionamento de usuário a partir do diretório |
+| **Telefonia IP** | `/telefonia` é **outra coisa**: inventário de linha, operadora e custo | ❌ **Lacuna nova.** Os nomes colidem e as funções não se parecem — eles integram a CENTRAL (chamada vira chamado, clique para ligar); aqui se cadastra a linha |
+| **ERP** | O previsto `Integrações → Bancos de dados` | ⚠️ Mesmo assunto, ainda como previsto |
+| **BI** | Exportação em CSV, gerada no servidor com o escopo de RLS de quem pediu (docs/18 §2.6) | ✅ Por outro caminho: em vez de conector de BI, o arquivo sai pronto e com o recorte certo |
+| **API** | `/api/agent`, `/api/canais`, `/api/jobs`, `/api/exportar` | ✅ Existem, cada uma com o próprio modo de autorizar |
+| **ChatGPT**, com o token colado "na área de integrações" | `/ia` — credencial por referência (ADR-009), teto de gasto mensal, sugestão que nunca é aplicada sozinha | ✅ **Mais forte**, e foi o que moveu a tela de menu: ver abaixo |
+
+**O que esta seção mudou no produto, e não só no documento:** `Sugestões de IA`
+saiu de `Administração` e foi para `Integrações`. O argumento antigo ("é
+configuração de ambiente, como os canais") continuava verdadeiro e levava ao
+lugar errado — os canais também são integração. O que decide o grupo é **com
+quem a tela fala**, e ela fala com um provedor de fora.
+
+**O que esta seção NÃO mudou, de propósito:** os seis previstos do grupo
+Integrações continuam sendo os que o cliente pediu em [docs/01](01-requisitos.md),
+e nenhuma área do Milvus virou item de menu novo. Acrescentar seis "em breve"
+porque o concorrente os tem encheria o grupo de promessa que ninguém combinou —
+e a regra de item previsto desta base (docs/08 §5) existe justamente para isso
+não acontecer. As três lacunas acima são roteiro, e o lugar do roteiro é aqui.
+
+### Duas divergências entre as fontes
+
+A tabela da seção 1 cita, via portalsoftware, "WhatsApp, Telegram, Office 365,
+GLPI". A busca que levantou a seção 1.1 **não confirmou Telegram, GLPI nem
+Bitrix24** em fonte nenhuma — nem do fornecedor, nem de terceiro.
+
+Isso não prova que não existam: ausência numa busca não é ausência no produto, e
+a página de preços pode não listar tudo. Fica registrado como divergência entre
+fontes, e não como fato, porque é exatamente o tipo de linha que vira requisito
+inventado quando alguém a lê com pressa.
+
 ### O que eu NÃO consegui confirmar
 
 Registro para não virar requisito inventado:

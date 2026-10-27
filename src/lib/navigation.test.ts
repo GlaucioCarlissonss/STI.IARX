@@ -182,7 +182,18 @@ describe('NAV_GROUPS', () => {
      * tem de estar em algum lugar do menu — entregue ou anunciado.
      */
     const integracoes = NAV_GROUPS.find((g) => g.label === 'Integrações')!
-    expect(integracoes.items).toHaveLength(4)
+    /*
+     * Cinco, e não quatro: `Sugestões de IA` veio de Administração para cá
+     * depois de a página do próprio Milvus sobre ChatGPT dizer que o token vai
+     * "na área de integrações". Este teste guarda a COBERTURA dos assuntos
+     * pedidos, não o tamanho do grupo — por isso o número vem com motivo
+     * escrito, em vez de ser ajustado em silêncio.
+     */
+    expect(integracoes.items).toHaveLength(5)
+    expect(
+      integracoes.items.some((i) => i.href === '/ia'),
+      'a configuração de IA é uma integração: ela fala com um provedor de fora',
+    ).toBe(true)
     for (const esperado of ['Bancos de dados', 'Pagamento', 'Recebimento']) {
       expect(
         integracoes.items.some((i) => i.label.includes(esperado)),

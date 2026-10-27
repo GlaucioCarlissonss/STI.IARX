@@ -78,8 +78,8 @@ pé; o que mudou é que agora existe um grupo que é exatamente dela — a pergu
 | **Inventário e monitoramento** | Inventário de TI · Agentes nas máquinas · Software instalado · Telefonia · Links de internet · Mapa das filiais |
 | **Financeiro** | Títulos a pagar · Títulos a receber · Contas bancárias · Centros de custo · Fluxo de caixa · Orçamento de TI |
 | **Clientes e contratos** | Clientes e filiais · Fornecedores e contratos |
-| **Integrações** | Sistemas de tickets · *Bancos de dados* · *Pagamento bancário* · *Recebimento bancário* |
-| **Administração** | Usuários · Preferências do ambiente · Perfis de acesso · Painéis de TV · Sugestões de IA · Trilha de alterações · Trabalhos agendados |
+| **Integrações** | Sistemas de tickets · Sugestões de IA · *Bancos de dados* · *Pagamento bancário* · *Recebimento bancário* |
+| **Administração** | Usuários · Preferências do ambiente · Perfis de acesso · Painéis de TV · Trilha de alterações · Trabalhos agendados |
 | — | Minha conta |
 
 ### Por que estes grupos, e não outros
@@ -98,6 +98,7 @@ Daí três renomeações e duas separações:
 | `Cadastros` | `Clientes e contratos` | "Cadastro" é o que a tela faz, não o que ela guarda. Obrigava a abrir para descobrir o conteúdo |
 | Base e catálogo dentro de `Atendimento` | Grupo `Autoatendimento` | As duas não servem a quem atende, servem a quem pergunta. Enquanto a barra era sempre expandida, um grupo de dois itens era um cabeçalho a mais; com grupos recolhíveis, é uma linha |
 | `Projetos` dentro de `Atendimento` | Grupo `Gestão`, com a Visão de resultado | Cronograma e resultado respondem à mesma pergunta, e não é a de quem atende |
+| `Sugestões de IA` em `Administração` | `Integrações` | A [página do Milvus sobre ChatGPT](https://milvus.com.br/chat-gpt) manda colar o token "na área de integrações" — e é isso que a tela é: credencial e teto de gasto. O que decide o grupo é **com quem a tela fala**, não quem a abre |
 
 **O que eu não consegui confirmar, e registro para não virar requisito
 inventado:** a **barra lateral literal do Milvus** não aparece em nenhuma fonte

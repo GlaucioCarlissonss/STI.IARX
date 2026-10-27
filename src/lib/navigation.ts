@@ -224,6 +224,19 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Integrações',
     items: [
       { href: '/integracoes', label: 'Sistemas de tickets', permission: 'integracoes.hub.ver' },
+      /*
+       * A IA saiu de Administração e veio para cá, e a razão é uma fonte, não um
+       * gosto: a página do próprio Milvus sobre ChatGPT instrui a colar o token
+       * "na área de integrações". É exatamente o que esta tela é — credencial
+       * por referência (ADR-009) e teto de gasto mensal; ela não pede sugestão
+       * nenhuma, quem pede é o chamado.
+       *
+       * O argumento antigo ("é configuração de ambiente, como os canais")
+       * continua verdadeiro e levava ao lugar errado: os canais também são
+       * integração, e o que decide o grupo é COM QUEM a tela fala — um provedor
+       * de fora —, não quem a abre.
+       */
+      { href: '/ia', label: 'Sugestões de IA', permission: 'ia.config.ver' },
       /* `Automação (N8N)`, `WhatsApp` e `Telegram` estavam aqui como "em breve" e
          SAÍRAM: os três existem, em `Atendimento → Conversas` (migração 0034).
          Deixá-los aqui prometeria como futuro o que já está pronto, e no grupo
@@ -257,12 +270,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Administração',
     items: [
       { href: '/usuarios', label: 'Usuários', permission: 'usuarios.usuarios.ver' },
-      /* A IA entra em Administração, e não em Atendimento, apesar de as sugestões
-         aparecerem no chamado: esta tela não pede sugestão nenhuma. Ela liga o
-         recurso, guarda a referência da credencial e define quanto o mês pode
-         gastar — é configuração de ambiente, da mesma natureza que os canais.
-         Quem atende nunca precisa abri-la. */
-      { href: '/ia', label: 'Sugestões de IA', permission: 'ia.config.ver' },
       /* Onze parâmetros de operação que só existiam como coluna: para mudar o
          percentual de atenção do SLA ou as horas de silêncio do agente era
          preciso um `update` à mão no banco. Na prática, ninguém mudou. */
