@@ -81,15 +81,32 @@ export function NavGroup({
       className="group"
     >
       <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg px-3 py-1.5 text-[0.68rem] font-semibold uppercase tracking-wider text-[var(--color-ink-3)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-ink-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-brand)] [&::-webkit-details-marker]:hidden">
-        {/* A setinha. `aria-hidden` porque `<summary>` já anuncia o estado —
-            lê-la em voz alta diria "sinal de maior", que não acrescenta nada a
-            "recolhido". */}
-        <span
+        {/* A setinha, desenhada e não escrita: o `›` de texto, no corpo de 0,68rem
+            do rótulo, virava um cisco de um pixel e meio — a única pista visual do
+            estado era a que menos se via. O traço de 2 unidades num viewBox de 8
+            sobrevive à redução.
+
+            `currentColor` para acompanhar o `hover` do `<summary>` sem repetir
+            cor. `aria-hidden` porque `<summary>` já anuncia o estado: lê-la em voz
+            alta diria "sinal de maior", que não acrescenta nada a "recolhido".
+
+            Sem `<title>` aqui — o React 19 o promove a título do documento mesmo
+            dentro de `<svg>`, e foi assim que a hidratação de `/resultado`
+            quebrou. */}
+        <svg
           aria-hidden="true"
-          className="inline-block text-[0.8rem] leading-none transition-transform duration-150 group-open:rotate-90"
+          viewBox="0 0 8 12"
+          className="h-3 w-2 shrink-0 transition-transform duration-150 group-open:rotate-90"
         >
-          ›
-        </span>
+          <path
+            d="M1.5 1.5 6 6l-4.5 4.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
         {label}
       </summary>
       {children}

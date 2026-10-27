@@ -105,7 +105,7 @@ console.log('\n=== 3. A setinha gira — é a única pista do estado ===')
 // ---------------------------------------------------------------------------
 {
   const financeiro = grupo('Financeiro')
-  const seta = financeiro.locator('summary span[aria-hidden="true"]').first()
+  const seta = financeiro.locator('summary svg[aria-hidden="true"]').first()
 
   /* `rotate`, e não `transform`: o Tailwind v4 usa a propriedade CSS `rotate`
      para `rotate-90`, e `transform` fica em `none`. Medir a propriedade errada

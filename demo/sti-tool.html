@@ -99,8 +99,12 @@
   .side details:first-child .nav-group { margin-top:0; }
   /* A setinha. `aria-hidden` porque o <summary> já anuncia o estado: lê-la em
      voz alta diria "sinal de maior", que não acrescenta nada a "recolhido". */
-  .nav-seta { display:inline-block; font-size:.8rem; line-height:1;
-    transition:transform .15s; }
+  /* 0,95rem e peso 700 porque a 0,8rem, ao lado de um rótulo de 0,66rem em
+     caixa alta, a seta virava um cisco — a única pista visual do estado era a
+     que menos se via. O produto desenha a mesma seta em SVG (nav-group.tsx);
+     aqui o glifo basta, e o tamanho é o que importa. */
+  .nav-seta { display:inline-block; font-size:.95rem; font-weight:700;
+    line-height:1; transition:transform .15s; }
   details[open] > .nav-group .nav-seta { transform:rotate(90deg); }
   /* Item previsto. `<span>`, não `<button disabled>`: botão desabilitado sai da
      ordem de tabulação sem explicar por quê, e o leitor de tela anuncia "botão
