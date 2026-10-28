@@ -61,6 +61,36 @@ const previstos = await p.$$eval('.nav-soon', ss => ss.map(s => s.textContent.re
 console.log('  em breve:', previstos.join(' | '))
 ok(previstos.length === 6, `${previstos.length} itens previstos: só as 6 integrações. Fluxo de caixa e Links de internet TÊM tela e permissão própria desde as migrações 0021/0022`)
 
+/* A sanfona: um aberto de cada vez. O protótipo decide isso por estado e
+   re-renderiza, em vez de deixar o `<details>` abrir por conta — o que o produto
+   resolve com um guarda de eco (ver `nav-group.tsx`). As duas implementações
+   diferem; o comportamento visto, não. */
+const abertos = () =>
+  p.$$eval('#nav details[open] > summary', (ss) =>
+    ss.map((s) => s.textContent.replace(/[›\s]+/, '').trim()),
+  )
+const abrirGrupo = async (rotulo) => {
+  await p.evaluate((r) => {
+    const s = [...document.querySelectorAll('#nav details > summary')]
+      .find((x) => x.textContent.replace(/[›\s]+/, '').trim() === r)
+    s?.click()
+  }, rotulo)
+  await p.waitForTimeout(150)
+}
+
+ok((await abertos()).length === 1, `só UM grupo chega aberto (${(await abertos()).join(', ') || 'nenhum'})`)
+
+await abrirGrupo('Financeiro')
+let quais = await abertos()
+ok(quais.length === 1 && quais[0] === 'Financeiro', 'abrir o Financeiro fecha o que estava aberto')
+
+await abrirGrupo('Integrações')
+quais = await abertos()
+ok(quais.length === 1 && quais[0] === 'Integrações', 'e trocar de grupo de novo não deixa dois abertos')
+
+await abrirGrupo('Integrações')
+ok((await abertos()).length === 0, 'clicar no que está aberto fecha tudo')
+
 console.log('\n=== 2. Grupo desaparece inteiro quando nada é alcançável ===')
 await trocar('u6')  // Operador Financeiro
 const gruposFin = await p.$$eval('.nav-group', (hs) =>

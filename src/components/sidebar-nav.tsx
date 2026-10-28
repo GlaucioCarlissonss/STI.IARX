@@ -1,9 +1,9 @@
 import type { NavGroup, NavItem } from '@/lib/navigation'
 import { NavLink } from './nav-link'
-import { NavGroup as GrupoExpansivel } from './nav-group'
+import { NavGroup as GrupoExpansivel, SanfonaDoMenu } from './nav-group'
 
 /**
- * Barra lateral agrupada, com grupos que abrem e fecham.
+ * Barra lateral agrupada, em sanfona: um grupo aberto de cada vez.
  *
  * ## A decisão mudou, e vale registrar o que ela substituiu
  *
@@ -19,63 +19,88 @@ import { NavGroup as GrupoExpansivel } from './nav-group'
  *
  * O acordeão devolve o cabeçalho ao seu trabalho: ele vira o alvo. E as duas
  * objeções originais continuam válidas, então foram respondidas em vez de
- * ignoradas — o grupo da tela atual abre sozinho, e **tudo chega aberto na
- * primeira visita**; a barra encolhe por escolha de quem usa, e a escolha
+ * ignoradas — o grupo da tela atual abre sozinho, e a escolha de quem usa
  * persiste (ver `nav-group.tsx`).
  *
- * Continua Server Component: a decisão de O QUE mostrar é do servidor. Só o
- * abre/fecha e o realce do item ativo são cliente, porque dependem da rota.
+ * ## E depois virou sanfona de verdade
+ *
+ * A primeira versão deixava vários grupos abertos ao mesmo tempo. Isso resolvia
+ * a altura só enquanto ninguém abrisse tudo — e com oito grupos a barra voltava
+ * a rolar, que era o problema de origem. Com um aberto de cada vez a altura
+ * passa a ter teto: o maior grupo, e não a soma deles.
+ *
+ * O custo que isso tem é real e foi coberto no `nav-group.tsx`: ir e voltar
+ * entre dois grupos fecha o anterior toda vez. As três regras de lá existem para
+ * que esse custo não vire perda de contexto — principalmente a que mantém aberto
+ * o grupo da tela em que a pessoa está.
+ *
+ * Continua Server Component: a decisão de O QUE mostrar é do servidor. Para o
+ * cliente atravessam só os `id` e `href` dos grupos — o mínimo para saber qual
+ * deles contém a tela atual. O abre/fecha e o realce do item ativo são cliente
+ * porque dependem da rota.
  */
 export function SidebarNav({ groups }: { groups: NavGroup[] }) {
+  /* O que a sanfona precisa saber do conjunto: quais grupos abrem, em que ordem,
+     e quais telas pertencem a cada um. Sai daqui já filtrado por permissão — um
+     grupo que a pessoa não pode ver não é candidato a abrir sozinho. */
+  const expansivos = groups.flatMap((grupo) =>
+    grupo.label
+      ? [
+          {
+            id: identificador(grupo.label),
+            hrefs: grupo.items.flatMap((item) => (item.href ? [item.href] : [])),
+          },
+        ]
+      : [],
+  )
+
   return (
-    <ul className="flex flex-col gap-4">
-      {groups.map((grupo, i) => {
-        /*
-         * O rótulo do grupo nunca foi `<h2>`, e continua não sendo: o menu vem
-         * ANTES do `<main>`, e quem navega por títulos ouviria "Atendimento,
-         * Financeiro…" antes do `<h1>` da página. Agora ele é o `<summary>` do
-         * grupo — que é alvo de clique e de teclado, e anuncia o estado sem
-         * entrar no índice de títulos.
-         */
-        const lista = (
-          <ul
-            /* Era `aria-labelledby` apontando para o `<p>` do rótulo. O `<p>`
-               virou `<summary>`, e uma referência para um id que não existe
-               mais não falha em lugar nenhum — só deixa a lista sem nome para
-               quem usa leitor de tela. `aria-label` diz a mesma coisa sem
-               depender de outro elemento. */
-            aria-label={grupo.label ?? undefined}
-            className="flex flex-col gap-0.5"
-          >
-            {grupo.items.map((item) => (
-              <li key={item.href ?? item.label}>
-                {item.href === null ? <SoonItem item={item} /> : (
-                  <NavLink href={item.href}>{item.label}</NavLink>
-                )}
-              </li>
-            ))}
-          </ul>
-        )
-
-        /* Grupo sem rótulo não tem o que abrir: são os destinos soltos do topo,
-           que precisam estar sempre à vista. */
-        if (!grupo.label) {
-          return <li key={`solto-${i}`}>{lista}</li>
-        }
-
-        return (
-          <li key={grupo.label}>
-            <GrupoExpansivel
-              id={identificador(grupo.label)}
-              label={grupo.label}
-              hrefs={grupo.items.flatMap((item) => (item.href ? [item.href] : []))}
+    <SanfonaDoMenu grupos={expansivos}>
+      <ul className="flex flex-col gap-4">
+        {groups.map((grupo, i) => {
+          /*
+           * O rótulo do grupo nunca foi `<h2>`, e continua não sendo: o menu vem
+           * ANTES do `<main>`, e quem navega por títulos ouviria "Atendimento,
+           * Financeiro…" antes do `<h1>` da página. Agora ele é o `<summary>` do
+           * grupo — que é alvo de clique e de teclado, e anuncia o estado sem
+           * entrar no índice de títulos.
+           */
+          const lista = (
+            <ul
+              /* Era `aria-labelledby` apontando para o `<p>` do rótulo. O `<p>`
+                 virou `<summary>`, e uma referência para um id que não existe
+                 mais não falha em lugar nenhum — só deixa a lista sem nome para
+                 quem usa leitor de tela. `aria-label` diz a mesma coisa sem
+                 depender de outro elemento. */
+              aria-label={grupo.label ?? undefined}
+              className="flex flex-col gap-0.5"
             >
-              {lista}
-            </GrupoExpansivel>
-          </li>
-        )
-      })}
-    </ul>
+              {grupo.items.map((item) => (
+                <li key={item.href ?? item.label}>
+                  {item.href === null ? <SoonItem item={item} /> : (
+                    <NavLink href={item.href}>{item.label}</NavLink>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )
+
+          /* Grupo sem rótulo não tem o que abrir: são os destinos soltos do topo,
+             que precisam estar sempre à vista. */
+          if (!grupo.label) {
+            return <li key={`solto-${i}`}>{lista}</li>
+          }
+
+          return (
+            <li key={grupo.label}>
+              <GrupoExpansivel id={identificador(grupo.label)} label={grupo.label}>
+                {lista}
+              </GrupoExpansivel>
+            </li>
+          )
+        })}
+      </ul>
+    </SanfonaDoMenu>
   )
 }
 

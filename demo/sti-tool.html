@@ -5643,24 +5643,50 @@
      Chave pelo RÓTULO e não pelo índice: índice muda quando um grupo entra no
      meio, e a preferência de "Financeiro" passaria a valer para "Integrações"
      sem ninguém ter mexido em nada. */
-  const chaveDoGrupo = (rotulo) => 'sti.demo.menu.' + rotulo
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  /* A sanfona: UM grupo aberto de cada vez. Uma chave só, e não uma por grupo —
+     com um aberto de cada vez, oito booleanos descreveriam um estado que não
+     existe, e dois deles dizendo "aberto" seria um estado impossível, guardado.
 
-  function grupoAberto(rotulo, temAtivo) {
-    /* O grupo da tela atual abre sozinho, mesmo tendo sido fechado antes: estar
-       numa tela e não ver onde ela fica é pior que desrespeitar a preferência.
-       E o padrão é ABERTO — um menu que chega fechado obriga a caçar antes de
-       conhecer. */
-    if (temAtivo) return true;
+     As três regras, em ordem de precedência (as mesmas de `nav-group.tsx`):
+       1. a escolha de quem está na tela manda, enquanto a tela for a mesma;
+       2. ao trocar de tela, o grupo da tela nova abre sozinho — por isso a
+          escolha guarda ONDE foi feita: ela não é esquecida, é suspensa;
+       3. numa tela que não pertence a grupo nenhum, a escolha anterior volta a
+          valer — senão ir à Visão geral fecharia a barra inteira. */
+  const CHAVE_SANFONA = 'sti.demo.menu.sanfona';
+
+  function lerEscolha() {
     try {
-      const v = localStorage.getItem(chaveDoGrupo(rotulo));
-      return v === null ? true : v === '1';
-    } catch { return true; }
+      const v = JSON.parse(localStorage.getItem(CHAVE_SANFONA));
+      if (!v || typeof v.view !== 'string') return null;
+      if (v.grupo !== null && typeof v.grupo !== 'string') return null;
+      return v;
+    } catch { return null; }
+  }
+
+  function gravarEscolha(grupo) {
+    try { localStorage.setItem(CHAVE_SANFONA, JSON.stringify({ grupo, view: current })); }
+    catch { /* navegação privada: funciona igual, só não lembra */ }
+  }
+
+  /* Qual grupo está aberto agora, decidido para a barra inteira de uma vez — é
+     uma frase sobre o conjunto, não sobre cada grupo. */
+  function grupoAberto(grupos) {
+    const ativo = grupos.find(([, itens]) => itens.some(([k]) => k === current));
+    const escolha = lerEscolha();
+    if (escolha && escolha.view === current) return escolha.grupo;
+    if (ativo) return ativo[0];
+    if (escolha) return escolha.grupo;
+    /* Primeiríssima visita: abre o primeiro. Sanfona não tem como chegar toda
+       aberta, e chegar toda fechada obrigaria a caçar antes de conhecer. */
+    return grupos.length ? grupos[0][0] : null;
   }
 
   function renderNav() {
-    document.getElementById('nav').innerHTML = visibleNavGroups().map(([rotulo, itens]) => {
+    const visiveis = visibleNavGroups();
+    const abertoId = grupoAberto(visiveis.filter(([rotulo]) => rotulo));
+
+    document.getElementById('nav').innerHTML = visiveis.map(([rotulo, itens]) => {
       const corpo = itens.map(([k,l,isNew,perm,soon,hint]) => soon
         ? `<span class="nav-soon" title="${esc(hint||'')}">${esc(l)}<em>em breve</em></span>`
         : `<button type="button" data-view="${k}"${current===k?' aria-current="page"':''}>
@@ -5671,17 +5697,25 @@
          de alguém ter aberto a gaveta certa. */
       if (!rotulo) return corpo;
 
-      const temAtivo = itens.some(([k]) => k === current);
-      return `<details${grupoAberto(rotulo, temAtivo) ? ' open' : ''} data-grupo="${esc(rotulo)}">
+      return `<details${rotulo === abertoId ? ' open' : ''} data-grupo="${esc(rotulo)}">
         <summary class="nav-group"><span class="nav-seta" aria-hidden="true">\u203a</span>${esc(rotulo)}</summary>
         ${corpo}
       </details>`;
     }).join('');
 
-    document.getElementById('nav').querySelectorAll('details[data-grupo]').forEach(d => {
-      d.addEventListener('toggle', () => {
-        try { localStorage.setItem(chaveDoGrupo(d.dataset.grupo), d.open ? '1' : '0'); }
-        catch { /* navegação privada: funciona igual, só não lembra */ }
+    /* `click` com `preventDefault`, e não `toggle`: aqui quem decide quem está
+       aberto é o estado, e deixar o navegador abrir por conta criaria o eco que
+       o produto resolve com um guarda (ver `nav-group.tsx`). `Enter` no
+       `<summary>` também dispara `click`, então o teclado continua valendo.
+
+       `click` no `<summary>`, e não no `<details>`: clicar num item de dentro
+       também borbulha até o `<details>`, e o grupo fecharia na navegação. */
+    document.getElementById('nav').querySelectorAll('details[data-grupo] > summary').forEach(s => {
+      s.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const rotulo = s.parentElement.dataset.grupo;
+        gravarEscolha(rotulo === abertoId ? null : rotulo);
+        renderNav();
       });
     });
   }

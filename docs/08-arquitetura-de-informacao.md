@@ -28,8 +28,8 @@ modelo de dados.
 **Sete grupos, no máximo.** É o teto prático de uma barra lateral que se lê de
 relance. O que se usa todo dia fica no topo; configuração, no fim.
 
-**Grupos que abrem e fecham, com uma setinha.** Esta decisão foi revertida, e
-vale registrar o que ela substituiu.
+**Grupos em sanfona, com uma setinha.** Esta decisão foi revertida, e vale
+registrar o que ela substituiu.
 
 O texto anterior dizia *"sempre expandido, sem acordeão"*, e o argumento era
 bom: o menu já chega filtrado por permissão, então o acordeão custaria um clique
@@ -41,13 +41,31 @@ deixa de servir para a vista pular — vira mais uma linha de ruído — e a bar
 passa a rolar, que é quando um menu começa a esconder sem avisar e sem oferecer
 nada em troca.
 
-As duas objeções originais continuam válidas, e foram respondidas em vez de
-ignoradas:
+**E é sanfona: um grupo aberto de cada vez.** A primeira versão deixava vários
+abertos ao mesmo tempo, e isso resolvia a altura só enquanto ninguém abrisse
+tudo — com oito grupos a barra voltava a rolar, que era o problema de origem.
+Com um aberto de cada vez a altura passa a ter teto: **o maior grupo, e não a
+soma deles.**
 
-| Objeção | Resposta |
-|---|---|
-| "custa um clique para alcançar qualquer coisa" | Tudo chega **aberto** na primeira visita. A barra encolhe por escolha de quem usa, não por decisão de quem programou |
-| "cria estado: qual grupo estava aberto?" | O estado é por grupo, em `localStorage`, e o grupo da **tela atual abre sozinho** — estar numa tela e não ver onde ela fica seria pior que desrespeitar a preferência |
+O custo é real e não vale esconder: ir e voltar entre dois grupos fecha o
+anterior toda vez. As três regras abaixo existem para que esse custo não vire
+perda de contexto, e valem nesta ordem de precedência.
+
+| # | Regra | Por quê |
+|---|---|---|
+| 1 | A escolha de quem está na tela manda, enquanto a tela for a mesma | Clicou, abriu; clicou de novo, fechou tudo. Quem fecha manda |
+| 2 | Ao trocar de tela, o grupo da tela nova abre sozinho | Estar numa tela e não ver onde ela fica é pior que repetir a última escolha — e numa sanfona é pior que num acordeão livre, porque não sobra nenhum outro grupo aberto para dar contexto. A escolha guarda **onde** foi feita: não é esquecida, é suspensa |
+| 3 | Numa tela que não pertence a grupo nenhum, a escolha anterior volta a valer | `Visão geral`, `Portal` e `Minha conta` estão soltos. Se a regra 2 fosse cega, ir à Visão geral fecharia a barra inteira e obrigaria a abrir uma gaveta para ir a qualquer lugar |
+
+Na primeiríssima visita não há escolha nem grupo ativo: abre **Atendimento**, o
+primeiro. Uma sanfona não tem como chegar toda aberta, e chegar toda fechada
+obrigaria a caçar antes de conhecer.
+
+A objeção original — *"cria estado: qual grupo estava aberto?"* — fica
+respondida de um jeito mais barato que antes: o estado deixou de ser um booleano
+por grupo e virou **um nome só**, em `localStorage`. Oito booleanos descreveriam
+estados que não existem mais, e dois deles dizendo "aberto" seria um estado
+impossível, guardado.
 
 É `<details>`/`<summary>`, não um acordeão escrito à mão: vem com teclado,
 `aria-expanded` e busca-na-página do navegador de graça.
