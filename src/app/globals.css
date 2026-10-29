@@ -23,9 +23,18 @@
    ========================================================================== */
 @theme {
   /* --- Tipografia -------------------------------------------------------
-     As duas variáveis `-raw` vêm do `next/font` em `layout.tsx`. O fallback
-     existe para o intervalo entre a primeira pintura e a chegada da web font
-     (`display: 'swap'`), e para o caso de ela não chegar nunca. */
+     Os nomes das duas famílias vêm dos pacotes `@fontsource*` importados em
+     `layout.tsx`, e não mais do `next/font/google`. A troca foi por causa do
+     BUILD: `next/font/google` baixa as fontes do Google em tempo de build, e
+     isso fazia `docker compose build` falhar atrás de qualquer proxy que
+     reescreva TLS — e falhar com "Failed to fetch Space Grotesk", que não
+     parece problema de rede. Agora os arquivos vêm do `node_modules`, e o
+     build não fala com ninguém.
+
+     O fallback existe para o intervalo entre a primeira pintura e a chegada da
+     web font (`font-display: swap`), e para o caso de ela não chegar nunca. */
+  --font-sans-raw: 'IBM Plex Sans';
+  --font-display-raw: 'Space Grotesk Variable';
   --font-sans: var(--font-sans-raw), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-display-raw), var(--font-sans);
 

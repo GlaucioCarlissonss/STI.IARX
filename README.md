@@ -7,7 +7,7 @@ e um Integration Hub aberto — cuja primeira integração é o Bitrix24.
 ```
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4
 Supabase — PostgreSQL, Auth, Realtime, Storage, Edge Functions
-Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
+Space Grotesk (display) · IBM Plex Sans (corpo) — auto-hospedadas, via @fontsource
 ```
 
 ## Sumário

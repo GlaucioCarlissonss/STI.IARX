@@ -556,10 +556,16 @@ macOS e Android, e nenhuma delas era uma decisão de ninguém.
 | Display — títulos, números de destaque, painel de TV | **Space Grotesk** | Desenho próprio e algarismos de largura fixa. Metade desta aplicação é número grande — saldo, contagem de ticket, TV a cinco metros — e algarismo tabular é o que impede a coluna de dançar a cada atualização em tempo real |
 | Corpo — texto, tabela, formulário | **IBM Plex Sans** | Desenhada para interface técnica densa: abre bem em 12–14px e distingue `l`/`I`/`1` e `0`/`O`, que numa tela de patrimônio e número de série é a diferença entre ler certo e abrir chamado errado |
 
-Carregadas por `next/font`, o que subsetifica, auto-hospeda e evita a requisição
-ao domínio de terceiros. `display: 'swap'` é deliberado: o texto aparece na fonte
-de recurso e troca quando a web font chega — `block` esconderia o conteúdo por
-até três segundos numa tela de operação.
+Auto-hospedadas pelos pacotes `@fontsource*`, e não mais por `next/font/google`.
+A troca foi por causa do BUILD — aquele baixa as fontes do Google em tempo de
+build, e isso fazia o `docker compose build` morrer atrás de qualquer proxy que
+reescreva TLS (ver [docs/22](22-modo-local-sem-supabase.md) §6.1). A aplicação
+continua não pedindo nada a domínio de terceiro em tempo de execução; agora o
+build também não.
+
+`font-display: swap` é deliberado: o texto aparece na fonte de recurso e troca
+quando a web font chega — `block` esconderia o conteúdo por até três segundos
+numa tela de operação.
 
 ## 2. Tema claro e escuro
 

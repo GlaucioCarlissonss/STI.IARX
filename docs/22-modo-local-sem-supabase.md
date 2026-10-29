@@ -190,11 +190,22 @@ Os dados moram em dois volumes — `banco` (o PostgreSQL) e `arquivos` (anexos d
 ticket e fotos de ativo) —, então `docker compose build` e `down` não os levam
 junto. Quem quiser zerar tudo usa `docker compose down -v`.
 
-**O build precisa de internet, e não é pelas dependências.** `next/font/google`
-baixa as duas fontes em tempo de build. Atrás de um proxy que reescreve TLS, o
-build falha em `Failed to fetch Space Grotesk from Google Fonts` — o remédio é
-apontar `NODE_EXTRA_CA_CERTS` para a CA da empresa e passar `HTTPS_PROXY` ao
-build, nunca desligar a verificação.
+**O build não fala com ninguém além do registro do npm.** Isto precisou ser
+consertado, e vale o registro porque o sintoma enganava: `next/font/google`
+baixava as duas fontes em tempo de build, e atrás de um proxy que reescreve TLS
+o build morria em `Failed to fetch Space Grotesk from Google Fonts` — que não
+parece problema de rede para quem encontra, parece defeito do projeto. Foi assim
+que o primeiro `docker compose build` falhou.
+
+As fontes passaram a vir de pacotes (`@fontsource*`), do `node_modules`. Depois
+do `npm ci`, o build roda **sem rede**, e isso foi verificado com
+`docker run --network none`. Dois efeitos de brinde: o `package-lock.json` fixa
+a versão da fonte, e nada sai desta aplicação para o Google quando alguém abre
+uma tela — o que não é pouco num produto que atende cliente de terceiro.
+
+Se ainda assim o `npm ci` falhar com `self-signed certificate in chain`, aí é a
+CA da sua empresa: aponte `NODE_EXTRA_CA_CERTS` para ela. Nunca desligue a
+verificação.
 
 ### 6.2 Sem Docker, na própria máquina
 

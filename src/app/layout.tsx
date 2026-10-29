@@ -1,5 +1,17 @@
 import type { Metadata, Viewport } from 'next'
-import { IBM_Plex_Sans, Space_Grotesk } from 'next/font/google'
+
+/* As fontes, dos pacotes — uma linha por peso e por subconjunto. Ver o bloco
+   abaixo para o porquê de não ser `next/font/google`. */
+import '@fontsource-variable/space-grotesk/wght.css'
+import '@fontsource/ibm-plex-sans/latin-400.css'
+import '@fontsource/ibm-plex-sans/latin-500.css'
+import '@fontsource/ibm-plex-sans/latin-600.css'
+import '@fontsource/ibm-plex-sans/latin-700.css'
+import '@fontsource/ibm-plex-sans/latin-ext-400.css'
+import '@fontsource/ibm-plex-sans/latin-ext-500.css'
+import '@fontsource/ibm-plex-sans/latin-ext-600.css'
+import '@fontsource/ibm-plex-sans/latin-ext-700.css'
+
 import './globals.css'
 import { TEMA_INLINE_SCRIPT } from '@/components/theme-toggle'
 
@@ -20,22 +32,37 @@ import { TEMA_INLINE_SCRIPT } from '@/components/theme-toggle'
  * aparências diferentes em Windows, macOS e Android para a mesma tela, e nenhuma
  * delas era uma decisão.
  *
- * `display: 'swap'` é deliberado: o texto aparece na fonte de fallback e troca
- * quando a web font chega. A alternativa (`block`) esconderia o conteúdo por até
- * três segundos numa tela de operação.
+ * `font-display: swap` é deliberado — e vem dos próprios `@font-face` dos
+ * pacotes: o texto aparece na fonte de fallback e troca quando a web font
+ * chega. A alternativa (`block`) esconderia o conteúdo por até três segundos
+ * numa tela de operação.
+ *
+ * ## Por que NÃO é `next/font/google`
+ *
+ * Porque ele baixa as fontes **em tempo de build**. Numa máquina com internet
+ * aberta isso é invisível; atrás de um proxy que reescreve TLS, ou num CI sem
+ * saída, o build morre em `Failed to fetch Space Grotesk from Google Fonts` —
+ * e esse erro não parece problema de rede para quem o encontra, parece defeito
+ * do projeto. Foi exatamente assim que o primeiro `docker compose build` falhou.
+ *
+ * Os pacotes `@fontsource*` trazem os mesmos arquivos `.woff2` do Google, pela
+ * mesma licença (SIL OFL 1.1), dentro do `node_modules`. O build deixa de
+ * depender de rede, o `package-lock.json` passa a fixar a VERSÃO da fonte — e
+ * nada sai desta aplicação para o Google quando alguém abre uma tela, que é um
+ * efeito colateral bem-vindo num produto que atende cliente de terceiro.
+ *
+ * O que se perde: o `size-adjust` que o `next/font` calcula para a fonte de
+ * fallback, que reduz o pulo de layout na troca. É um pulo pequeno, de uma vez
+ * por visita, e o preço de um build que não funciona é maior.
+ *
+ * As famílias se chamam `IBM Plex Sans` e `Space Grotesk Variable`, e os nomes
+ * estão em `globals.css`, nas duas variáveis `-raw` — o mesmo contrato de
+ * antes, para o resto do CSS não mudar nada.
+ *
+ * Os imports listam peso por peso e subconjunto por subconjunto de propósito:
+ * importar `400.css` traria cirílico, grego e vietnamita junto, e são arquivos
+ * que o produto nunca pede.
  */
-const display = Space_Grotesk({
-  subsets: ['latin', 'latin-ext'],
-  display: 'swap',
-  variable: '--font-display-raw',
-})
-
-const corpo = IBM_Plex_Sans({
-  subsets: ['latin', 'latin-ext'],
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-  variable: '--font-sans-raw',
-})
 
 export const metadata: Metadata = {
   title: {
@@ -61,7 +88,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${display.variable} ${corpo.variable}`} suppressHydrationWarning>
+    <html lang="pt-BR" suppressHydrationWarning>
       <head>
         {/*
          * Este script roda ANTES da primeira pintura, e é a única forma de o
