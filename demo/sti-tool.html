@@ -103,6 +103,8 @@
      caixa alta, a seta virava um cisco — a única pista visual do estado era a
      que menos se via. O produto desenha a mesma seta em SVG (nav-group.tsx);
      aqui o glifo basta, e o tamanho é o que importa. */
+  .is-armed { background:var(--breach-soft); border-color:var(--breach-ink);
+    color:var(--breach-ink); font-weight:600; }
   .nav-seta { display:inline-block; font-size:.95rem; font-weight:700;
     line-height:1; transition:transform .15s; }
   details[open] > .nav-group .nav-seta { transform:rotate(90deg); }
@@ -5824,11 +5826,31 @@
       (!r.hasAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
     r.setAttribute('data-theme', dark ? 'light' : 'dark');
   });
-  document.getElementById('reset-btn').addEventListener('click', () => {
-    if (!confirm('Restaurar os dados de exemplo? Tudo que você criou será apagado.')) return;
-    uid = 1; db = seed(); refreshGrants(); save(); closeDrawer(); closeModal(); selected.clear(); refresh();
-    toast('Dados de exemplo restaurados');
-  });
+  /* A confirmação é do próprio botão, e não um `confirm()` do navegador.
+     Motivo prático: em página embutida — num visualizador, num iframe — o
+     `confirm()` volta `false` sem perguntar nada, e o botão passaria a não
+     fazer NADA, em silêncio. Dois cliques resolvem, e o rótulo diz o que o
+     segundo faz. Os 4 segundos existem para o botão não ficar armado
+     esperando um clique distraído meia hora depois. */
+  (() => {
+    const btn = document.getElementById('reset-btn');
+    const rotulo = btn.textContent;
+    let armado = null;
+    btn.addEventListener('click', () => {
+      if (!armado) {
+        btn.textContent = 'Apagar e restaurar?';
+        btn.classList.add('is-armed');
+        armado = setTimeout(() => {
+          armado = null; btn.textContent = rotulo; btn.classList.remove('is-armed');
+        }, 4000);
+        return;
+      }
+      clearTimeout(armado); armado = null;
+      btn.textContent = rotulo; btn.classList.remove('is-armed');
+      uid = 1; db = seed(); refreshGrants(); save(); closeDrawer(); closeModal(); selected.clear(); refresh();
+      toast('Dados de exemplo restaurados');
+    });
+  })();
   document.getElementById('wall-full').addEventListener('click', () => {
     document.getElementById('wall').classList.toggle('is-full'); renderWall();
   });
