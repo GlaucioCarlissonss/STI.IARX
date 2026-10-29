@@ -1,0 +1,32 @@
+# O que NÃO entra na imagem.
+#
+# `node_modules` é o item que mais importa, e não é por tamanho: nesta máquina de
+# desenvolvimento ele contém um link simbólico para o Playwright instalado fora
+# do projeto. Copiado para dentro da imagem, o link aponta para um caminho que
+# não existe lá, e o `npm ci` do Dockerfile passaria a conviver com uma árvore
+# meio montada. A imagem instala as dependências do zero, a partir do
+# `package-lock.json`, que é o que torna o build reprodutível.
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# O ambiente vem do compose, não de arquivo. Copiar um `.env.local` da máquina
+# de quem construiu a imagem é como um segredo vaza para dentro de um registro.
+.env
+.env.local
+.env*.local
+
+.git/
+.gitignore
+coverage/
+*.tsbuildinfo
+
+# Arquivos enviados no modo local: são dados, moram em volume.
+.local-storage/
+
+# `demo/` FICA, embora a aplicação não o use: `permissions.demo.test.ts` lê o
+# `sti-tool.html` para conferir que o catálogo de permissões do protótipo não
+# divergiu do real. Excluí-lo faria `npm test` quebrar dentro do contêiner por
+# um motivo que ninguém adivinha. São 458 KB.

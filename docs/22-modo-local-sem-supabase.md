@@ -156,6 +156,48 @@ constraint.
 
 ## 6. Como rodar
 
+### 6.1 Com Docker, em um comando
+
+É o caminho para quem quer **ver o produto funcionando** sem instalar Node nem
+PostgreSQL:
+
+```bash
+docker compose up
+```
+
+Depois, `http://localhost:3177`. O serviço `preparacao` imprime a lista de
+e-mails; a senha de todos é `desenvolvimento`.
+
+São três serviços, e a ordem entre eles é o que faz funcionar:
+
+| Serviço | O que faz | Por que depende de quem depende |
+|---|---|---|
+| `banco` | PostgreSQL 16, publicado na 5433 | `healthcheck` com `pg_isready`: sem ele a preparação começaria antes de o banco aceitar conexão e falharia num erro que parece de configuração, mas é só pressa |
+| `preparacao` | Shim, migrações, seed e senhas | Espera o banco **saudável**. Roda uma vez e sai |
+| `app` | O Next.js | Espera a preparação **terminar com sucesso** (`service_completed_successfully`), não só começar — senão a primeira tela abriria num erro de tabela inexistente |
+
+**O banco não é recriado a cada `up`.** `preparar-banco-local.sh` derruba e
+recria o banco toda vez — certo para quem o chama à mão, desastroso aqui, porque
+o compose roda a preparação a cada subida e quem passou a tarde cadastrando
+perderia tudo ao reiniciar. O invólucro `scripts/docker/preparar.sh` faz a
+preparação ser um ato de uma vez só; recriar passa a ser deliberado:
+
+```bash
+docker compose run --rm -e RECRIAR=1 preparacao   # APAGA o que foi cadastrado
+```
+
+Os dados moram em dois volumes — `banco` (o PostgreSQL) e `arquivos` (anexos de
+ticket e fotos de ativo) —, então `docker compose build` e `down` não os levam
+junto. Quem quiser zerar tudo usa `docker compose down -v`.
+
+**O build precisa de internet, e não é pelas dependências.** `next/font/google`
+baixa as duas fontes em tempo de build. Atrás de um proxy que reescreve TLS, o
+build falha em `Failed to fetch Space Grotesk from Google Fonts` — o remédio é
+apontar `NODE_EXTRA_CA_CERTS` para a CA da empresa e passar `HTTPS_PROXY` ao
+build, nunca desligar a verificação.
+
+### 6.2 Sem Docker, na própria máquina
+
 ```bash
 # 1. PostgreSQL de pé, na porta 5433
 bash scripts/preparar-banco-local.sh

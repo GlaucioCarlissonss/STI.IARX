@@ -1,0 +1,85 @@
+# =============================================================================
+# O ambiente inteiro em um comando:
+#
+#     docker compose up
+#
+# Depois, abra http://localhost:3177 e entre com qualquer e-mail que o
+# serviço `preparacao` imprimir, com a senha `desenvolvimento`.
+#
+# O QUE ISTO É, E O QUE NÃO É
+# ---------------------------
+# É um ambiente de DESENVOLVIMENTO, com dado de exemplo. A senha é igual para
+# todo mundo e está escrita aqui em claro, de propósito — fingir segredo num
+# lugar desses só faz as pessoas inventarem o próprio jeito de contornar.
+#
+# NÃO é produção. Em produção o app roda sobre o Supabase, e o interruptor entre
+# os dois é a AUSÊNCIA de configuração do Supabase (ver `src/lib/db/modo.ts`):
+# com uma URL de verdade configurada, este modo não liga de jeito nenhum. Uma
+# variável esquecida não pode fazer a aplicação falar com o banco errado.
+# =============================================================================
+services:
+  banco:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      # Publicada na 5433 para combinar com `docs/22` e com o `DATABASE_URL` de
+      # quem roda fora do contêiner — e para não brigar com um PostgreSQL que já
+      # esteja na 5432 da máquina.
+      - '5433:5432'
+    volumes:
+      - banco:/var/lib/postgresql/data
+    healthcheck:
+      # Sem isto, a preparação começaria antes de o PostgreSQL aceitar conexão e
+      # falharia num erro que parece de configuração, mas é só pressa.
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d postgres']
+      interval: 2s
+      timeout: 3s
+      retries: 40
+
+  preparacao:
+    # A mesma imagem do banco, pelo `psql` que vem nela: as migrações são
+    # arquivos `.sql` aplicados em ordem, e não há o que compilar.
+    image: postgres:16
+    depends_on:
+      banco:
+        condition: service_healthy
+    environment:
+      PGHOST: banco
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: sti_iarx_dev
+    volumes:
+      # Somente leitura: este serviço aplica SQL, não altera o repositório.
+      - ./:/repo:ro
+    command: ['bash', '/repo/scripts/docker/preparar.sh']
+
+  app:
+    build: .
+    depends_on:
+      preparacao:
+        # `service_completed_successfully`, e não `service_started`: o app
+        # precisa do schema APLICADO, não da preparação em andamento. Sem isto a
+        # primeira tela abriria num erro de tabela inexistente.
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@banco:5432/sti_iarx_dev
+      # Assina o cookie de sessão. Em produção isto é segredo de ambiente; aqui
+      # é um ambiente de exemplo, e trocar o valor desloga todo mundo.
+      LOCAL_AUTH_SECRET: desenvolvimento-local-nao-use-em-producao
+      LOCAL_STORAGE_DIR: /dados/arquivos
+      # Repetidas do Dockerfile porque o servidor também as lê em tempo de
+      # execução — lá elas entram no pacote do navegador, aqui no processo.
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+    ports:
+      - '3177:3177'
+    volumes:
+      # Os anexos de ticket e as fotos de ativo. Em volume, e não na imagem,
+      # senão um `docker compose build` apagaria o que foi enviado.
+      - arquivos:/dados/arquivos
+
+volumes:
+  banco:
+  arquivos:

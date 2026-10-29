@@ -61,10 +61,27 @@ Space Grotesk (display) · IBM Plex Sans (corpo) — via next/font
 | **Visão de resultado** | Custo, prazo e entrega do cliente numa tela só, sob o mesmo recorte — porque o gestor de TI não responde por três módulos, responde por um resultado. **A soma de cada detalhamento é conferida contra o indicador na própria tela**, e a divergência aparece ali, não numa reunião. Vindo do GSTI.IARX |
 | **Preferências do ambiente** | Os onze parâmetros que governam quando o sistema age sozinho — prazos de SLA, fechamento automático, cota de anexo, alertas do agente, aviso de contrato e de link. Estavam todos só como coluna no banco: mudá-los exigia um `update` à mão, e por isso ninguém mudou |
 
+## Ver funcionando em um comando
+
+Para só **ver o produto rodando**, sem instalar Node nem PostgreSQL e sem conta
+nenhuma:
+
+```bash
+docker compose up
+```
+
+Depois, `http://localhost:3177`. O serviço `preparacao` imprime os e-mails de
+exemplo; a senha de todos é `desenvolvimento`. É um ambiente de
+desenvolvimento, com dado de exemplo — os detalhes, e como recriar o banco do
+zero, estão em [docs/22](docs/22-modo-local-sem-supabase.md) §6.1.
+
+A instalação abaixo é a de quem vai **desenvolver** ou publicar em produção.
+
 ## Instalação
 
 ### Pré-requisitos
 Node.js 20+, conta Supabase e [Supabase CLI](https://supabase.com/docs/guides/cli).
+Para o modo local, nada disso: um PostgreSQL 16 basta — ou só o Docker.
 
 ### 1. Dependências e ambiente
 
