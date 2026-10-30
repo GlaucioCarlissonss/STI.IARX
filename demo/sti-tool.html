@@ -1383,8 +1383,16 @@
              accessProfiles, costCenters, bankAccounts, movements,
              expenseCategories, approvalRules, approvalRequired, payables, receivables,
              /* Quem está usando o sistema agora. Trocar aqui é o que faz a
-                interface inteira mudar — é a prova que a camada funciona. */
-             session:{ userId:'u2' },
+                interface inteira mudar — é a prova que a camada funciona.
+
+                Começa no ADMINISTRADOR, e não num operador, porque quem abre
+                isto pela primeira vez quer ver o sistema, não a filtragem. Com
+                um operador a barra chega com dois grupos e a maior parte das
+                telas fica fora de alcance — correto, e indistinguível de "não
+                foi implementado" para quem acabou de chegar. A filtragem
+                continua sendo o primeiro assunto da tela de Novidades, só que
+                agora como algo a experimentar em vez de algo a desfazer. */
+             session:{ userId:'u1' },
              nextTicket:1053, uid };
   }
 
@@ -2513,9 +2521,11 @@
     </div></div>
 
     <div class="alert" data-kind="ok" style="margin-bottom:.75rem">
-      <strong>Comece pelo seletor "Vendo como", no topo da página.</strong> Troque de
-      <em>Ana Souza — Operador de TI</em> para <em>Diego Moreira — Operador Financeiro</em>: o menu
-      passa de nove itens para cinco, e em Contas bancárias sobra só o botão "Lançar". Troque para
+      <strong>Você está vendo como Administrador, que enxerga tudo.</strong> Use o seletor
+      <strong>"Vendo como"</strong>, no topo da página, para ver a camada de permissão agindo:
+      troque para <em>Ana Souza — Operador de TI</em> e o menu encolhe a dois grupos; para
+      <em>Diego Moreira — Operador Financeiro</em>, o menu
+      passa a cinco itens, e em Contas bancárias sobra só o botão "Lançar". Troque para
       <em>Elis Prado — Aprovador Financeiro</em> e não sobra botão nenhum. Diego e Elis têm o
       <strong>mesmo papel</strong> <span class="mono">gestor</span> — o que os separa é o perfil de
       acesso, e é exatamente isso que o módulo de permissões existe para permitir.
