@@ -283,5 +283,27 @@ fazer a aplicação falar com o banco errado.
   jeito que viraria paisagem e esconderia um defeito de verdade.
   `demo/tests/local/mapa.spec.mjs` prova as duas pontas: com o servidor
   inalcançável o aviso aparece, e com ele respondendo o aviso **não** aparece.
-- **Nada foi medido sob carga.** O pool tem dez conexões e uma transação por
-  consulta. Com concorrência de verdade, esse número é a primeira coisa a olhar.
+- **Medido.** `scripts/medir-driver.mjs` percorre concorrência de 1 a 80, com
+  pools de 5, 10, 20 e 40. Nesta máquina (4 núcleos, PostgreSQL local):
+
+  | concorrência | req/s | mediana | p95 |
+  |---|---|---|---|
+  | 1 | ~1 700 | 0,5 ms | 1,1 ms |
+  | 5 | ~4 000 | 1,0 ms | 3,4 ms |
+  | 20 | ~5 200 | 3,7 ms | 5,4 ms |
+  | 80 | ~4 000 | 19,9 ms | 21,8 ms |
+
+  **O tamanho do pool não é o gargalo.** A vazão satura entre três e quatro mil
+  consultas por segundo com 5, 10, 20 ou 40 conexões. Quem limita é o custo de
+  cada consulta: cinco idas ao banco — `begin`, `set local role`, `set_config`,
+  a consulta, `commit` —, que é o preço de manter o RLS valendo igual ao do
+  PostgREST. Trocar isso por menos idas exigiria montar os claims dentro do SQL
+  à mão, e escapar JSON à mão é como se escreve uma injeção.
+
+  Pool grande chegou a **piorar**: com 40 conexões e concorrência 40, o p95
+  subiu de 5 ms para 36 ms — mais processos no PostgreSQL disputando o mesmo
+  núcleo. É o engano comum de achar que mais conexões é sempre mais rápido.
+
+  Dez continua, agora por medida e não por herança, e `DATABASE_POOL_MAX` existe
+  para quem rodar numa máquina maior. Para mexer nela com fundamento:
+  `node scripts/medir-driver.mjs --max N`.

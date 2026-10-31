@@ -44,12 +44,36 @@ export function urlDoBanco(): string {
   )
 }
 
+/**
+ * Quantas conexões o pool mantém — dez, e agora por medida, não por herança.
+ *
+ * `scripts/medir-driver.mjs` percorre concorrência de 1 a 80 com pools de 5, 10,
+ * 20 e 40. O resultado foi o mesmo em todos: a vazão satura por volta de três a
+ * quatro mil consultas por segundo **independentemente do tamanho do pool**.
+ * Quem limita não é o pool — é o custo de cada consulta, que são cinco idas ao
+ * banco (`begin`, `set local role`, `set_config`, a consulta, `commit`), e é o
+ * preço de manter o RLS valendo igual ao do PostgREST.
+ *
+ * Pool grande chegou a PIORAR: com 40 conexões e concorrência 40, o p95 subiu de
+ * 5ms para 36ms, porque mais processos no PostgreSQL disputam o mesmo núcleo.
+ * É o engano comum de achar que "mais conexões" é sempre mais rápido.
+ *
+ * Dez é o meio do intervalo onde nada piora. A variável existe para quem rodar
+ * este modo numa máquina maior, ou para uma demonstração com muita gente junto —
+ * e não para ser mexida por palpite: `node scripts/medir-driver.mjs --max N` diz
+ * se mudou alguma coisa.
+ */
+function tamanhoDoPool(): number {
+  const bruto = Number(process.env.DATABASE_POOL_MAX)
+  return Number.isInteger(bruto) && bruto > 0 && bruto <= 200 ? bruto : 10
+}
+
 export function obterPool(): Pool {
   if (!pool) {
     /* Antes de qualquer conexão: os parsers são globais do módulo `pg`, e
        registrá-los depois deixaria as primeiras consultas com o formato antigo. */
     configurarTipos()
-    pool = new Pool({ connectionString: urlDoBanco(), max: 10 })
+    pool = new Pool({ connectionString: urlDoBanco(), max: tamanhoDoPool() })
     /* Sem isto, um erro em conexão ociosa derruba o processo inteiro do Next —
        e o sintoma é o servidor morrendo sozinho, sem pista nenhuma. */
     pool.on('error', (e) => console.error('[db] erro em conexão ociosa:', e.message))
