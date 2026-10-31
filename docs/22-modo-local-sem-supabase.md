@@ -240,9 +240,23 @@ fazer a aplicação falar com o banco errado.
 
 ## 7. O que continua não verificado
 
-- **O caminho do Supabase não foi reexecutado depois desta mudança.** As quatro
-  fábricas ganharam um `if`, e o ramo do Supabase não roda aqui. O risco é
-  pequeno e real, e some no primeiro ambiente com Supabase de verdade.
+- **A DECISÃO das fábricas agora tem teste; o cliente do Supabase depois de
+  criado, não.** `src/lib/supabase/fabricas.test.ts` exercita os dois ramos das
+  três fábricas de servidor, inclusive o do Supabase — ele não precisa de rede,
+  porque o cliente do Supabase monta um objeto e só fala com o servidor na
+  primeira consulta. Cobre quem é escolhido, com qual configuração, e o erro
+  nomeado quando falta a chave de serviço; cobre também que **um Supabase de
+  verdade configurado impede o modo local de ligar**, que é a propriedade de
+  segurança do desenho.
+
+  A quarta fábrica — o cliente de navegador — não tem `if`, de propósito:
+  `modoLocal()` depende de `DATABASE_URL`, que não existe no navegador. Quem
+  decide ali é `realtime-refresh.tsx`, pela URL ausente ou de reserva, e essa
+  regra está testada ao lado das outras para as duas não divergirem em silêncio.
+
+  O que continua sem prova é o comportamento do cliente do Supabase **depois** de
+  criado, contra um servidor real — e esse nunca foi o risco que o `if`
+  introduziu.
 - **O driver cobre o que o app usa, não o PostgREST inteiro.** Filtro sobre
   tabela embutida, `count` com `head`, `csv` e `explain` não existem. A asserção
   que protege isso é a suíte de telas: o dia em que alguém escrever uma consulta
