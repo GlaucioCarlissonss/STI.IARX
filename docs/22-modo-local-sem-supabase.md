@@ -247,7 +247,13 @@ fazer a aplicação falar com o banco errado.
   tabela embutida, `count` com `head`, `csv` e `explain` não existem. A asserção
   que protege isso é a suíte de telas: o dia em que alguém escrever uma consulta
   fora do coberto, uma tela quebra na varredura, e a mensagem diz o que falta.
-- **`/mapas` não foi visto com ladrilho.** O ambiente não alcança
-  `server.arcgisonline.com`; a tela renderiza, o mapa fica cinza.
+- **`/mapas` continua sem ser visto com ladrilho de verdade.** O ambiente não
+  alcança `server.arcgisonline.com`. O que mudou é que isso deixou de ser
+  invisível: o mapa **diz** que não alcançou o servidor, e pino, balão e lista
+  seguem funcionando. Antes ficava cinza e calado, indistinguível de um mapa
+  carregando para sempre — e a varredura reprovava a tela para sempre, de um
+  jeito que viraria paisagem e esconderia um defeito de verdade.
+  `demo/tests/local/mapa.spec.mjs` prova as duas pontas: com o servidor
+  inalcançável o aviso aparece, e com ele respondendo o aviso **não** aparece.
 - **Nada foi medido sob carga.** O pool tem dez conexões e uma transação por
   consulta. Com concorrência de verdade, esse número é a primeira coisa a olhar.

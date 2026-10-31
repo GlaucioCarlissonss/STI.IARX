@@ -79,8 +79,22 @@ const p = await ctx.newPage()
 
 const problemas = []
 let consoleErros = []
+/*
+ * Recurso de FORA que não carrega não é defeito desta aplicação.
+ *
+ * `/mapas` busca ladrilho em servidor de terceiro, e esta máquina não o
+ * alcança. Contar esse erro como falha da tela tinha dois custos: a varredura
+ * reprovava para sempre numa tela que funciona, e — pior — a reprovação virou
+ * paisagem, de modo que um defeito de verdade em `/mapas` passaria despercebido
+ * no meio dela.
+ *
+ * O que a tela DEVE fazer quando o ladrilho não vem é dizer isso, e isso é
+ * verificado logo abaixo, por asserção própria.
+ */
+const EXTERNO = /ERR_(TUNNEL_CONNECTION_FAILED|NAME_NOT_RESOLVED|CONNECTION_(REFUSED|TIMED_OUT)|CERT_)|net::ERR_|Failed to load resource.*(tile|arcgisonline|openstreetmap)/i
+
 p.on('console', (m) => {
-  if (m.type() === 'error') consoleErros.push(m.text())
+  if (m.type() === 'error' && !EXTERNO.test(m.text())) consoleErros.push(m.text())
 })
 p.on('pageerror', (e) => consoleErros.push(String(e)))
 

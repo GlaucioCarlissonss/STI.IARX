@@ -46,6 +46,22 @@ export function LeafletBranchMap({
   // nem reagir de novo — porque as deps do efeito de foco não mudam depois.
   const [markersReady, setMarkersReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /*
+   * O mapa sem imagem — e por que ele precisava de um aviso próprio.
+   *
+   * Quando a rede não alcança o servidor de ladrilhos (firewall de empresa,
+   * proxy, celular sem sinal), o Leaflet não falha: ele desenha o fundo cinza e
+   * segue. Os marcadores aparecem, a escala existe, e a tela fica
+   * indistinguível de um mapa carregando para sempre. Quem olha conclui que a
+   * tela está quebrada — e o chamado abre contra a tela errada.
+   *
+   * Aqui o estado vira visível e nomeado, e a tela continua útil: marcador,
+   * popup e lista não dependem de ladrilho nenhum.
+   */
+  const [semLadrilho, setSemLadrilho] = useState(false)
+  /* Contadores em ref: eles mudam dezenas de vezes por segundo durante uma
+     carga, e cada mudança num estado redesenharia o mapa inteiro. */
+  const ladrilhosRef = useRef({ ok: 0, erro: 0 })
 
   /* O mapa é criado UMA vez. Recriá-lo a cada mudança de `points` — o que
      acontece a cada tecla da busca — recarregaria os tiles e piscaria a tela. */
@@ -78,6 +94,34 @@ export function LeafletBranchMap({
           { maxZoom: 19 },
         )
         const satellite: LayerGroup = L.layerGroup([satelliteImagery, satelliteLabels])
+
+        /*
+         * Um ladrilho que falha sozinho não quer dizer nada: no zoom máximo o
+         * Esri simplesmente não tem imagem de algumas quadras, e o próprio
+         * Leaflet pede ladrilho fora da área em toda panorâmica. O que diz algo
+         * é a RAZÃO — vários erros e nenhum acerto significa que o servidor não
+         * está sendo alcançado.
+         *
+         * Quatro é o limiar porque uma tela de mapa pede entre nove e vinte
+         * ladrilhos por carga: abaixo disso ainda cabe buraco de cobertura,
+         * acima já é a rede. E o aviso some no primeiro acerto, inclusive o de
+         * outra camada — trocar para "Mapa" e ver o OpenStreetMap responder é
+         * prova de que o problema era do Esri, não da internet.
+         */
+        const vigiar = (camada: { on: (e: string, f: () => void) => void }) => {
+          camada.on('tileerror', () => {
+            const c = ladrilhosRef.current
+            c.erro += 1
+            if (c.ok === 0 && c.erro >= 4) setSemLadrilho(true)
+          })
+          camada.on('tileload', () => {
+            ladrilhosRef.current.ok += 1
+            setSemLadrilho(false)
+          })
+        }
+        vigiar(street)
+        vigiar(satelliteImagery)
+        vigiar(satelliteLabels)
 
         const map = L.map(ref.current, {
           center: [-14.6, -52.5],
@@ -182,6 +226,23 @@ export function LeafletBranchMap({
         style={{ height }}
         className="w-full overflow-hidden rounded-xl border border-[var(--color-border)]"
       />
+      {semLadrilho && (
+        <p
+          role="status"
+          data-testid="mapa-sem-ladrilho"
+          /* No rodapé, e não no topo: em cima ficam a legenda da seleção (à
+             esquerda) e o controle de camadas (à direita) — e tapar o controle
+             esconderia justamente o botão que troca a fonte de ladrilho. O
+             `bottom-8` passa por cima da faixa de atribuição do Leaflet, que
+             mora colada na base. O z-index fica acima dos controles, que o
+             Leaflet põe em 1000. */
+          className="pointer-events-none absolute bottom-8 left-3 right-3 z-[1100] rounded-lg border border-[var(--color-warn-ink)] bg-[var(--color-warn-soft)] px-3 py-2 text-sm text-[var(--color-warn-ink)] shadow"
+        >
+          <strong>As imagens do mapa não carregaram.</strong> A rede desta máquina
+          não alcançou o servidor de mapas. Os pinos, os balões e a lista ao lado
+          continuam valendo — só o fundo está faltando.
+        </p>
+      )}
       {points.length === 0 && (
         <p className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink-2)] shadow">
           Nenhuma filial com coordenada nesta seleção.
