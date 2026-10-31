@@ -162,4 +162,74 @@ comBanco('o driver local contra o PostgreSQL', () => {
       .limit(1)
     expect(error).toBeNull()
   })
+
+  /* ------------------------------------------------------------------------
+   * As lacunas que `docs/22` listava — conferidas uma a uma, em vez de
+   * repetidas de memória. Duas já não eram lacunas.
+   * --------------------------------------------------------------------- */
+
+  it('conta o total com `head`, sem trazer linha', async () => {
+    const { data, error, count } = await db
+      .from('tickets')
+      .select('id', { count: 'exact', head: true })
+    expect(error).toBeNull()
+    expect(data).toBeNull()
+    expect(typeof count).toBe('number')
+    expect(count).toBeGreaterThan(0)
+  })
+
+  /*
+   * O caso que erra calado se ninguém olhar: `count(*) over()` não devolve
+   * LINHA nenhuma quando nada casa, então um total lido da primeira linha
+   * viraria `null` — e `null` numa paginação não é "zero", é "não sei", que a
+   * tela mostra como vazio sem dizer que está vazio.
+   */
+  it('conta zero quando nada casa, e zero não é nulo', async () => {
+    const { error, count } = await db
+      .from('tickets')
+      .select('id', { count: 'exact', head: true })
+      .eq('title', 'titulo-que-nao-existe-em-lugar-nenhum')
+    expect(error).toBeNull()
+    expect(count).toBe(0)
+  })
+
+  it('conta o total ANTES do limite, que é o ponto de contar', async () => {
+    const { data, count } = await db
+      .from('tickets')
+      .select('id', { count: 'exact' })
+      .limit(1)
+    expect(data).toHaveLength(1)
+    expect(count).toBeGreaterThan(1)
+  })
+
+  /*
+   * Filtro sobre tabela embutida é do PostgREST e não existe aqui. O que se
+   * exige é que ele FALHE DIZENDO ISSO: antes, virava uma coluna chamada
+   * "ticket_comments.id" e o PostgreSQL respondia "column does not exist",
+   * mandando quem lê procurar um erro de digitação que não existe.
+   */
+  /*
+   * Levanta exceção, e não `{ error }`, de propósito: isto não é condição de
+   * execução, é erro de programação — a consulta nunca vai funcionar, em
+   * nenhuma linha de dado. Devolver `{ error }` o faria descer pelo mesmo
+   * caminho de "não encontrei", e a tela mostraria lista vazia para um defeito
+   * de código. A exceção aparece onde foi escrita.
+   */
+  it('recusa filtro sobre tabela embutida com erro que se entende', () => {
+    expect(() =>
+      db
+        .from('tickets')
+        .select('id, ticket_comments(id)')
+        .eq('ticket_comments.id', '00000000-0000-0000-0000-000000000000'),
+    ).toThrowError(/tabela embutida.+docs\/22/s)
+  })
+
+  it('recusa `csv` e `explain` pelo nome, em vez de "não é uma função"', async () => {
+    const consulta = db.from('tickets').select('id') as unknown as {
+      csv: () => unknown
+      explain: () => unknown
+    }
+    expect(() => consulta.csv()).toThrowError(/csv/i)
+    expect(() => consulta.explain()).toThrowError(/explain/i)
+  })
 })

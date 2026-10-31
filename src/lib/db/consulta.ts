@@ -150,11 +150,64 @@ export class Consulta<T = LinhaQualquer[]> implements PromiseLike<Resultado<T>> 
 
   /* ---------------------------------------------------------------- filtros */
 
+  /**
+   * Filtro sobre tabela embutida: o que este driver NÃO faz, dito em voz alta.
+   *
+   * No PostgREST, `.eq('comentarios.autor', x)` filtra DENTRO do embute — a
+   * linha de fora permanece, e só a lista embutida encolhe. Reproduzir isso
+   * exigiria aplicar a condição na subconsulta de agregação, não no `where`
+   * externo, e são semânticas diferentes o bastante para uma aproximação
+   * devolver dado errado em silêncio.
+   *
+   * Sem este guarda a coluna virava `t."comentarios.autor"` e o PostgreSQL
+   * respondia `column does not exist` — que manda quem lê procurar um erro de
+   * digitação que não existe. O custo de uma mensagem ruim aqui não é o minuto
+   * perdido: é a conclusão errada sobre onde está o defeito.
+   *
+   * Hoje nenhuma das 333 consultas do app usa isto. No dia em que a primeira
+   * usar, a mensagem diz o que fazer.
+   */
+  private conferirColunaSimples(coluna: string): void {
+    if (!coluna.includes('.')) return
+    throw new Error(
+      `Filtro sobre tabela embutida não é suportado pelo driver local: ` +
+        `'${coluna}'. Filtre a tabela de fora, ou busque o embute numa segunda ` +
+        `consulta. Ver docs/22, seção 7.`,
+    )
+  }
+
   private comparar(coluna: string, op: string, valor: unknown): this {
+    this.conferirColunaSimples(coluna)
     this.condicoes.push({
       sql: (ctx, p) => `${p}${ident(coluna)} ${op} ${ctx.param(valor)}`,
     })
     return this
+  }
+
+  /**
+   * Os dois formatos de saída do PostgREST que este driver não tem.
+   *
+   * Eles existem como método, e não ausentes, por um motivo só: sem eles o erro
+   * seria `consulta.csv is not a function`, que parece defeito do código de quem
+   * chamou. Com eles, o erro diz o que falta e o que fazer em vez disso.
+   *
+   * `csv` não foi implementado porque a exportação desta base é gerada no
+   * servidor, com o recorte de RLS de quem pediu (docs/18 §2.6) — passar pelo
+   * formato do PostgREST não acrescentaria nada. `explain` é ferramenta de
+   * diagnóstico: aqui se usa `psql` direto, que mostra mais.
+   */
+  csv(): never {
+    throw new Error(
+      'csv() não é suportado pelo driver local. A exportação do app é gerada no ' +
+        'servidor, em src/lib/exportacao.ts. Ver docs/22, seção 7.',
+    )
+  }
+
+  explain(): never {
+    throw new Error(
+      'explain() não é suportado pelo driver local. Use `psql` com EXPLAIN ANALYZE ' +
+        'na consulta — mostra mais que o formato do PostgREST. Ver docs/22, seção 7.',
+    )
   }
 
   eq(coluna: string, valor: unknown): this {
@@ -183,6 +236,7 @@ export class Consulta<T = LinhaQualquer[]> implements PromiseLike<Resultado<T>> 
   }
 
   is(coluna: string, valor: null | boolean): this {
+    this.conferirColunaSimples(coluna)
     this.condicoes.push({
       sql: (_ctx, p) => `${p}${ident(coluna)} is ${valor === null ? 'null' : String(valor)}`,
     })
@@ -190,6 +244,7 @@ export class Consulta<T = LinhaQualquer[]> implements PromiseLike<Resultado<T>> 
   }
 
   in(coluna: string, valores: readonly unknown[]): this {
+    this.conferirColunaSimples(coluna)
     this.condicoes.push({
       sql: (ctx, p) => `${p}${ident(coluna)} = any(${ctx.param([...valores])})`,
     })
@@ -197,6 +252,7 @@ export class Consulta<T = LinhaQualquer[]> implements PromiseLike<Resultado<T>> 
   }
 
   contains(coluna: string, valores: readonly unknown[] | string): this {
+    this.conferirColunaSimples(coluna)
     this.condicoes.push({
       sql: (ctx, p) => `${p}${ident(coluna)} @> ${ctx.param(valores)}`,
     })
@@ -205,6 +261,7 @@ export class Consulta<T = LinhaQualquer[]> implements PromiseLike<Resultado<T>> 
 
   /** `.not('status', 'in', '("a","b")')` e `.not('x', 'is', null)`. */
   not(coluna: string, op: string, valor: unknown): this {
+    this.conferirColunaSimples(coluna)
     this.condicoes.push({
       sql: (ctx, p) => `not (${condicaoSimples(ctx, p, coluna, op, valor)})`,
     })
@@ -232,6 +289,7 @@ export class Consulta<T = LinhaQualquer[]> implements PromiseLike<Resultado<T>> 
   }
 
   filter(coluna: string, op: string, valor: unknown): this {
+    this.conferirColunaSimples(coluna)
     this.condicoes.push({ sql: (ctx, p) => condicaoSimples(ctx, p, coluna, op, valor) })
     return this
   }

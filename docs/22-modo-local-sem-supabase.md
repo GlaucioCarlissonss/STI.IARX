@@ -257,10 +257,24 @@ fazer a aplicação falar com o banco errado.
   O que continua sem prova é o comportamento do cliente do Supabase **depois** de
   criado, contra um servidor real — e esse nunca foi o risco que o `if`
   introduziu.
-- **O driver cobre o que o app usa, não o PostgREST inteiro.** Filtro sobre
-  tabela embutida, `count` com `head`, `csv` e `explain` não existem. A asserção
-  que protege isso é a suíte de telas: o dia em que alguém escrever uma consulta
-  fora do coberto, uma tela quebra na varredura, e a mensagem diz o que falta.
+- **O driver cobre o que o app usa, não o PostgREST inteiro** — e a lista do que
+  faltava estava desatualizada. Conferida uma a uma contra o banco:
+
+  | O que se dizia faltar | O que é verdade |
+  |---|---|
+  | `count` com `head` | **Já funcionava.** Agora com teste: conta antes do limite, e conta **zero** quando nada casa. O zero importa — `count(*) over()` não devolve linha nenhuma sem resultado, e um total lido da primeira linha viraria `null`, que numa paginação não é "zero", é "não sei" |
+  | Filtro sobre tabela embutida | **Não existe, e agora recusa dizendo isso.** No PostgREST, `.eq('comentarios.autor', x)` filtra DENTRO do embute: a linha de fora permanece e só a lista encolhe. Aproximar isso devolveria dado errado em silêncio |
+  | `csv` e `explain` | **Não existem, e agora existem como erro nomeado.** Sem isso, a mensagem era `consulta.csv is not a function`, que parece defeito de quem chamou |
+
+  O filtro embutido levanta **exceção**, e não `{ error }`: não é condição de
+  execução, é erro de programação — a consulta não funcionaria para linha de
+  dado nenhuma. Como `{ error }`, desceria pelo caminho de "não encontrei" e a
+  tela mostraria lista vazia para um defeito de código. Antes disso, virava a
+  coluna `t."comentarios.autor"` e o PostgreSQL respondia `column does not
+  exist`, mandando quem lê procurar um erro de digitação que não existe.
+
+  Nenhuma das 333 consultas do app usa qualquer um dos três. A asserção que
+  protege o conjunto continua sendo a varredura de telas.
 - **`/mapas` continua sem ser visto com ladrilho de verdade.** O ambiente não
   alcança `server.arcgisonline.com`. O que mudou é que isso deixou de ser
   invisível: o mapa **diz** que não alcançou o servidor, e pino, balão e lista
