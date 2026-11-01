@@ -168,3 +168,92 @@ export async function closeLinkOutage(_prev: ActionState, formData: FormData): P
   revalidatePath(ROTA)
   return { success: 'Retorno registrado.' }
 }
+
+/* -------------------------------------------------------------------------- */
+/* A entrada de monitoramento (0046)                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Cria uma entrada de monitoramento e guarda apenas o hash do token.
+ *
+ * O token em claro existe uma vez: na resposta desta ação, para a pessoa colar
+ * no Zabbix. Mesmo contrato de `dashboard_tokens` (ADR-006), `agent_enrollments`
+ * (0031) e `channels` (0034) — e pelo mesmo motivo: um token guardado em claro é
+ * um token que aparece em backup, em export de suporte e na tela de quem tem
+ * `select`.
+ *
+ * Quem gera é o SERVIDOR, e não o formulário. Gerar no navegador faria o valor
+ * passar pelo corpo da requisição e pelo log de quem estivesse no caminho; e
+ * `crypto.randomUUID()` de um navegador antigo não promete entropia nenhuma.
+ */
+export async function criarEntradaDeMonitoramento(
+  _prev: ActionState & { token?: string },
+  formData: FormData,
+): Promise<ActionState & { token?: string }> {
+  const gate = await permitirEscrita('conectividade.links.monitoramento')
+  if ('error' in gate) return gate
+  const { profile } = gate
+
+  const nome = String(formData.get('name') ?? '').trim()
+  if (nome.length < 2 || nome.length > 120) {
+    return { error: 'Dê um nome de 2 a 120 caracteres — "Zabbix da matriz", por exemplo.' }
+  }
+
+  const { randomBytes, createHash } = await import('node:crypto')
+  /* 32 bytes em base64url: 43 caracteres sem `+`, `/` ou `=`, que é o que
+     sobrevive a ser colado numa URL dentro de um script de mídia. */
+  const token = randomBytes(32).toString('base64url')
+  const hash = createHash('sha256').update(token).digest('hex')
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('monitoring_webhooks').insert({
+    tenant_id: profile.tenant_id,
+    name: nome,
+    inbound_token_hash: hash,
+    created_by: profile.id,
+  })
+
+  if (error) return { error: mensagemDeErro(error) }
+
+  /*
+   * SEM `revalidatePath` aqui, e é o oposto do que todas as outras ações desta
+   * base fazem.
+   *
+   * Revalidar faz o Next re-renderizar a rota e remontar a árvore de cliente — e
+   * com ela o estado de `useActionState`, onde o token acabou de chegar. O
+   * resultado é uma entrada criada no banco cujo endereço ninguém chegou a ler:
+   * o único remédio é criar outra e desligar esta.
+   *
+   * Foi reproduzido pela suíte de navegador, que clicava e não encontrava o
+   * endereço em rodada nenhuma.
+   *
+   * O custo de não revalidar é pequeno e visível: a nova entrada entra na lista
+   * na próxima navegação. O custo de revalidar é invisível e caro.
+   */
+  return { success: 'Entrada criada. Copie o endereço agora — ele não volta a aparecer.', token }
+}
+
+/** Desliga uma entrada sem apagá-la: o histórico de `last_seen_at` continua. */
+export async function desligarEntradaDeMonitoramento(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const gate = await permitirEscrita('conectividade.links.monitoramento')
+  if ('error' in gate) return gate
+
+  const id = recordId.safeParse(formData.get('id'))
+  if (!id.success) return { error: 'Registro inválido.' }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('monitoring_webhooks')
+    .update({ active: false })
+    .eq('id', id.data)
+    .select('id')
+
+  if (error) return { error: mensagemDeErro(error) }
+  if (!data?.length) return { error: NAO_AFETADO }
+
+  revalidatePath(ROTA)
+  return { success: 'Entrada desligada. O Zabbix passa a receber 401.' }
+}

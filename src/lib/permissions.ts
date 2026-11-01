@@ -363,6 +363,11 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('conectividade', 'links', 'registrar_evento', 'Registrar queda ou retorno', 'gestor'),
   act('conectividade', 'links', 'anexar', 'Anexar contrato ou laudo', 'gestor'),
   act('conectividade', 'links', 'remover_anexo', 'Remover anexo do link', 'gestor'),
+  /* `gestor`, e não `admin`: quem cuida de conectividade já cadastra link,
+     suspende e registra queda à mão. Exigir administrador para LIGAR o
+     automático empurraria a operação de volta para o manual, que é justamente o
+     que a entrada de monitoramento veio tirar (0046). */
+  act('conectividade', 'links', 'monitoramento', 'Configurar a entrada de monitoramento', 'gestor'),
 
   /* --- Clientes e filiais ------------------------------------------------ */
   mod('clientes', 'gestor'),

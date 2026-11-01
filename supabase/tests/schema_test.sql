@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 210,
-    'catálogo de permissões tem as 210 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 211,
+    'catálogo de permissões tem as 211 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 210,
+  perform app.assert((select count(*) from public.permission_catalog) = 211,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -8999,6 +8999,100 @@ begin
 end
 $$;
 reset role;
+
+-- =============================================================================
+\echo '=== 49. A entrada de monitoramento: o Zabbix registra a queda (0046) ==='
+-- =============================================================================
+reset role;
+
+-- O que estas asserções protegem não é o caminho feliz — esse a suíte de
+-- navegador cobre. É o comportamento sob REPETIÇÃO, que é o estado normal de um
+-- monitor: ele reenvia, reenvia depois de reiniciar, e reenvia o que já mandou
+-- quando perde a resposta. Um registro de disponibilidade que conta a mesma
+-- queda duas vezes mente para menos justamente no mês ruim.
+
+do $$
+declare
+  v_tenant uuid;
+  v_link   uuid;
+  v_antes  int;
+  r jsonb;
+begin
+  /* O tenant sai DO LINK, e não o contrário: pegar `tenants limit 1` e procurar
+     um link dele dava nulo sempre que o primeiro tenant não tivesse link — e o
+     sintoma era `link_nao_encontrado` numa asserção sobre outra coisa. */
+  select id, tenant_id into v_link, v_tenant
+    from public.internet_links where deleted_at is null limit 1;
+  perform app.assert(v_link is not null,
+    'o exemplo tem ao menos um link de internet para esta seção exercitar');
+
+  update public.internet_links
+     set monitoring_host = 'ZBX-ASSERCAO', monitoring_external_id = 'ZBX-ID-ASSERCAO'
+   where id = v_link;
+
+  delete from public.link_availability_events where link_id = v_link;
+
+  insert into public.monitoring_webhooks (tenant_id, name, inbound_token_hash)
+  values (v_tenant, 'Zabbix da asserção',
+          encode(digest('token-da-assercao', 'sha256'), 'hex'))
+  on conflict (inbound_token_hash) do nothing;
+
+  -- Token desconhecido não diz NADA sobre o que existe do outro lado.
+  r := public.link_event_ingest('token-que-ninguem-criou', 'ZBX-ASSERCAO', null, 'PROBLEM');
+  perform app.assert((r->>'motivo') = 'token_desconhecido',
+    'token desconhecido é recusado pelo nome');
+
+  r := public.link_event_ingest('token-da-assercao', 'ZBX-ASSERCAO', 'ev-1', 'PROBLEM');
+  /* A mensagem carrega o retorno INTEIRO: uma asserção que só diz "falhou"
+     obriga quem a encontra a reconstruir o estado para descobrir o porquê, e
+     `link_nao_encontrado` e `repetido` falham exatamente igual. */
+  perform app.assert((r->>'acao') = 'aberto', 'a queda abre o evento — retorno: ' || r::text);
+  perform app.assert(
+    (select last_state from public.internet_links where id = v_link) = 'down',
+    'e o link passa a constar como caído');
+
+  -- A MESMA notificação de novo: é o que um monitor faz quando perde a resposta.
+  v_antes := (select count(*) from public.link_availability_events where link_id = v_link);
+  r := public.link_event_ingest('token-da-assercao', 'ZBX-ASSERCAO', 'ev-1', 'PROBLEM');
+  perform app.assert((r->>'acao') = 'repetido', 'a repetição é reconhecida');
+  perform app.assert(
+    (select count(*) from public.link_availability_events where link_id = v_link) = v_antes,
+    'e NÃO grava um segundo evento');
+
+  -- Outro evento do Zabbix, mesmo link ainda caído: um buraco por vez.
+  r := public.link_event_ingest('token-da-assercao', 'ZBX-ASSERCAO', 'ev-2', 'PROBLEM');
+  perform app.assert((r->>'acao') = 'repetido',
+    'nova queda sobre link já caído não abre um segundo buraco no histórico');
+
+  -- O retorno fecha, e a duração passa a existir.
+  r := public.link_event_ingest('token-da-assercao', 'ZBX-ASSERCAO', null, 'OK');
+  perform app.assert((r->>'acao') = 'fechado', 'o retorno fecha a queda');
+  perform app.assert(
+    (select duration_seconds is not null from public.link_availability_events
+      where link_id = v_link and external_event_id = 'ev-1'),
+    'e a duração é calculada pela coluna gerada da 0021');
+
+  -- "Voltou" sem queda aberta: acontece quando o monitor é instalado com o link
+  -- no ar. Inventar um evento de zero segundo seria inventar um incidente.
+  r := public.link_event_ingest('token-da-assercao', 'ZBX-ASSERCAO', null, 'OK');
+  perform app.assert((r->>'acao') = 'sem_evento_aberto',
+    'retorno sem queda aberta é dito pelo nome, e não cria evento');
+
+  -- O identificador externo tem precedência sobre o host: renomear o host no
+  -- Zabbix não pode desligar o registro de disponibilidade.
+  r := public.link_event_ingest('token-da-assercao', 'HOST-RENOMEADO', 'ZBX-ID-ASSERCAO', 'PROBLEM');
+  perform app.assert((r->>'acao') = 'aberto',
+    'o identificador externo acha o link mesmo com o host renomeado');
+
+  -- E o carimbo de uso existe para responder "o Zabbix está mesmo mandando?".
+  perform app.assert(
+    (select last_seen_at is not null from public.monitoring_webhooks
+      where inbound_token_hash = encode(digest('token-da-assercao', 'sha256'), 'hex')),
+    'a entrada registra quando recebeu o último alerta');
+
+  delete from public.link_availability_events where link_id = v_link;
+end
+$$;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

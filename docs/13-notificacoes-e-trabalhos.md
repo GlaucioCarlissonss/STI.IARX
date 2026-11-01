@@ -141,7 +141,83 @@ precisa.
 
 ---
 
-## 6. Decisões que você pode querer rever
+## 6. A entrada de monitoramento (Zabbix) *(depende de você)*
+
+Até a 0046, a queda de link era registrada **à mão**: alguém via o alerta no
+Zabbix e digitava aqui. Duas consequências, e a segunda é a cara: o horário
+gravado era o da digitação, e a disponibilidade do mês saía otimista exatamente
+nos meses ruins, que são os que importam.
+
+Agora o Zabbix avisa sozinho.
+
+### 6.1 Criar a entrada
+
+Em **Links de internet**, cartão *Entrada de monitoramento*: dê um nome e clique
+em criar. O endereço aparece **uma vez** — o banco guarda só o SHA-256 dele.
+Perdeu, cria outra e desliga a antiga; é por isso que desligar não apaga.
+
+Cada link precisa ter o campo **Host de monitoramento** preenchido com o nome do
+host no Zabbix. É por ele que o alerta encontra o link. O campo
+`monitoring_external_id` também serve, e tem precedência: renomear o host no
+Zabbix não desliga o registro de disponibilidade.
+
+### 6.2 O que o Zabbix precisa mandar
+
+O webhook do Zabbix não tem formato fixo — é um script que você cola, e ele
+manda o que mandarem ele mandar. Então o formato é este:
+
+```json
+{
+  "host": "{HOST.HOST}",
+  "external_id": "{EVENT.ID}",
+  "state": "{TRIGGER.STATUS}",
+  "at": "{EVENT.DATE}T{EVENT.TIME}Z",
+  "note": "{EVENT.NAME}"
+}
+```
+
+`state` aceita `PROBLEM`/`OK` (que é o que `{TRIGGER.STATUS}` entrega) e
+`down`/`up`. `at` e `note` são opcionais; sem `at`, vale a hora da chegada.
+
+Em **Alerts → Media types → Webhook**, com um parâmetro `url` apontando para o
+endereço criado:
+
+```javascript
+var p = JSON.parse(value);
+var r = new HttpRequest();
+r.addHeader('Content-Type: application/json');
+r.post(p.url, JSON.stringify({
+  host: p.host, external_id: p.event_id,
+  state: p.status, note: p.name
+}));
+return r.getStatus() + ': ' + r.getBody();
+```
+
+### 6.3 O que esperar das respostas
+
+| Resposta | O que significa | O que fazer |
+|---|---|---|
+| `{"ok":true,"acao":"aberto"}` | Queda registrada | Nada |
+| `{"ok":true,"acao":"fechado"}` | Retorno registrado, duração calculada | Nada |
+| `{"ok":true,"acao":"repetido"}` | Notificação repetida, ou link já caído | Nada — é o normal de um monitor que reenvia |
+| `{"ok":true,"acao":"sem_evento_aberto"}` | "Voltou" de uma queda que este sistema não viu | Nada. Inventar um evento de zero segundo seria inventar um incidente |
+| `{"ok":false,"motivo":"link_nao_encontrado"}` | O host do alerta não está em nenhum link | Preencher **Host de monitoramento** no cadastro |
+| `401 token_desconhecido` | Endereço errado, ou entrada desligada | Conferir a URL no script de mídia |
+
+**Quase tudo responde 200, e isso é de propósito.** O Zabbix repete o que não é
+2xx, e repetir não conserta host errado: ele bateria na porta para sempre por
+causa de um cadastro faltando, e o primeiro sintoma seria a conta de rede. Fica
+4xx só o que vale repetir ou corrigir fora do Zabbix.
+
+### 6.4 "Está mesmo mandando?"
+
+É a primeira dúvida quando nada acontece, e as duas respostas possíveis — o link
+está bom, ou o Zabbix não está falando — têm o mesmo sintoma: uma tela parada.
+Por isso cada entrada mostra **quando recebeu o último alerta**. O carimbo é
+gravado mesmo quando o alerta não casa com link nenhum, porque saber que o
+Zabbix está falando é útil inclusive quando o que ele diz está errado.
+
+## 7. Decisões que você pode querer rever
 
 Estão aqui porque mudam o que as pessoas recebem, e porque a escolha é de
 produto, não de engenharia:

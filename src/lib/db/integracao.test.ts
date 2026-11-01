@@ -232,4 +232,32 @@ comBanco('o driver local contra o PostgreSQL', () => {
     expect(() => consulta.csv()).toThrowError(/csv/i)
     expect(() => consulta.explain()).toThrowError(/explain/i)
   })
+
+  /*
+   * Função escalar: o PostgREST entrega o VALOR, não uma linha com uma coluna.
+   *
+   * Isto ficou sem teste — e sem funcionar — até a 0046, porque toda função que
+   * o app chamava era `returns table`. Quando a primeira escalar chegou, o
+   * sintoma foi uma rota devolvendo 200 para token inválido: o código lia
+   * `data.motivo` num array.
+   */
+  it('devolve o VALOR de uma função escalar, não uma linha com uma coluna', async () => {
+    const { data, error } = await db.rpc('link_event_ingest', {
+      p_token: 'token-que-nao-existe',
+      p_host: 'qualquer',
+      p_external_id: null,
+      p_state: 'PROBLEM',
+      p_at: null,
+      p_note: null,
+    })
+    expect(error).toBeNull()
+    expect(Array.isArray(data)).toBe(false)
+    expect((data as { motivo?: string }).motivo).toBe('token_desconhecido')
+  })
+
+  it('continua devolvendo LISTA para função que devolve tabela', async () => {
+    const { data, error } = await db.rpc('channel_por_token', { p_token: 'nao-existe' })
+    expect(error).toBeNull()
+    expect(Array.isArray(data)).toBe(true)
+  })
 })

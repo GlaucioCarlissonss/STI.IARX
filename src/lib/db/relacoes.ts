@@ -236,3 +236,49 @@ export async function carregarTiposDeColuna(cliente: PoolClient): Promise<TiposD
 export function esquecerTipos(): void {
   cacheDeTipos = null
 }
+
+/* -------------------------------------------------------------------------- */
+/* Funções escalares                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Quais funções devolvem UM valor, e não um conjunto de linhas.
+ *
+ * O PostgREST entrega o valor cru quando a função é escalar — `rpc('f')` com
+ * `returns jsonb` devolve o jsonb, não `[{ f: {...} }]`. O driver fazia
+ * `select * from f(...)`, que é a forma certa para `returns table` e a forma
+ * ERRADA para escalar: trazia uma linha com uma coluna chamada como a função.
+ *
+ * O defeito ficou escondido até a 0046 porque todas as funções chamadas pelo app
+ * até então eram `returns table`. Quando a primeira escalar chegou, o sintoma
+ * foi uma rota que respondia 200 para token inválido: o código lia `data.motivo`
+ * num objeto que, na verdade, era um array.
+ *
+ * A decisão vem do catálogo, e não de um palpite pelo nome da coluna: uma
+ * `returns table` com uma coluna só, chamada como a função, seria desembrulhada
+ * por engano — e desembrulhar errado troca a forma do dado em silêncio, que é a
+ * pior categoria de defeito desta camada.
+ */
+let cacheDeEscalares: Set<string> | null = null
+
+export async function funcoesEscalares(cliente: PoolClient): Promise<Set<string>> {
+  if (cacheDeEscalares) return cacheDeEscalares
+
+  const { rows } = await cliente.query<{ esquema: string; nome: string }>(`
+    select n.nspname as esquema, p.proname as nome
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      join pg_type t on t.oid = p.prorettype
+     where n.nspname not in ('pg_catalog', 'information_schema')
+       and not p.proretset
+       and t.typtype <> 'c'
+  `)
+
+  cacheDeEscalares = new Set(rows.map((r) => `${r.esquema}.${r.nome}`))
+  return cacheDeEscalares
+}
+
+/** Só para teste: esquece o catálogo lido. */
+export function esquecerCacheDeEscalares(): void {
+  cacheDeEscalares = null
+}

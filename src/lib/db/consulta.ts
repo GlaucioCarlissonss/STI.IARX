@@ -44,6 +44,8 @@ export interface LinhaQualquer {
 export interface Esquema {
   relacoes: Relacao[]
   tipos: TiposDeColuna
+  /** `esquema.funcao` das que devolvem UM valor. Ver `relacoes.ts`. */
+  escalares: Set<string>
 }
 
 export type Executor = (
@@ -77,6 +79,7 @@ export class Consulta<T = LinhaQualquer[]> implements PromiseLike<Resultado<T>> 
   private operacao: Operacao = 'select'
   private selecao = '*'
   private comRetorno = true
+  private escalaresEmCache: Set<string> | null = null
   private condicoes: Condicao[] = []
   private ordenacao: { coluna: string; asc: boolean; nullsFirst?: boolean }[] = []
   private limite: number | null = null
@@ -365,6 +368,7 @@ export class Consulta<T = LinhaQualquer[]> implements PromiseLike<Resultado<T>> 
         const esquema = await this.preparar()
         this.relacoesEmCache = esquema.relacoes
         this.tiposEmCache = esquema.tipos
+        this.escalaresEmCache = esquema.escalares
       }
       const ctx = new Contexto()
       const { sql } = this.montar(ctx)
@@ -380,6 +384,26 @@ export class Consulta<T = LinhaQualquer[]> implements PromiseLike<Resultado<T>> 
       for (const linha of rows) delete linha['__total']
 
       if (this.soCabecalho) return { data: null as T, error: null, count: total }
+
+      /*
+       * Função escalar devolve o VALOR, não uma linha com uma coluna.
+       *
+       * `rpc('f')` com `returns jsonb` entrega o jsonb no PostgREST; aqui
+       * `select * from f(...)` trazia `[{ f: {...} }]`. Ficou escondido até a
+       * 0046 porque toda função chamada pelo app era `returns table` — e o
+       * sintoma, quando apareceu, foi uma rota respondendo 200 para token
+       * inválido, porque o código lia `data.motivo` num array.
+       *
+       * Quem decide é o catálogo (`pg_proc.proretset`), não o nome da coluna:
+       * desembrulhar por engano troca a forma do dado em silêncio.
+       */
+      if (
+        this.operacao === 'rpc' &&
+        this.escalaresEmCache?.has(`${this.esquema}.${this.tabela}`)
+      ) {
+        const valor = rows.length ? Object.values(rows[0])[0] : null
+        return { data: (valor ?? null) as T, error: null, count: total }
+      }
 
       if (this.modo === 'muitos') {
         return { data: rows as T, error: null, count: total }

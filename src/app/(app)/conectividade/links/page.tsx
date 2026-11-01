@@ -1,4 +1,5 @@
 import { Fragment } from 'react'
+import { headers } from 'next/headers'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { agruparPor } from '@/lib/data/agrupar'
@@ -20,6 +21,7 @@ import {
   type AreaOption,
   type SupplierOption,
 } from './link-forms'
+import { MonitoramentoCard, type EntradaDeMonitoramento } from './monitoramento'
 
 export const metadata: Metadata = { title: 'Links de internet' }
 
@@ -69,6 +71,7 @@ export default async function LinksDeInternetPage({
     allowed('conectividade.links.registrar_evento'),
     allowed('conectividade.links.anexar'),
   ])
+  const podeMonitorar = await allowed('conectividade.links.monitoramento')
 
   const supabase = await createClient()
   const escopo = await escopoDeCliente()
@@ -147,6 +150,18 @@ export default async function LinksDeInternetPage({
    * abririam.
    */
   const idsDaPagina = lista.map((k) => k.id)
+  /* Só busca as entradas de monitoramento para quem pode administrá-las: a
+     linha carrega o hash do token, e a policy já recusaria — mas pedir o que
+     se sabe que será negado gasta uma ida ao banco em toda visita de quem só
+     consulta. */
+  const { data: entradasMonitoramento } = podeMonitorar
+    ? await supabase
+        .from('monitoring_webhooks')
+        .select('id, name, active, last_seen_at, created_at')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+    : { data: [] }
+
   const [{ data: anexos }, { data: eventos }] = await Promise.all([
     idsDaPagina.length > 0
       ? supabase
@@ -427,6 +442,15 @@ export default async function LinksDeInternetPage({
           </section>
         </div>
 
+        {podeMonitorar && (
+          <Card title="Entrada de monitoramento">
+            <MonitoramentoCard
+              entradas={(entradasMonitoramento ?? []) as EntradaDeMonitoramento[]}
+              origem={await origemDaRequisicao()}
+            />
+          </Card>
+        )}
+
         {podeCriar && (
           <Card title="Novo link">
             <NewLinkForm
@@ -439,4 +463,20 @@ export default async function LinksDeInternetPage({
       </div>
     </>
   )
+}
+
+/**
+ * A base da URL, vinda do cabeçalho da requisição.
+ *
+ * O endereço do webhook precisa ser COPIÁVEL, e um caminho relativo não serve
+ * para colar num script de mídia do Zabbix. `window.location` não existe na
+ * primeira pintura, e uma variável de ambiente estaria errada em qualquer
+ * ambiente que não fosse o configurado — inclusive na máquina de quem
+ * desenvolve.
+ */
+async function origemDaRequisicao(): Promise<string> {
+  const h = await headers()
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000'
+  const protocolo = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https')
+  return `${protocolo}://${host}`
 }

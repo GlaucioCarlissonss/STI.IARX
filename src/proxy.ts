@@ -50,6 +50,15 @@ import { modoLocal } from '@/lib/db/modo'
  * O que autoriza ali é o token do canal na URL, conferido por função `security
  * definer` no banco, mais a assinatura do provedor quando ele assina.
  */
+/*
+ * `/api/monitoramento` entra pelo mesmo motivo, e com um agravante próprio: o
+ * Zabbix REPETE o que não deu 2xx. Um 307 para `/login` não desligaria a
+ * integração — faria o contrário, bater na porta para sempre, e o primeiro
+ * sintoma seria a conta de rede em vez do link caído que ninguém registrou.
+ *
+ * O que autoriza ali é o token na URL, conferido por `public.link_event_ingest`,
+ * que é `security definer` e deriva o tenant do próprio token.
+ */
 const PUBLIC_PREFIXES = [
   '/login',
   '/recuperar-senha',
@@ -59,6 +68,7 @@ const PUBLIC_PREFIXES = [
   '/api/jobs',
   '/api/agent',
   '/api/canais',
+  '/api/monitoramento',
   '/auth',
 ]
 

@@ -274,11 +274,31 @@ bash scripts/validate-migrations.sh && python3 scripts/conferir-colunas.py
 > privado, a URL expira em cinco minutos, e deixá-la pronta no HTML a faria
 > vazar por print ou página salva.
 
+> **M8 / LG-07 fechou na migração 0046**, e o motivo que o mantinha aberto —
+> *exige um Zabbix real para testar contra* — estava meio certo e levava à
+> conclusão errada. O que exige um Zabbix real é provar que o script de mídia
+> DELE foi configurado certo, e isso é trabalho de quem instala. O lado de cá é
+> contrato: receber um POST, achar o link, abrir o evento, fechar o evento, não
+> duplicar quando a mesma notificação chegar duas vezes. Contrato se testa com o
+> corpo que o contrato promete.
+>
+> A migração é pequena porque a 0021 já tinha feito o trabalho difícil: os dois
+> índices únicos de `link_availability_events` — um por `external_event_id`,
+> outro por evento aberto — são o que faz a repetição ser inofensiva. E
+> `internet_links` já tinha `monitoring_host` e `monitoring_external_id`.
+>
+> Dois defeitos apareceram na implementação, e nenhum era do Zabbix. O primeiro:
+> o driver local nunca tinha visto uma função que devolve ESCALAR — todas as
+> chamadas do app eram `returns table` —, e o sintoma foi uma rota respondendo
+> 200 para token inválido, porque o código lia `data.motivo` num array. O
+> segundo: `revalidatePath` na ação de criar remontava a árvore de cliente e
+> levava embora o token de uso único junto com ela; a entrada ficava criada e o
+> endereço, ilegível para sempre.
+
 Nada aqui é "falta de tempo" — cada um tem um motivo.
 
 | Pendência | Por que continua aberta |
 |---|---|
-| **Edge Function do Zabbix (M8, LG-07)** | Exige um Zabbix real para testar contra. Hoje a queda é registrada à mão, pelo mesmo evento que o webhook vai gravar — sem retrabalho quando ele chegar |
 | **PWA do portal, identidade visual por cliente, domínio próprio** | É o "módulo maior" do LG-08. Nenhum deles muda o que o solicitante consegue fazer — mudam onde ele faz |
 | **Chat (portal e chatbot)** | Quarta superfície de atendimento, e a única que exige presença. Chat sem ninguém do outro lado promete resposta imediata e não entrega |
 | **Embeddings / semelhança semântica** | Dependência nova para melhorar um passo que não é o gargalo. O gargalo é a base ter poucos artigos |

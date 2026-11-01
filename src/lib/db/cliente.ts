@@ -1,5 +1,5 @@
 import { Consulta, type Esquema, type LinhaQualquer } from './consulta'
-import { carregarRelacoes, carregarTiposDeColuna } from './relacoes'
+import { carregarRelacoes, carregarTiposDeColuna, funcoesEscalares } from './relacoes'
 import { executarNaSessao, obterPool, SESSAO_ANONIMA, type Sessao } from './conexao'
 import { assinarCaminho, gravar, remover } from './armazenamento'
 import { autenticar, sessaoDoUsuario, trocarSenha } from './sessao'
@@ -36,6 +36,7 @@ function prepararEsquema(): Promise<Esquema> {
         return {
           relacoes: await carregarRelacoes(cliente),
           tipos: await carregarTiposDeColuna(cliente),
+          escalares: await funcoesEscalares(cliente),
         }
       } finally {
         cliente.release()
