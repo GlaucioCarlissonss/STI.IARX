@@ -14,6 +14,7 @@ import '@fontsource/ibm-plex-sans/latin-ext-700.css'
 
 import './globals.css'
 import { TEMA_INLINE_SCRIPT } from '@/components/theme-toggle'
+import { RegistrarServiceWorker } from '@/components/registrar-sw'
 
 /**
  * Duas famílias, com papéis distintos — e nenhuma delas é a fonte do sistema.
@@ -102,7 +103,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
          */}
         <script dangerouslySetInnerHTML={{ __html: TEMA_INLINE_SCRIPT }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* No layout raiz, e não só no portal: o alcance do service worker é por
+            caminho, e registrá-lo de uma tela interna deixaria de fora quem
+            chega direto pela URL de um chamado — que é como se chega a um
+            chamado. */}
+        <RegistrarServiceWorker />
+      </body>
     </html>
   )
 }

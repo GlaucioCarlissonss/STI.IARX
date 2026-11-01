@@ -69,6 +69,7 @@ const PUBLIC_PREFIXES = [
   '/api/agent',
   '/api/canais',
   '/api/monitoramento',
+  '/sem-conexao',
   '/auth',
 ]
 
@@ -143,5 +144,12 @@ function decidir(
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  /* `sw.js` e `manifest.webmanifest` entram na exceção pelo mesmo motivo dos
+     outros estáticos, e com um agravante: o navegador busca o service worker
+     SEM cookie em parte dos casos. Um 307 para `/login` no lugar do script
+     desregistraria o service worker e a instalação do portal pararia de
+     funcionar — sem erro visível, porque ninguém olha a aba de service workers. */
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 }

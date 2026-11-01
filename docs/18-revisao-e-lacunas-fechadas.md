@@ -295,11 +295,32 @@ bash scripts/validate-migrations.sh && python3 scripts/conferir-colunas.py
 > levava embora o token de uso único junto com ela; a entrada ficava criada e o
 > endereço, ilegível para sempre.
 
+> **O PWA do portal fechou junto com a 0046.** O manifesto, os ícones e o
+> service worker existem, e o portal instala como aplicativo. O que ele muda não
+> é o que o solicitante consegue fazer — é onde: um ícone na tela inicial, sem
+> barra de endereço, sem precisar lembrar a URL. É o atrito de quem usa o portal
+> uma vez por mês, quando o computador para.
+>
+> O service worker **não guarda página autenticada**, e isso não é economia de
+> escopo: num sistema multi-tenant, página guardada é página que pode reaparecer
+> para a próxima pessoa no mesmo computador — num balcão, numa recepção. Ele
+> guarda o que não tem dono (arquivos com hash no nome, ícones, a página de sem
+> conexão) e, na navegação, vai à rede primeiro. Cache-first mostraria o chamado
+> de ontem com cara de agora, que é o defeito que ninguém reporta porque ninguém
+> percebe.
+>
+> A queda de rede não pôde ser testada pelo navegador: `setOffline` derruba a
+> rede da página, e o service worker usa um contexto de rede próprio que nem
+> `setOffline` nem `route` alcançam — a navegação "offline" chega ao servidor
+> como se nada fosse, e a asserção passaria pelo motivo errado. O comportamento
+> sob queda está em `src/lib/sw.test.ts`, que avalia o `public/sw.js` publicado
+> dentro de um escopo falso, onde a rede cai de verdade.
+
 Nada aqui é "falta de tempo" — cada um tem um motivo.
 
 | Pendência | Por que continua aberta |
 |---|---|
-| **PWA do portal, identidade visual por cliente, domínio próprio** | É o "módulo maior" do LG-08. Nenhum deles muda o que o solicitante consegue fazer — mudam onde ele faz |
+| **Identidade visual por cliente, domínio próprio** | O que resta do LG-08. O **PWA fechou** (ver acima); estes dois continuam sem mudar o que o solicitante consegue fazer, e o domínio próprio é infraestrutura, não código |
 | **Chat (portal e chatbot)** | Quarta superfície de atendimento, e a única que exige presença. Chat sem ninguém do outro lado promete resposta imediata e não entrega |
 | **Embeddings / semelhança semântica** | Dependência nova para melhorar um passo que não é o gargalo. O gargalo é a base ter poucos artigos |
 | **PDF/XLSX** | Duas bibliotecas por um formato que, hoje, ninguém pediu nominalmente |
