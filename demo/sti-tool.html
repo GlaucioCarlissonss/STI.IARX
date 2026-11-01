@@ -1166,7 +1166,39 @@
         null,'Carla Dias',20,2860,{tags:['acesso'],desc:'Usuário bloqueado após tentativas.'}),
       t(1040,'Troca de notebook — colaborador novo','low','resolved','Sistemas › ERP','b1',
         'Ana Souza','Carla Dias',5760,400,{tags:['hardware'],desc:'Preparar equipamento com imagem padrão.',
-        resolvedAt:now-200*MIN,firstResponseAt:now-5000*MIN})
+        resolvedAt:now-200*MIN,firstResponseAt:now-5000*MIN,
+        rating:5,ratingComment:'Chegou configurado, só liguei e usei.',ratedAt:now-150*MIN}),
+
+      /* Chamados encerrados, com avaliação — é deles que a tela de Satisfação
+         vive. Encerrados e não abertos de propósito: avaliação só existe depois
+         do atendimento, e um exemplo onde todo chamado está em aberto deixaria
+         a tela vazia sem explicar por quê.
+
+         As notas vão de 2 a 5, com um detrator e um sem resposta. Exemplo só com
+         nota alta não mostra o que a tela faz de útil, que é achar o que correu
+         mal — e a taxa de resposta não teria como ser diferente de 100%, que não
+         é o número de helpdesk nenhum. */
+      t(1031,'VPN caindo a cada 10 minutos','high','closed','Sistemas › ERP','b1',
+        'Bruno Lima','Carla Dias',14400,0,{tags:['rede'],desc:'Queda recorrente na VPN do escritório.',
+        resolvedAt:now-9000*MIN,firstResponseAt:now-14100*MIN,
+        rating:2,ratingComment:'Demorou três dias e precisei cobrar duas vezes.',ratedAt:now-8900*MIN}),
+      t(1032,'Instalar Office no notebook da recepção','low','closed','Sistemas › ERP','b1',
+        'Ana Souza','Carla Dias',11000,0,{tags:['software'],desc:'Licença já comprada.',
+        resolvedAt:now-7000*MIN,firstResponseAt:now-10900*MIN,
+        rating:5,ratingComment:'Resolvido no mesmo dia.',ratedAt:now-6900*MIN}),
+      t(1033,'Impressora da enfermagem puxando duas folhas','medium','closed','Sistemas › ERP','b4',
+        'Bruno Lima','Carla Dias',9000,0,{tags:['hardware'],desc:'Rolo de tração gasto.',
+        resolvedAt:now-5000*MIN,firstResponseAt:now-8800*MIN,
+        rating:4,ratingComment:'',ratedAt:now-4900*MIN}),
+      t(1034,'Ramal 2041 sem áudio de saída','medium','closed','Telefonia › Linha móvel','b2',
+        'Ana Souza','Carla Dias',6000,0,{tags:['telefonia'],desc:'Troca de headset.',
+        resolvedAt:now-3000*MIN,firstResponseAt:now-5900*MIN,
+        rating:3,ratingComment:'Resolveu, mas tive que explicar o problema duas vezes.',ratedAt:now-2900*MIN}),
+      /* Sem avaliação: é a maioria dos chamados num helpdesk de verdade, e é o
+         que faz a taxa de resposta significar alguma coisa. */
+      t(1035,'Monitor da portaria sem imagem','low','closed','Sistemas › ERP','b1',
+        'Bruno Lima','Carla Dias',4000,0,{tags:['hardware'],desc:'Cabo HDMI rompido.',
+        resolvedAt:now-1500*MIN,firstResponseAt:now-3900*MIN})
     ];
 
     const mkAsset = (tag, sn, type, model, status, branchId, areaName, user, warranty, cost) => ({
@@ -3172,6 +3204,132 @@
           <td>${r.pct===null?'<span class="muted">—</span>':pill(r.pct+'%',r.pct>=95?'ok':r.pct>=85?'warn':'breach')}</td>
         </tr>`).join('')}</tbody></table></div>`;
   }
+
+  /*
+   * Painéis de TV.
+   *
+   * No app esta tela administra os TOKENS: cada painel é um endereço público
+   * de leitura, com prazo e revogação (ADR-006). Aqui não há token — a
+   * ferramenta roda num navegador só —, então a tela mostra o que o painel
+   * exibe e abre o modo de parede, que já existia e não tinha como ser
+   * alcançado pelo menu.
+   *
+   * Dizer isso na própria tela, em vez de simular uma lista de tokens que não
+   * existe, é o que impede o protótipo de prometer o que ele não tem.
+   */
+  views.tv = () => `
+    <div class="page-head"><div><p class="eyebrow">Administração</p><h1>Painéis de TV</h1>
+      <p class="lede">A tela que fica na parede do time: números grandes, contraste alto e
+      atualização sozinha. Lida a cinco metros, sem ninguém operando.</p></div>
+      <button type="button" class="btn" id="tv-abrir">Abrir o painel</button></div>
+
+    <div class="card" style="margin-bottom:1.25rem"><div class="card-body">
+      <h2 style="margin-top:0">O que ele mostra</h2>
+      <ul style="margin:.5rem 0 0;padding-left:1.1rem;line-height:1.9">
+        <li>Em aberto, em andamento e críticos</li>
+        <li>SLA em risco e SLA estourado — este pisca quando passa de zero</li>
+        <li>Links de internet fora do ar</li>
+        <li>A fila na ordem em que será atendida, pelo mesmo score da tela de Filas</li>
+      </ul>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+      <h2 style="margin-top:0">O que existe no sistema e não aqui</h2>
+      <p class="dim" style="margin:.35rem 0 0">No app, cada painel tem um <strong>token</strong>:
+      um endereço de leitura que abre sem login, com prazo e revogação — é o que permite deixar
+      uma TV ligada numa recepção sem deixar uma sessão aberta nela. Esta ferramenta roda num
+      navegador só, então aqui o painel é um modo desta mesma página.</p>
+    </div></div>`;
+
+  /*
+   * Satisfação.
+   *
+   * O que esta tela existe para responder não é "a nota média está boa?" — é
+   * "onde o atendimento correu mal, e com quem". Por isso a distribuição e os
+   * comentários vêm antes da média: média de cinco respostas esconde um
+   * detrator, e é justamente o detrator que vale ler.
+   *
+   * A TAXA DE RESPOSTA tem lugar de destaque pelo mesmo motivo. Num helpdesk de
+   * verdade a maioria não avalia; sem esse número, uma média de 4,8 sobre três
+   * respostas pareceria o retrato de um mês inteiro.
+   */
+  views.satisfacao = () => {
+    const encerrados = db.tickets.filter(t => t.status === 'resolved' || t.status === 'closed');
+    const avaliados = encerrados.filter(t => typeof t.rating === 'number');
+    const media = avaliados.length
+      ? +(avaliados.reduce((s, t) => s + t.rating, 0) / avaliados.length).toFixed(2) : null;
+    const taxa = encerrados.length
+      ? Math.round(100 * avaliados.length / encerrados.length) : null;
+    const detratores = avaliados.filter(t => t.rating <= 2).length;
+
+    const dist = [5, 4, 3, 2, 1].map(n => ({ n, qtd: avaliados.filter(t => t.rating === n).length }));
+    const maior = Math.max(1, ...dist.map(d => d.qtd));
+
+    const porAtendente = [...new Set(avaliados.map(t => t.assignee))].map(nome => {
+      const meus = avaliados.filter(t => t.assignee === nome);
+      return {
+        nome,
+        qtd: meus.length,
+        media: +(meus.reduce((s, t) => s + t.rating, 0) / meus.length).toFixed(2),
+      };
+    }).sort((a, b) => b.media - a.media);
+
+    const tom = n => n >= 4.5 ? 'ok' : n >= 3.5 ? 'warn' : 'breach';
+
+    return `
+      <div class="page-head"><div><p class="eyebrow">Atendimento</p><h1>Satisfação</h1>
+        <p class="lede">A pesquisa vai depois que o chamado é encerrado. A nota média sozinha
+        diz pouco — o que vale ler é a distribuição e o que as pessoas escreveram.</p></div></div>
+
+      <div class="tiles" style="margin-bottom:1.5rem">
+        ${tile('Nota média', media === null ? '—' : media.toFixed(2).replace('.', ','),
+               avaliados.length + ' resposta(s)', media === null ? null : tom(media))}
+        ${tile('Taxa de resposta', taxa === null ? '—' : taxa + '%',
+               avaliados.length + ' de ' + encerrados.length + ' encerrados')}
+        ${tile('Detratores', detratores, 'nota 1 ou 2', detratores ? 'breach' : 'ok')}
+        ${tile('Sem avaliar', encerrados.length - avaliados.length, 'encerrados sem resposta')}
+      </div>
+
+      <h2 style="margin-bottom:.6rem">Distribuição</h2>
+      <div class="card" style="margin-bottom:1.5rem"><div class="card-body">
+        ${dist.map(d => `
+          <div style="display:flex;align-items:center;gap:.6rem;margin:.3rem 0">
+            <span class="num strong" style="width:1.4rem">${d.n}</span>
+            <!-- A barra mora dentro de uma trilha que ocupa o espaço livre: com a
+                 barra medindo direto no flex, a maior (100%) empurrava a contagem
+                 para fora da tela — e a contagem é o número, a barra é só a forma. -->
+            <span aria-hidden="true" style="flex:1;display:block">
+              <span style="display:block;height:.6rem;border-radius:.3rem;
+                width:${Math.round(100 * d.qtd / maior)}%;min-width:${d.qtd ? '1.2rem' : '0'};
+                background:${d.n >= 4 ? 'var(--ok-ink)' : d.n === 3 ? 'var(--warn-ink)' : 'var(--breach-ink)'}"></span>
+            </span>
+            <span class="dim num" style="width:1.6rem;text-align:right">${d.qtd}</span>
+          </div>`).join('')}
+      </div></div>
+
+      <h2 style="margin-bottom:.6rem">Por atendente</h2>
+      <div class="table-wrap" style="margin-bottom:1.5rem"><table>
+        <thead><tr><th>Atendente</th><th>Avaliações</th><th>Média</th></tr></thead>
+        <tbody>${porAtendente.length ? porAtendente.map(a => `<tr>
+          <td class="strong">${esc(a.nome)}</td>
+          <td class="num">${a.qtd}</td>
+          <td>${pill(a.media.toFixed(2).replace('.', ','), tom(a.media))}</td>
+        </tr>`).join('') : '<tr><td colspan="3" class="muted">Nenhuma avaliação ainda.</td></tr>'}</tbody>
+      </table></div>
+
+      <h2 style="margin-bottom:.6rem">O que escreveram</h2>
+      ${avaliados.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Chamado</th><th>Nota</th><th>Comentário</th><th>Solicitante</th><th>Quando</th></tr></thead>
+        <tbody>${[...avaliados].sort((a, b) => b.ratedAt - a.ratedAt).map(t => `<tr>
+          <td><span class="mono">#${t.n}</span> <span class="strong">${esc(t.title)}</span></td>
+          <td>${pill(String(t.rating), tom(t.rating))}</td>
+          <td class="muted">${t.ratingComment ? esc(t.ratingComment)
+            : '<span class="dim">sem comentário</span>'}</td>
+          <td class="muted">${esc(t.requester)}</td>
+          <td class="muted num">${fmtWhen(t.ratedAt)}</td>
+        </tr>`).join('')}</tbody></table></div>`
+        : `<div class="card"><p class="empty">Nenhuma avaliação ainda.</p></div>`}`;
+  };
 
   views.filas = () => `
     <div class="page-head"><div><p class="eyebrow">Atendimento</p><h1>Filas</h1>
@@ -5625,6 +5783,7 @@
       ['tickets','Tickets',false,'helpdesk.tickets.ver'],
       ['novo','Abrir ticket',false,'helpdesk.tickets.criar'],
       ['filas','Filas',false,'helpdesk.filas.ver'],
+      ['satisfacao','Satisfação',false,'helpdesk.satisfacao.ver'],
       ['sla','SLA e prazos',false,'sla.compliance.ver'],
     ]],
     ['Financeiro', [
@@ -5659,6 +5818,7 @@
     ['Administração', [
       ['usuarios','Usuários',false,'usuarios.usuarios.ver'],
       ['perfis','Perfis de acesso',false,'usuarios.perfis.ver'],
+      ['tv','Painéis de TV',false,'tv.tokens.ver'],
     ]],
     [null, [
       /* Trocar a própria senha não é permissão de módulo, é direito de quem tem
@@ -5899,6 +6059,10 @@
   /* ===================== Eventos ===================== */
   document.getElementById('mode-console').addEventListener('click', () => setMode(false));
   document.getElementById('mode-wall').addEventListener('click', () => setMode(true));
+  /* Delegado no documento porque o botão nasce e morre a cada render da tela. */
+  document.addEventListener('click', (ev) => {
+    if (ev.target.closest('#tv-abrir')) setMode(true);
+  });
   /* Trocar a pessoa da sessão recarrega as concessões e re-renderiza. É o
      controle que torna a camada de permissão observável sem um Supabase: o menu
      encolhe, os botões desaparecem e a tela negada cai no destino permitido. */
