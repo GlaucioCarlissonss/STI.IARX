@@ -187,6 +187,34 @@ console.log('\n=== 4. A tela mostra que o Zabbix falou ===')
   ok(!texto.includes('nenhum alerta recebido'), 'e deixa de dizer que nunca recebeu nada')
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n=== 5. A suíte limpa o que criou ===')
+// ---------------------------------------------------------------------------
+/*
+ * Cada rodada cria uma entrada, e sem isto o cartão vira uma pilha de "Zabbix da
+ * suíte 1793…" no banco de exemplo. Teste que suja o ambiente de que depende
+ * acaba desligado por quem cansa de ver o lixo.
+ *
+ * Desliga em vez de apagar porque é o que o produto oferece: a entrada guarda o
+ * histórico de `last_seen_at`, e apagá-la perderia a informação de que aquele
+ * endereço um dia funcionou.
+ */
+{
+  await p.goto(`${BASE}/conectividade/links`, { waitUntil: 'networkidle' })
+  const linha = p.locator('li').filter({ hasText: nome }).first()
+  await linha.locator('button:has-text("Desligar")').click()
+  await p.waitForTimeout(1500)
+  await p.goto(`${BASE}/conectividade/links`, { waitUntil: 'networkidle' })
+  const depois = await p.locator('li').filter({ hasText: nome }).first().innerText()
+  ok(/desligada/.test(depois), 'a entrada da suíte fica desligada ao fim')
+
+  const recusado = await enviar(url, { host: HOST, state: 'PROBLEM' })
+  ok(
+    recusado.status === 401,
+    'e o endereço dela passa a ser recusado — desligar desliga de verdade',
+  )
+}
+
 await ctx.close()
 await b.close()
 console.log(falhas === 0 ? '\nTODAS AS ASSERÇÕES PASSARAM' : `\n${falhas} ASSERÇÃO(ÕES) FALHOU/FALHARAM`)
