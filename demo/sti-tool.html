@@ -3116,6 +3116,27 @@
       <h2 style="margin-bottom:.6rem">Filas</h2>
       <p class="dim" style="margin:0 0 .6rem">Pesos e desempate alteram a ordenação na hora —
       o score é calculado a cada leitura, não armazenado.</p>
+      ${cartoesDeFila()}
+
+      <h2 style="margin-bottom:.6rem">Compliance por fila</h2>
+      ${compliancePorFila()}`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  /* Filas: os mesmos blocos, em duas telas                                  */
+  /* ---------------------------------------------------------------------- */
+  /*
+   * Os cartões de fila e o compliance por fila nasceram dentro da tela de SLA,
+   * e ficaram lá porque é onde se olhava para eles. Só que no app `Filas` é
+   * item de menu próprio — e o menu publicado tinha um destino que não abria
+   * nada, porque a tela existia escondida dentro de outra.
+   *
+   * Extrair para função, em vez de copiar, é o que impede as duas telas de
+   * divergirem: pesos e desempate são a mesma configuração vista de dois
+   * lugares, e duas cópias do mesmo HTML viram duas verdades no primeiro ajuste.
+   */
+  function cartoesDeFila() {
+    return `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(19rem,1fr));gap:.85rem;margin-bottom:1.75rem">
         ${db.queues.map(q => {
           const inQ = openTickets().filter(t => t.queue === q.slug);
@@ -3134,16 +3155,34 @@
               data-queue-edit="${q.slug}">Editar fila</button></div>
           </div></div>`;
         }).join('')}
-      </div>
+      </div>`;
+  }
 
-      <h2 style="margin-bottom:.6rem">Compliance por fila</h2>
+  function compliancePorFila() {
+    const byQueue = db.queues.map(q => {
+      const all = db.tickets.filter(t => t.queue === q.slug);
+      const br = all.filter(t => slaState(t) === 'breached').length;
+      return { q, total:all.length, br, pct: all.length ? +(100*(all.length-br)/all.length).toFixed(1) : null };
+    });
+    return `
       <div class="table-wrap"><table>
         <thead><tr><th>Fila</th><th>Tickets</th><th>Violações</th><th>Compliance</th></tr></thead>
         <tbody>${byQueue.map(r=>`<tr><td class="strong">${esc(r.q.name)}</td>
           <td class="num">${r.total}</td><td class="num muted">${r.br}</td>
           <td>${r.pct===null?'<span class="muted">—</span>':pill(r.pct+'%',r.pct>=95?'ok':r.pct>=85?'warn':'breach')}</td>
         </tr>`).join('')}</tbody></table></div>`;
-  };
+  }
+
+  views.filas = () => `
+    <div class="page-head"><div><p class="eyebrow">Atendimento</p><h1>Filas</h1>
+      <p class="lede">Para onde o chamado vai, e em que ordem é atendido. O score é
+      calculado a cada leitura — mudar um peso reordena a fila na hora, sem
+      recalcular nada guardado.</p></div></div>
+    ${cartoesDeFila()}
+    <h2 style="margin-bottom:.6rem">Compliance por fila</h2>
+    <p class="dim" style="margin:0 0 .6rem">A mesma medida que aparece em SLA e prazos —
+    aqui pelo ângulo de quem distribui o trabalho.</p>
+    ${compliancePorFila()}`;
 
   /* ===================== Inventário (Módulos 2, 3, 4) ===================== */
   let invFilters = { branch:'', area:'', status:'', type:'', group:'nenhum' };
@@ -5585,6 +5624,7 @@
     ['Atendimento', [
       ['tickets','Tickets',false,'helpdesk.tickets.ver'],
       ['novo','Abrir ticket',false,'helpdesk.tickets.criar'],
+      ['filas','Filas',false,'helpdesk.filas.ver'],
       ['sla','SLA e prazos',false,'sla.compliance.ver'],
     ]],
     ['Financeiro', [
