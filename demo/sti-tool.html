@@ -5650,6 +5650,46 @@
     return first ? first[0] : 'conta';
   }
   let current = 'novidades';
+
+  /* ---------------------------------------------------------------------- */
+  /* Cada tela tem endereço                                                  */
+  /* ---------------------------------------------------------------------- */
+  /*
+   * Sem isto, a ferramenta inteira morava numa URL só: não dava para mandar
+   * "olha a tela de títulos a pagar" para alguém, o botão de voltar do navegador
+   * saía da ferramenta em vez de voltar uma tela, e recarregar jogava a pessoa
+   * na primeira tela de novo — perdendo onde ela estava.
+   *
+   * O nome da tela vai no fragmento (`#tickets`), e não num parâmetro, porque é
+   * o único pedaço da URL que uma página hospedada pode ler e escrever sem
+   * recarregar — e porque não é dado, é lugar.
+   *
+   * `irPara` é o ÚNICO caminho que troca de tela: ele escreve o endereço, e
+   * quem reage ao endereço é o `hashchange` abaixo. Dois caminhos (um que
+   * renderiza e outro que escreve o endereço) divergiriam no primeiro
+   * esquecimento, e o sintoma seria a barra de endereço mentindo sobre onde a
+   * pessoa está.
+   */
+  const telaDoEndereco = () => {
+    const chave = decodeURIComponent(location.hash.replace(/^#/, '')).trim();
+    return chave && (views[chave] || NAV.some(([k]) => k === chave)) ? chave : null;
+  };
+
+  function irPara(chave, opcoes) {
+    if (!chave) return;
+    selected.clear();
+    if (telaDoEndereco() === chave) { current = chave; render(); }
+    else location.hash = chave;          /* o `hashchange` abaixo renderiza */
+    if (opcoes && opcoes.topo) window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  window.addEventListener('hashchange', () => {
+    const chave = telaDoEndereco();
+    if (!chave || chave === current) return;
+    current = chave;
+    setMode(false);
+    render();
+  });
   const wallVisible = () => !document.getElementById('wall-stage').classList.contains('hidden');
 
   /* O abre/fecha de cada grupo, lembrado entre visitas.
@@ -5888,10 +5928,9 @@
     const T = e.target;
 
     const nav = T.closest('.side button');
-    if (nav) { current = nav.dataset.view; selected.clear(); render(); return; }
+    if (nav) { irPara(nav.dataset.view); return; }
     const go = T.closest('[data-go]');
-    if (go) { current = go.dataset.go; setMode(false); render();
-      window.scrollTo({ top:0, behavior:'smooth' }); return; }
+    if (go) { setMode(false); irPara(go.dataset.go, { topo: true }); return; }
 
     if (T.closest('[data-close]')) { closeDrawer(); return; }
     if (T.closest('[data-close-modal]')) { closeModal(); return; }
@@ -7193,6 +7232,8 @@
   }, 15000);
   setInterval(tickClock, 1000);
 
+  /* Abre no endereço pedido — é o que faz um link para uma tela funcionar. */
+  current = telaDoEndereco() || current;
   render();
   tickClock();
 })();

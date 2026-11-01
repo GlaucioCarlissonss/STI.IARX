@@ -24,7 +24,8 @@ const p = await b.newPage({ viewport:{ width:1440, height:1000 } })
 const erros = []
 p.on('pageerror', e => erros.push('PAGEERROR: ' + e.message))
 p.on('console', m => { if (m.type()==='error') erros.push('CONSOLE: ' + m.text()) })
-await p.goto('file:///home/user/STI.IARX/demo/sti-tool.html')
+const ARQUIVO = 'file:///home/user/STI.IARX/demo/sti-tool.html'
+await p.goto(ARQUIVO)
 await p.waitForSelector('.side button')
 const ok = (c,m) => console.log(`${c?'  ok ':'  FALHOU '} ${m}`)
 const fechar = async () => {
@@ -90,6 +91,34 @@ ok(quais.length === 1 && quais[0] === 'Integrações', 'e trocar de grupo de nov
 
 await abrirGrupo('Integrações')
 ok((await abertos()).length === 0, 'clicar no que está aberto fecha tudo')
+
+/* Cada tela tem endereço — é o que faz um link para uma tela funcionar, o botão
+   de voltar voltar uma tela em vez de sair da ferramenta, e recarregar não
+   perder onde a pessoa estava. */
+await p.evaluate(() => {
+  const b = [...document.querySelectorAll('.side button')].find((x) => x.dataset.view === 'inventario')
+  b?.click()
+})
+await p.waitForTimeout(250)
+ok(await p.evaluate(() => location.hash === '#inventario'), 'clicar no menu escreve a tela no endereço')
+
+await p.goBack()
+await p.waitForTimeout(300)
+ok(
+  await p.evaluate(() => location.hash !== '#inventario'),
+  'e o botão de voltar do navegador volta UMA TELA, em vez de sair da ferramenta',
+)
+
+/* Endereço que não existe não pode quebrar nem deixar a tela em branco: cai na
+   inicial, que é o que um link velho ou digitado errado merece. */
+await p.goto(ARQUIVO + '#tela-que-nunca-existiu')
+await p.waitForTimeout(400)
+ok(
+  (await p.locator('#view h1').first().innerText()).length > 0,
+  'endereço desconhecido cai numa tela de verdade, e não no vazio',
+)
+await p.goto(ARQUIVO)
+await p.waitForTimeout(400)
 
 console.log('\n=== 2. Grupo desaparece inteiro quando nada é alcançável ===')
 await trocar('u6')  // Operador Financeiro
