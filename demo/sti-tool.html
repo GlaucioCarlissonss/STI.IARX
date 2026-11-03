@@ -3253,6 +3253,185 @@
    * verdade a maioria não avalia; sem esse número, uma média de 4,8 sobre três
    * respostas pareceria o retrato de um mês inteiro.
    */
+  /* ---------------------------------------------------------------------- */
+  /* Mapa do menu                                                            */
+  /* ---------------------------------------------------------------------- */
+  /*
+   * Esta tela já foi uma página à parte, publicada sozinha. Era o erro óbvio em
+   * retrospecto: um mapa do menu que mora FORA da ferramenta obriga a sair dela
+   * para entender a organização dela, e ainda vira uma segunda cópia da
+   * estrutura — que diverge no primeiro grupo renomeado.
+   *
+   * Aqui dentro, cada destino é o mesmo botão do menu de verdade: clicar abre a
+   * tela, nesta mesma página, e escreve o endereço. O que não tem tela no
+   * protótipo diz isso no próprio item.
+   */
+  const MAPA_DO_MENU = [
+    {
+      id: 'atendimento',
+      label: 'Atendimento',
+      porque: 'O ciclo do chamado inteiro, do pedido à pesquisa. Conversas entra aqui, e não em Integrações, porque WhatsApp, Telegram e N8N chegam como conversa que vira chamado.',
+      itens: [
+        { label: 'Tickets', tela: 'tickets' },
+        { label: 'Abrir ticket', tela: 'novo' },
+        { label: 'Filas', tela: 'filas' },
+        { label: 'SLA e prazos', tela: 'sla' },
+        { label: 'Expediente e feriados' },
+        { label: 'Satisfação', tela: 'satisfacao' },
+        { label: 'Conversas' },
+      ],
+    },
+    {
+      id: 'autoatendimento',
+      label: 'Autoatendimento',
+      porque: 'O que o solicitante resolve sem abrir chamado. Separado de Atendimento porque o dono da tela é outro: aqui quem lê é quem pede, não quem atende.',
+      itens: [
+        { label: 'Base de conhecimento' },
+        { label: 'Catálogo de serviços' },
+      ],
+    },
+    {
+      id: 'gestao',
+      label: 'Gestão',
+      porque: 'Aquilo por que o gestor de TI responde. A Visão de resultado saiu do topo e veio para cá: ela não pertence a Financeiro nem a Atendimento, pertence a quem responde pelos dois.',
+      itens: [
+        { label: 'Visão de resultado' },
+        { label: 'Projetos' },
+      ],
+    },
+    {
+      id: 'financeiro',
+      label: 'Financeiro',
+      porque: 'Título, banco, centro de custo, caixa e orçamento. "Títulos a pagar", e não "Contas a pagar", porque no mesmo grupo existe Contas bancárias — dois sentidos de "conta" na mesma gaveta confundem todo dia.',
+      itens: [
+        { label: 'Títulos a pagar', tela: 'titulos-pagar' },
+        { label: 'Títulos a receber', tela: 'titulos-receber' },
+        { label: 'Contas bancárias', tela: 'contas' },
+        { label: 'Centros de custo', tela: 'centros' },
+        { label: 'Fluxo de caixa', tela: 'fluxo-caixa' },
+        { label: 'Orçamento de TI' },
+      ],
+    },
+    {
+      id: 'inventario-e-monitoramento',
+      label: 'Inventário e monitoramento',
+      porque: 'O parque e o que ele reporta sozinho. Chamava-se "Infraestrutura", que não dizia se era o equipamento ou o monitoramento dele — e são as duas coisas.',
+      itens: [
+        { label: 'Inventário de TI', tela: 'inventario' },
+        { label: 'Agentes nas máquinas' },
+        { label: 'Software instalado' },
+        { label: 'Telefonia', tela: 'telefonia' },
+        { label: 'Links de internet', tela: 'links' },
+        { label: 'Mapa das filiais', tela: 'mapas' },
+      ],
+    },
+    {
+      id: 'clientes-e-contratos',
+      label: 'Clientes e contratos',
+      porque: 'Quem é atendido e quem fornece. Chamava-se "Cadastros", nome que serve para qualquer coisa e por isso não serve para nada: metade do sistema é cadastro.',
+      itens: [
+        { label: 'Clientes e filiais', tela: 'clientes' },
+        { label: 'Fornecedores e contratos', tela: 'fornecedores' },
+      ],
+    },
+    {
+      id: 'integracoes',
+      label: 'Integrações',
+      porque: 'As telas que falam com sistema de fora. Sugestões de IA veio de Administração para cá: o que decide o grupo é com quem a tela fala, e ela fala com um provedor de terceiro.',
+      itens: [
+        { label: 'Sistemas de tickets', tela: 'integracoes' },
+        { label: 'Sugestões de IA' },
+        { label: 'Bancos de dados', previsto: 'Leitura de base externa para importar inventário ou cadastro.' },
+        { label: 'Pagamento bancário', previsto: 'Remessa de pagamento ao banco. Depende dos títulos a pagar.' },
+        { label: 'Recebimento bancário', previsto: 'Retorno de cobrança e baixa automática. Depende dos títulos a receber.' },
+      ],
+    },
+    {
+      id: 'administracao',
+      label: 'Administração',
+      porque: 'Quem pode o quê, o que o sistema faz sozinho e o rastro do que foi feito. Fica no fim porque é o que se abre uma vez e não se volta.',
+      itens: [
+        { label: 'Usuários', tela: 'usuarios' },
+        { label: 'Preferências do ambiente' },
+        { label: 'Trilha de alterações' },
+        { label: 'Trabalhos agendados' },
+        { label: 'Perfis de acesso', tela: 'perfis' },
+        { label: 'Painéis de TV', tela: 'tv' },
+      ],
+    },
+  ];
+
+  /* Os destinos soltos, que não entram em gaveta nenhuma. */
+  const MAPA_SOLTOS = [
+    { label: 'Novidades', tela: 'novidades', onde: 'topo' },
+    { label: 'Visão geral', tela: 'painel', onde: 'topo' },
+    { label: 'Portal', onde: 'topo' },
+    { label: 'Minha conta', tela: 'conta', onde: 'rodapé' },
+  ];
+
+  const REGRAS_DA_SANFONA = [
+    ['1. Quem está na tela manda',
+     'Clicou, abre e fecha o anterior. Clicou de novo, fecha tudo. A escolha vale enquanto a tela for a mesma.'],
+    ['2. Ao trocar de tela, o grupo da tela nova abre',
+     'Estar numa tela e não ver onde ela fica é pior que repetir a última escolha. A escolha guarda ONDE foi feita: não é esquecida, é suspensa.'],
+    ['3. Em tela sem grupo, a escolha anterior volta a valer',
+     'Sem isto, ir à Visão geral fecharia a barra inteira e obrigaria a abrir uma gaveta para ir a qualquer lugar.'],
+  ];
+
+  function destinoDoMapa(item) {
+    if (item.tela) {
+      return `<button type="button" class="btn btn-sm" data-variant="ghost"
+        data-go="${esc(item.tela)}">${esc(item.label)}</button>`;
+    }
+    return `<span class="nav-soon" title="Esta tela existe no app, e ainda não neste protótipo."
+      >${esc(item.label)}<em>só no app</em></span>`;
+  }
+
+  views.menu = () => {
+    const comTela = MAPA_DO_MENU.reduce((s, g) => s + g.itens.filter(i => i.tela).length, 0)
+      + MAPA_SOLTOS.filter(i => i.tela).length;
+    const total = MAPA_DO_MENU.reduce((s, g) => s + g.itens.length, 0) + MAPA_SOLTOS.length;
+
+    return `
+      <div class="page-head"><div><p class="eyebrow">A ferramenta</p><h1>Mapa do menu</h1>
+        <p class="lede">Os oito grupos da barra lateral, e por que cada item está onde está.
+        Clique num destino para abrir a tela.</p></div></div>
+
+      <div class="tiles" style="margin-bottom:1.5rem">
+        ${tile('Grupos', MAPA_DO_MENU.length, 'teto prático de uma barra que se lê de relance é 7')}
+        ${tile('Destinos', total, comTela + ' abrem tela aqui')}
+        ${tile('Fora de gaveta', MAPA_SOLTOS.length, 'destino, não categoria')}
+      </div>
+
+      <div class="card" style="margin-bottom:1.5rem"><div class="card-body">
+        <h2 style="margin-top:0">Três destinos ficam fora de qualquer gaveta</h2>
+        <p class="dim" style="margin:.3rem 0 .6rem">Visão geral e Portal no topo, Minha conta no
+        rodapé. São destino, não categoria — e o que é destino de todo mundo não pode depender de
+        alguém ter aberto a gaveta certa.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:.4rem">
+          ${MAPA_SOLTOS.map(destinoDoMapa).join('')}
+        </div>
+      </div></div>
+
+      ${MAPA_DO_MENU.map(g => `
+        <div class="card" style="margin-bottom:.85rem"><div class="card-body">
+          <h2 style="margin-top:0">${esc(g.label)}</h2>
+          <p class="dim" style="margin:.3rem 0 .7rem">${esc(g.porque)}</p>
+          <div style="display:flex;flex-wrap:wrap;gap:.4rem">
+            ${g.itens.map(destinoDoMapa).join('')}
+          </div>
+        </div></div>`).join('')}
+
+      <h2 style="margin:1.5rem 0 .6rem">As três regras da sanfona</h2>
+      <p class="dim" style="margin:0 0 .6rem">Um grupo aberto de cada vez. Em ordem de
+      precedência — a de cima ganha da de baixo.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Regra</th><th>Por quê</th></tr></thead>
+        <tbody>${REGRAS_DA_SANFONA.map(([r, p]) => `<tr>
+          <td class="strong">${esc(r)}</td><td class="muted">${esc(p)}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+  };
+
   views.satisfacao = () => {
     const encerrados = db.tickets.filter(t => t.status === 'resolved' || t.status === 'closed');
     const avaliados = encerrados.filter(t => typeof t.rating === 'number');
@@ -5778,6 +5957,7 @@
          dela exige a permissão do seu módulo. Exigir helpdesk.painel.ver no
          destino padrão era a causa do laço de redirect. */
       ['painel','Visão geral',false,null],
+      ['menu','Mapa do menu',false,null],
     ]],
     ['Atendimento', [
       ['tickets','Tickets',false,'helpdesk.tickets.ver'],
