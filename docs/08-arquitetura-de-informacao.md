@@ -70,6 +70,26 @@ impossível, guardado.
 É `<details>`/`<summary>`, não um acordeão escrito à mão: vem com teclado,
 `aria-expanded` e busca-na-página do navegador de graça.
 
+**A barra não é o único caminho — e não deveria ser.** São 45 telas em oito
+gavetas: quem usa todo dia decora, quem usa uma vez por mês não. A paleta de
+comandos (`⌘K` / `Ctrl+K`, `components/paleta.tsx`) abre de qualquer tela com
+**telas, ações e registros na mesma caixa**. Ter os três juntos é o que a
+justifica: se fosse só navegação, a barra já bastava.
+
+Ela lê as telas de `visibleNavGroups`, a mesma fonte do menu — a paleta **não
+pode oferecer o que o menu esconde**, e a busca de registros confere a mesma
+permissão granular que governa cada tela. Sem isso, a conveniência viraria a
+porta dos fundos. Há asserção para isso em `demo/tests/local/paleta.spec.mjs`.
+
+A caixa visível no cabeçalho existe porque atalho que ninguém descobre não é
+atalho, é segredo — e porque quem não usa teclado precisa chegar lá clicando.
+
+**No celular, a mesma sanfona, em gaveta.** A tira horizontal com trinta e
+poucos destinos saiu: o item que interessava quase nunca estava visível, rolar
+de lado é o gesto que ninguém procura, e ela não mostrava os GRUPOS — a
+organização que existe no desktop simplesmente não existia no celular. A gaveta
+reaproveita `SidebarNav`, não uma cópia.
+
 **Grupo vazio desaparece inteiro, cabeçalho incluído.** Cabeçalho sozinho anuncia
 a existência de um módulo sem dar acesso a ele, e isso só gera pergunta para o
 suporte.

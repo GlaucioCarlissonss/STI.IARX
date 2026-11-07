@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { requireSession, touchPresence } from '@/lib/session'
-import { visibleNav, visibleNavGroups } from '@/lib/navigation'
-import { CompactNav, SidebarNav } from '@/components/sidebar-nav'
+import { visibleNavGroups } from '@/lib/navigation'
+import { SidebarNav } from '@/components/sidebar-nav'
+import { PaletaDeComandos } from '@/components/paleta'
+import { MenuCelular } from '@/components/menu-celular'
 import { roleLabel } from '@/lib/i18n'
 import { initials } from '@/lib/format'
 import { signOut } from '@/app/login/actions'
@@ -22,7 +24,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * lá de todo jeito.
    */
   const grupos = visibleNavGroups(permissions)
-  const planos = visibleNav(permissions)
+  /*
+   * A paleta recebe as telas JÁ FILTRADAS por permissão, com o grupo de cada
+   * uma. O grupo não é enfeite: é o que distingue "Contas bancárias" de
+   * "Contas a pagar" numa lista sem a barra lateral ao lado para dar contexto.
+   *
+   * Vem de `visibleNavGroups`, a mesma fonte do menu — a paleta não pode
+   * oferecer uma tela que o menu esconde.
+   */
+  const telasDaPaleta = grupos.flatMap((g) =>
+    g.items
+      .filter((i) => i.href !== null)
+      .map((i) => ({ label: i.label, href: i.href as string, grupo: g.label })),
+  )
 
   /*
    * O seletor de foco só aparece para quem tem MAIS DE UMA empresa: com uma só,
@@ -58,6 +72,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           )}
 
           <div className="ml-auto flex items-center gap-3">
+            <PaletaDeComandos telas={telasDaPaleta} />
+            <MenuCelular>
+              <SidebarNav groups={grupos} />
+            </MenuCelular>
             {foco.length > 0 && (
               <ClientFocus opcoes={foco} selecionado={profile.focused_client_id} />
             )}
@@ -95,20 +113,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </nav>
 
-        {/* Navegação compacta para tablet (RNF-07) */}
-        <nav
-          aria-label="Navegação principal"
-          className="fixed inset-x-0 bottom-0 z-20 overflow-x-auto border-t border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden"
-        >
-          <CompactNav items={planos} />
-        </nav>
 
         {/* `entrar`: quatro pixels e 180ms ao trocar de tela. É direção, não
             animação — e some inteiro sob `prefers-reduced-motion`. */}
         <main
           id="conteudo"
           tabIndex={-1}
-          className="entrar min-w-0 flex-1 pb-20 lg:pb-0 focus:outline-none"
+          className="entrar min-w-0 flex-1 focus:outline-none"
         >
           {children}
         </main>
