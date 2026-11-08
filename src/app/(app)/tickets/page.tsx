@@ -18,6 +18,7 @@ import {
   type TicketDaLista,
 } from '@/components/lista-de-tickets'
 import { FiltrosDeLista } from '@/components/filtros-de-lista'
+import { GavetaDoChamado } from './gaveta-do-chamado'
 import { EmptyState, PageHeader, Pager } from '@/components/ui'
 
 export const metadata: Metadata = { title: 'Tickets' }
@@ -43,6 +44,8 @@ interface Params extends Record<string, string | undefined> {
   atendente?: string
   sla?: string
   busca?: string
+  /** O chamado aberto na gaveta, ao lado da lista. */
+  aberto?: string
   ordem?: string
   dir?: string
   pagina?: string
@@ -132,6 +135,26 @@ export default async function TicketsPage({
   const pagina = lerPagina(params.pagina)
   const ordem = lerOrdem(ORDENS_DE_TICKET, params.ordem, params.dir, 'score')
 
+  /*
+   * A máquina de estados inteira, numa consulta só.
+   *
+   * A edição na linha precisa saber, para CADA chamado, quais status o banco
+   * aceita a partir do estado dele (ADR-007). Perguntar por linha seriam
+   * cinquenta consultas; a tabela toda tem algumas dezenas de registros e cabe
+   * num mapa. O que não dá é manter uma cópia da máquina de estados no
+   * JavaScript: ela divergiria da trigger, e a tela ofereceria transições que
+   * a escrita recusa.
+   */
+  const { data: transicoes } = await supabase
+    .from('ticket_status_transitions')
+    .select('from_status, to_status')
+    .returns<{ from_status: TicketStatus; to_status: TicketStatus }[]>()
+
+  const destinos = new Map<TicketStatus, TicketStatus[]>()
+  for (const t of transicoes ?? []) {
+    destinos.set(t.from_status, [...(destinos.get(t.from_status) ?? []), t.to_status])
+  }
+
   const base = () =>
     porClienteOuGeral(supabase.from('vw_tickets_enriched').select('*', { count: 'exact' }), escopo)
 
@@ -205,6 +228,11 @@ export default async function TicketsPage({
     fila: t.queue_name,
     filial: t.branch_name ?? '—',
     atendente: t.assignee_name,
+    atendenteId: t.assignee_id,
+    statusPossiveis: [
+      { valor: t.status, rotulo: ticketStatusLabel[t.status] },
+      ...(destinos.get(t.status) ?? []).map((s) => ({ valor: s, rotulo: ticketStatusLabel[s] })),
+    ],
     slaEstado: t.resolution_state,
     slaRotulo: slaStateLabel[t.resolution_state ?? 'no_sla'],
     prazo: t.is_paused ? 'pausado' : formatTimeRemaining(t.minutes_to_resolution_due),
@@ -212,7 +240,21 @@ export default async function TicketsPage({
   }))
 
   return (
-    <>
+    /* Com a gaveta aberta no computador, a tela ganha margem do tamanho dela:
+       a gaveta é `fixed`, e sem a margem ela cobriria as últimas colunas da
+       lista — justamente as de prazo, que é o que se está comparando. No
+       celular não há margem, porque lá ela sobe por cima mesmo. */
+    <div className={params.aberto ? 'lg:pr-[35rem]' : undefined}>
+      {params.aberto && (
+        <GavetaDoChamado
+          id={params.aberto}
+          fechar={comParametros('/tickets', params, {
+            aberto: null,
+            pagina: params.pagina ?? null,
+          })}
+        />
+      )}
+
       <PageHeader
         title="Tickets"
         description={
@@ -348,6 +390,9 @@ export default async function TicketsPage({
               status: podeStatus,
               transferir: podeTransferir,
             }}
+            base="/tickets"
+            params={params}
+            aberto={params.aberto ?? null}
           />
           <Pager
             pagina={pagina.numero}
@@ -358,7 +403,7 @@ export default async function TicketsPage({
           />
         </>
       )}
-    </>
+    </div>
   )
 }
 

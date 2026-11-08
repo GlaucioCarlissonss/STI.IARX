@@ -146,6 +146,10 @@ export async function assignTicket(_prev: ActionState, formData: FormData): Prom
   if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath(`/tickets/${parsed.data.ticket_id}`)
+  /* A LISTA também: desde a edição na linha, atribuir acontece lá dentro, e
+     sem isto a coluna continuaria mostrando o atendente antigo até alguém
+     recarregar a página. */
+  revalidatePath('/tickets')
   return { success: parsed.data.assignee_id ? 'Ticket atribuído.' : 'Atribuição removida.' }
 }
 

@@ -235,6 +235,7 @@ Quem não alcança bloco nenhum recebe um aviso explícito, em vez de uma tela v
 | **A paleta**: atalho em qualquer tela, telas/ações/registros, teclado, e a busca que NÃO é porta dos fundos | `demo/tests/local/paleta.spec.mjs` |
 | **A lista**: visões e contagens, filtro sem botão, ordenação, densidade lembrada, teclado, ação em massa, e a barra que não oferece o que a permissão não dá | `demo/tests/local/lista.spec.mjs` |
 | **Celular**: nenhuma das cinco telas conferidas rola de lado; a tabela vira ficha | `demo/tests/local/lista.spec.mjs` §8 |
+| **A gaveta**: endereço que se manda, Esc que não perde o filtro, J/K trocando o chamado aberto, volta honesta na edição recusada, e o que a permissão não dá | `demo/tests/local/gaveta.spec.mjs` |
 | Nenhum texto da URL vira nome de coluna na consulta (inclui `__proto__`) | `src/lib/data/ordenacao.test.ts` |
 | O endereço preserva filtro, remove o que esvazia e volta para a página 1 | `src/lib/data/endereco.test.ts` |
 
@@ -286,6 +287,50 @@ Três decisões que não são óbvias:
   no banco (ADR-007): num `update … in (…)`, um chamado em transição proibida
   derrubaria os outros quarenta e nove. O retorno diz quantos ficaram de fora.
   E a permissão é conferida POR AÇÃO — não existe "permissão de lote".
+
+## 10. Editar sem sair da lista
+
+A lista ficou boa de ler; faltava poder AGIR nela. Trabalhar um chamado era
+sair da lista, abrir a tela dele, mexer, voltar — e voltar significava
+recomeçar do topo. Numa triagem de trinta chamados, trinta idas e voltas.
+
+| O que | Onde fica | Por quê |
+|---|---|---|
+| Ler, responder e mudar estado | **Gaveta** ao lado da lista (`?aberto=<id>`) | A lista continua à vista; `J`/`K` passam de chamado com ela aberta, que é como se tria uma fila inteira |
+| Trocar status ou atendente | **Na própria linha** | São as duas mudanças de um campo só que acontecem o dia inteiro |
+| Anexos, vínculos, IA, trilha, aprovação | **`/tickets/[id]`**, intacta | Link de e-mail não pode quebrar, e o que pede a tela inteira continua tendo a tela inteira |
+
+Quatro decisões que não são óbvias:
+
+- **A gaveta é renderizada no SERVIDOR.** `?aberto=` é lido pela página, que
+  monta o conteúdo com as mesmas consultas, o mesmo RLS e as mesmas permissões
+  da tela. Não existe rota de API nova devolvendo chamado em JSON — uma
+  segunda porta para os mesmos dados é como se esquece uma conferência que a
+  primeira fazia.
+- **O título aponta para a página inteira e o clique é interceptado.** Assim
+  clicar fica no contexto da lista, e Ctrl+clique, botão do meio e "abrir em
+  nova aba" continuam levando à página — que é o que o navegador promete ao
+  mostrar o endereço na barra de status.
+- **Com a gaveta aberta, três colunas somem** (fila, prioridade, atendente).
+  Elas estão todas na gaveta; o que a lista precisa manter nessa largura é o
+  que permite escolher o próximo: número, título, estado e prazo.
+- **A gaveta é desenhada no `<body>`, por portal.** O `<main>` tem animação de
+  entrada em `transform`, e elemento com animação de transform vira bloco de
+  contenção de descendentes `fixed`: a folha de celular ficava com 16px de
+  sobra de cada lado — o `px-4` do contêiner — parecendo cartão solto em vez
+  de folha subindo da borda do aparelho.
+
+**Resposta imediata, com volta honesta.** O valor novo aparece antes de o
+servidor responder, porque esperar olhando para o valor velho faz a pessoa
+clicar de novo. O que costuma vir junto com interface otimista é o defeito
+oposto — dizer "salvo" para o que não salvou —, e aqui ele é impossível: a
+máquina de estados vive no banco (ADR-007), e quando a transição é recusada o
+valor **volta ao que era** com a mensagem ao lado. Há asserção para isso em
+`gaveta.spec.mjs` §4, que força uma transição proibida de propósito.
+
+**Quem não pode editar vê texto, não controle inerte.** Seletor desabilitado
+não explica nada, rouba uma parada de tabulação e ainda anuncia
+"indisponível" no leitor de tela: três incômodos para informar zero.
 
 **A tabela vira ficha no celular.** Abaixo de `lg`, `<Table>` empilha cada linha
 com o rótulo da coluna ao lado do valor (`.tabela` em `globals.css`). O rótulo

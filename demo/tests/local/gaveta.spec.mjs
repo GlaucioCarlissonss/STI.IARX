@@ -1,0 +1,249 @@
+/*
+ * A gaveta e a edição na linha — Fase 3 da revisão de usabilidade.
+ *
+ * Por que esta suíte existe
+ * -------------------------
+ * A Fase 3 acrescenta dois mecanismos que falham de um jeito convincente, que é
+ * o pior tipo de falha:
+ *
+ *  - **A gaveta** vive no endereço. Se o parâmetro deixar de chegar à consulta,
+ *    a tela continua funcionando e simplesmente não abre nada — sem erro, sem
+ *    sintoma, e a pessoa conclui que "o chamado sumiu".
+ *  - **A edição otimista** mostra o valor novo antes da resposta do servidor.
+ *    Se a reversão quebrar, a tela passa a dizer "salvo" para o que o banco
+ *    recusou. É o defeito mais caro possível numa lista de chamados: a pessoa
+ *    segue o dia acreditando num estado que não existe.
+ *
+ * A asserção §4 é a que prova a volta honesta, e ela força uma transição que a
+ * máquina de estados do banco recusa — de propósito.
+ *
+ * Como rodar: ver `telas.spec.mjs`.
+ */
+import { chromium } from 'playwright'
+
+const BASE = 'http://127.0.0.1:3177'
+const SENHA = 'desenvolvimento'
+
+let falhas = 0
+const ok = (c, m) => {
+  if (!c) falhas++
+  console.log(`${c ? '  ok  ' : '  FALHOU '} ${m}`)
+}
+
+const b = await chromium.launch()
+
+async function entrar(email, viewport = { width: 1440, height: 900 }) {
+  const ctx = await b.newContext({ viewport })
+  const p = await ctx.newPage()
+  await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' })
+  await p.fill('input[name="email"]', email)
+  await p.fill('input[name="password"]', SENHA)
+  await p.click('button[type="submit"]')
+  await p.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 60000 })
+  return { ctx, p }
+}
+
+const tituloDaGaveta = (p) => p.locator('[data-testid="gaveta"] h2').innerText()
+
+const { ctx, p } = await entrar('admin@iaroffice.com.br')
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 1. A gaveta abre ao lado, e é um endereço ===')
+// ---------------------------------------------------------------------------
+{
+  await p.goto(`${BASE}/tickets`, { waitUntil: 'networkidle' })
+  await p.waitForTimeout(600)
+
+  const primeiro = await p.locator('tr[data-indice="0"] [data-testid="abrir-chamado"]').innerText()
+  await p.locator('tr[data-indice="0"] [data-testid="abrir-chamado"]').click()
+  await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+
+  ok(/aberto=/.test(p.url()), 'abrir um chamado vira parâmetro no endereço')
+  ok((await tituloDaGaveta(p)).startsWith(primeiro.slice(0, 20)), 'e a gaveta traz o chamado certo')
+  ok(
+    (await p.locator('tr[data-indice="0"][data-aberto="1"]').count()) === 1,
+    'a linha correspondente fica marcada como aberta',
+  )
+  ok(
+    (await p.locator('[data-testid="gaveta"] a:has-text("página inteira")').count()) === 1,
+    'e o caminho para a página inteira continua à vista',
+  )
+
+  /* O endereço é a prova de que isso se manda para outra pessoa. */
+  const endereco = p.url()
+  const { ctx: c2, p: p2 } = await entrar('admin@iaroffice.com.br')
+  await p2.goto(endereco, { waitUntil: 'networkidle' })
+  await p2.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+  ok((await tituloDaGaveta(p2)) === (await tituloDaGaveta(p)), 'o mesmo link abre a mesma gaveta')
+  await c2.close()
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 2. Esc fecha, e a lista continua onde estava ===')
+// ---------------------------------------------------------------------------
+{
+  await p.goto(`${BASE}/tickets?status=todos`, { waitUntil: 'networkidle' })
+  await p.waitForTimeout(500)
+  const antes = await p.locator('tr[data-indice]:visible').count()
+
+  await p.locator('tr[data-indice="1"] [data-testid="abrir-chamado"]').click()
+  await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+
+  await p.keyboard.press('Escape')
+  await p.waitForTimeout(900)
+  ok((await p.locator('[data-testid="gaveta"]').count()) === 0, 'Esc fecha a gaveta')
+  ok(!/aberto=/.test(p.url()), 'e tira o parâmetro do endereço')
+  ok(/status=todos/.test(p.url()), 'sem levar embora o filtro que estava aplicado')
+  ok(
+    (await p.locator('tr[data-indice]:visible').count()) === antes,
+    'a lista continua a mesma — fechar não é recomeçar',
+  )
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 3. Com a gaveta aberta, J e K trocam o chamado ===')
+// ---------------------------------------------------------------------------
+{
+  await p.goto(`${BASE}/tickets?status=todos`, { waitUntil: 'networkidle' })
+  await p.waitForTimeout(500)
+  await p.locator('tr[data-indice="0"] [data-testid="abrir-chamado"]').click()
+  await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+  const primeiro = await tituloDaGaveta(p)
+
+  await p.keyboard.press('j')
+  await p.waitForTimeout(1500)
+  const segundo = await tituloDaGaveta(p)
+  ok(segundo !== primeiro, `J passa para o próximo sem fechar ("${primeiro}" → "${segundo}")`)
+
+  await p.keyboard.press('k')
+  await p.waitForTimeout(1500)
+  ok((await tituloDaGaveta(p)) === primeiro, 'e K volta')
+
+  /* A triagem só existe porque a lista NÃO perde o contexto. */
+  ok(
+    (await p.locator('tr[data-indice]:visible').count()) > 1,
+    'a lista continua visível ao lado durante a triagem',
+  )
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 4. Edição na linha: aplica, e desfaz quando o banco recusa ===')
+// ---------------------------------------------------------------------------
+{
+  await p.goto(`${BASE}/tickets?status=todos`, { waitUntil: 'networkidle' })
+  await p.waitForTimeout(600)
+
+  /* a) O caminho que funciona: atribuir pela própria linha. */
+  const seletor = p.locator('tr[data-indice="0"] [data-testid="editar-atendente"]')
+  const nome = await p
+    .locator('tr[data-indice="0"] [data-testid="editar-atendente"] option:not([value=""])')
+    .first()
+    .innerText()
+  await seletor.selectOption({ label: nome })
+  await p.waitForTimeout(2500)
+  await p.reload({ waitUntil: 'networkidle' })
+  await p.waitForTimeout(600)
+  ok(
+    (await p.locator('tr[data-indice="0"]').innerText()).includes(nome),
+    `atribuir na linha grava mesmo (${nome})`,
+  )
+
+  /* b) O caminho que recusa. A máquina de estados do banco (ADR-007) só aceita
+        as transições da tabela; o seletor da linha oferece apenas essas, então
+        para provar a VOLTA é preciso forçar uma proibida — é o que faz este
+        trecho, injetando a opção no DOM, exatamente como faria quem editasse a
+        página pelo inspetor. A tela tem que recusar e desfazer. */
+  const statusSel = p.locator('tr[data-indice="0"] [data-testid="editar-status"]')
+  const antes = await p.locator('tr[data-indice="0"] [data-testid="editar-status"]').inputValue()
+  const proibido = antes === 'resolved' ? 'triage' : 'resolved'
+
+  await p.evaluate(
+    ([valor]) => {
+      const s = document.querySelector('tr[data-indice="0"] [data-testid="editar-status"]')
+      const o = document.createElement('option')
+      o.value = valor
+      o.textContent = valor
+      s.appendChild(o)
+    },
+    [proibido],
+  )
+  await statusSel.selectOption(proibido)
+  await p.waitForTimeout(2500)
+
+  const erro = p.locator('tr[data-indice="0"] [data-testid="erro-edicao"]')
+  ok(await erro.isVisible(), 'uma transição proibida produz mensagem de erro na própria linha')
+  ok(
+    (await statusSel.inputValue()) === antes,
+    `e o valor VOLTA ao que era (${antes}) — nunca fica um "salvo" que não salvou`,
+  )
+
+  await p.reload({ waitUntil: 'networkidle' })
+  await p.waitForTimeout(600)
+  ok(
+    (await p.locator('tr[data-indice="0"] [data-testid="editar-status"]').inputValue()) === antes,
+    'e o banco confirma: nada foi gravado',
+  )
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 5. Quem não pode editar vê TEXTO, não controle inerte ===')
+// ---------------------------------------------------------------------------
+{
+  /* Carla é Solicitante: vê chamados, não atribui nem muda status. */
+  const { ctx: c3, p: p3 } = await entrar('carla.solicitante@meridiano.com.br')
+  await p3.goto(`${BASE}/tickets?status=todos`, { waitUntil: 'networkidle' })
+  await p3.waitForTimeout(600)
+
+  ok((await p3.locator('tr[data-indice]:visible').count()) > 0, 'a Solicitante vê a lista')
+  ok(
+    (await p3.locator('[data-testid="editar-status"]').count()) === 0 &&
+      (await p3.locator('[data-testid="editar-atendente"]').count()) === 0,
+    'e nenhum seletor de edição aparece para ela',
+  )
+  ok(
+    (await p3.locator('select[disabled]').count()) === 0,
+    'nem desabilitado — controle inerte não explica nada e ainda rouba tabulação',
+  )
+
+  await p3.locator('tr[data-indice="0"] [data-testid="abrir-chamado"]').click()
+  await p3.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+  ok(
+    (await p3.locator('[data-testid="gaveta"] [data-testid="editar-status"]').count()) === 0,
+    'a gaveta dela também não oferece o que a permissão não dá',
+  )
+  await c3.close()
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 6. Celular: a gaveta sobe de baixo ===')
+// ---------------------------------------------------------------------------
+{
+  const cel = await b.newContext({
+    viewport: { width: 390, height: 844 },
+    storageState: await ctx.storageState(),
+  })
+  const pc = await cel.newPage()
+  await pc.goto(`${BASE}/tickets`, { waitUntil: 'networkidle' })
+  await pc.waitForTimeout(600)
+
+  await pc.locator('li[data-indice="0"] [data-testid="abrir-chamado"]').click()
+  await pc.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+  await pc.waitForTimeout(400)
+
+  const caixa = await pc.locator('[data-testid="gaveta"]').boundingBox()
+  ok(caixa.width >= 380, 'no celular ela ocupa a largura inteira')
+  ok(
+    caixa.y > 844 * 0.15,
+    `e sobe de baixo, deixando a lista à vista por cima (topo em ${Math.round(caixa.y)}px de 844)`,
+  )
+  ok(
+    (await pc.evaluate(() => document.documentElement.scrollWidth)) <= 392,
+    'e nada passa a rolar de lado por causa dela',
+  )
+  await cel.close()
+}
+
+await ctx.close()
+await b.close()
+console.log(falhas === 0 ? '\nTODAS AS ASSERÇÕES PASSARAM' : `\n${falhas} ASSERÇÃO(ÕES) FALHOU/FALHARAM`)
+process.exit(falhas === 0 ? 0 : 1)

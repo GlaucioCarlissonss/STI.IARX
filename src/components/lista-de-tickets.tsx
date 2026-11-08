@@ -5,14 +5,15 @@ import { useRouter } from 'next/navigation'
 import type { Route } from 'next'
 import {
   useActionState,
-  useCallback,
   useEffect,
   useRef,
   useState,
   useSyncExternalStore,
 } from 'react'
+import { comParametros } from '@/lib/data/endereco'
 import type { SlaState, TicketStatus } from '@/lib/types'
 import { PriorityBadge, StatusBadge } from './ui'
+import { EdicaoNaLinha, type OpcaoDeEdicao } from './edicao-na-linha'
 import { acaoEmLote } from '@/app/(app)/tickets/actions'
 
 /**
@@ -57,6 +58,9 @@ export interface TicketDaLista {
   fila: string
   filial: string
   atendente: string | null
+  atendenteId: string | null
+  /** As transições que o BANCO aceita a partir do estado atual (ADR-007). */
+  statusPossiveis: OpcaoDeEdicao[]
   slaEstado: SlaState | null
   /** "No prazo", "SLA estourado"… — o texto que acompanha a cor do prazo. */
   slaRotulo: string
@@ -148,27 +152,65 @@ export function ListaDeTickets({
   atendentes,
   filas,
   permissoes,
+  base,
+  params,
+  aberto,
 }: {
   tickets: TicketDaLista[]
   cabecalhos: CabecalhoOrdenavel[]
   atendentes: OpcaoDeLote[]
   filas: OpcaoDeLote[]
   permissoes: PermissoesDaLista
+  /** Endereço desta lista, para montar o link que abre a gaveta. */
+  base: string
+  params: Record<string, string | undefined>
+  /** O chamado que está na gaveta agora, se houver. */
+  aberto: string | null
 }) {
   const router = useRouter()
+  /* A mesma lista de atendentes do lote serve à edição na linha — duas listas
+     divergiriam no dia em que alguém entrasse na equipe. */
+  const atendentesEditaveis = atendentes
+
+  /*
+   * Com a gaveta aberta, a lista fica com menos da metade da largura. Em vez de
+   * espremer sete colunas até o título virar reticência — que é o que o
+   * `table-fixed` faria —, três colunas somem: fila, prioridade e atendente.
+   *
+   * Elas não se perdem: estão todas na gaveta, no chamado que está aberto. O
+   * que a lista precisa manter nessa largura é o que permite ESCOLHER o
+   * próximo: número, título, estado e prazo.
+   */
+  const estreita = aberto !== null
+  const ocultas = estreita ? new Set(['fila', 'prioridade', 'atendente']) : new Set<string>()
+  const visiveis = cabecalhos.filter((c) => !ocultas.has(c.chave))
   const densidade = useSyncExternalStore(assinarDensidade, lerDensidade, densidadeDoServidor)
   const [cursor, setCursor] = useState(0)
   const [marcados, setMarcados] = useState<ReadonlySet<string>>(new Set())
   const corpoRef = useRef<HTMLDivElement>(null)
 
-  const alternar = useCallback((id: string) => {
+  /* Sem `useCallback`: o compilador do React memoiza por conta própria, e a
+     lista de dependências escrita à mão só cria a chance de ela discordar do
+     que a função realmente usa — foi o que o lint apontou. */
+  function alternar(id: string) {
     setMarcados((antes) => {
       const novo = new Set(antes)
       if (novo.has(id)) novo.delete(id)
       else novo.add(id)
       return novo
     })
-  }, [])
+  }
+
+  /* O endereço que abre um chamado na gaveta. É a MESMA consulta mais um
+     parâmetro — por isso a lista continua filtrada e ordenada como estava, e
+     o link pode ser mandado para outra pessoa inteiro. */
+  /* `pagina` vai explicitamente em `mudancas`: abrir a gaveta não muda o
+     CONJUNTO, então a regra que devolve a lista para a primeira página não
+     vale aqui — abrir um chamado da página 4 e voltar para a 1 seria perder o
+     lugar, que é exatamente o que a gaveta existe para evitar. */
+  function comGaveta(id: string) {
+    return comParametros(base, params, { aberto: id, pagina: params.pagina ?? null })
+  }
 
   /*
    * Teclado. O que ele NÃO pode fazer é disparar enquanto a pessoa digita: a
@@ -191,21 +233,50 @@ export function ListaDeTickets({
 
       const tecla = e.key.toLowerCase()
 
+      /* Com a gaveta aberta, andar na lista TROCA o que está nela. É o modo de
+         triagem: trinta chamados conferidos sem abrir trinta telas. Com a
+         gaveta fechada, andar só move o cursor — ninguém quer que a seta
+         dispare uma navegação a cada toque. */
+      /* O endereço é montado AQUI dentro, e não por uma função de fora, de
+         propósito: uma função definida no corpo do componente muda de
+         identidade a cada renderização e faria este efeito se desinscrever e
+         reinscrever sem parar — ou exigiria uma lista de dependências escrita
+         à mão, que é o que o compilador do React desencoraja. */
+      const enderecoDaGaveta = (id: string) =>
+        comParametros(base, params, { aberto: id, pagina: params.pagina ?? null })
+
+      const irPara = (indice: number) => {
+        setCursor(indice)
+        const alvo = tickets[indice]
+        if (aberto && alvo) router.push(enderecoDaGaveta(alvo.id) as Route, { scroll: false })
+      }
+
       if (tecla === 'j' || e.key === 'ArrowDown') {
         e.preventDefault()
-        setCursor((c) => Math.min(c + 1, tickets.length - 1))
+        irPara(Math.min(cursor + 1, tickets.length - 1))
       } else if (tecla === 'k' || e.key === 'ArrowUp') {
         e.preventDefault()
-        setCursor((c) => Math.max(c - 1, 0))
+        irPara(Math.max(cursor - 1, 0))
       } else if (tecla === 'x') {
         e.preventDefault()
         const alvo = tickets[cursor]
-        if (alvo) alternar(alvo.id)
+        if (alvo) {
+          setMarcados((antes) => {
+            const novo = new Set(antes)
+            if (novo.has(alvo.id)) novo.delete(alvo.id)
+            else novo.add(alvo.id)
+            return novo
+          })
+        }
       } else if (e.key === 'Enter') {
         const alvo = tickets[cursor]
         if (alvo) {
           e.preventDefault()
-          router.push(`/tickets/${alvo.id}` as Route)
+          /* Enter abre na GAVETA, não na página inteira: a tarefa quase sempre
+             é olhar e decidir, e para isso sair da lista é custo sem retorno.
+             Quem precisa da página inteira tem o link dentro da gaveta — e
+             Ctrl+clique no título continua abrindo em outra aba. */
+          router.push(enderecoDaGaveta(alvo.id) as Route, { scroll: false })
         }
       } else if (e.key === 'Escape' && marcados.size > 0) {
         e.preventDefault()
@@ -215,7 +286,7 @@ export function ListaDeTickets({
 
     window.addEventListener('keydown', aoTeclar)
     return () => window.removeEventListener('keydown', aoTeclar)
-  }, [tickets, cursor, marcados.size, alternar, router])
+  }, [tickets, cursor, marcados.size, router, aberto, base, params])
 
   /* O cursor tem que ficar visível: andar para fora da tela é o mesmo que não
      andar. `nearest` evita o salto brusco de centralizar a cada tecla. */
@@ -265,9 +336,9 @@ export function ListaDeTickets({
             <col className="w-14" />
             <col />
             <col className="w-36" />
-            <col className="w-32" />
-            <col className="w-40" />
-            <col className="w-36" />
+            {!ocultas.has('prioridade') && <col className="w-32" />}
+            {!ocultas.has('fila') && <col className="w-40" />}
+            {!ocultas.has('atendente') && <col className="w-36" />}
             <col className="w-36" />
           </colgroup>
           <thead>
@@ -281,7 +352,7 @@ export function ListaDeTickets({
                   className="size-3.5 accent-[var(--color-brand)]"
                 />
               </th>
-              {cabecalhos.map((c) => (
+              {visiveis.map((c) => (
                 <Cabecalho key={c.chave} coluna={c} />
               ))}
             </tr>
@@ -295,10 +366,11 @@ export function ListaDeTickets({
                   data-indice={i}
                   data-cursor={i === cursor ? '1' : undefined}
                   data-marcado={marcado ? '1' : undefined}
+                  data-aberto={aberto === t.id ? '1' : undefined}
                   className={`border-b border-[var(--color-border)] last:border-b-0 ${
                     marcado
                       ? 'bg-[var(--color-brand-soft)]'
-                      : i === cursor
+                      : aberto === t.id || i === cursor
                         ? 'bg-[var(--color-surface-2)] shadow-[inset_3px_0_0_var(--color-brand)]'
                         : 'hover:bg-[var(--color-surface-2)]'
                   }`}
@@ -321,13 +393,13 @@ export function ListaDeTickets({
                       continua a um passo, no `title` e na tela do chamado. */}
                   <td className={`px-3 ${alturaLinha}`}>
                     <div className={mostraSubtitulo ? '' : 'truncate'}>
-                      <Link
-                        href={`/tickets/${t.id}` as Route}
-                        title={t.titulo}
-                        className="font-medium text-[var(--color-brand-ink)] hover:underline"
-                      >
-                        {t.titulo}
-                      </Link>
+                      <LinkDoChamado
+                        id={t.id}
+                        titulo={t.titulo}
+                        href={comGaveta(t.id)}
+                        aoAbrir={() => setCursor(i)}
+                        router={router}
+                      />
                       {mostraSubtitulo ? (
                         <p className="mt-0.5 text-xs text-[var(--color-ink-3)]">
                           {t.categoria} · aberto {t.abertura}
@@ -337,22 +409,52 @@ export function ListaDeTickets({
                       )}
                     </div>
                   </td>
-                  <td className={`px-3 ${alturaLinha}`}>
-                    <StatusBadge status={t.status} />
+                  {/* Status e atendente são editáveis NA LINHA: são as duas
+                      mudanças de um campo só que acontecem o dia inteiro.
+                      Qualquer coisa que peça contexto abre a gaveta. */}
+                  {/* `overflow-hidden`: a pílula de "Aguardando terceiro" é mais
+                      larga que a coluna, e sem isto ela invadia o prazo da
+                      linha ao lado. */}
+                  <td className={`overflow-hidden px-3 ${alturaLinha}`}>
+                    <EdicaoNaLinha
+                      ticketId={t.id}
+                      campo="status"
+                      valor={t.status}
+                      opcoes={t.statusPossiveis}
+                      rotulo={`Status do chamado ${t.numero}`}
+                      podeEditar={permissoes.status && t.statusPossiveis.length > 1}
+                    >
+                      <StatusBadge status={t.status} />
+                    </EdicaoNaLinha>
                   </td>
-                  <td className={`px-3 ${alturaLinha}`}>
-                    <PriorityBadge label={t.prioridadeLabel} color={t.prioridadeCor} />
-                  </td>
-                  <td
-                    className={`whitespace-nowrap px-3 text-[var(--color-ink-2)] ${alturaLinha}`}
-                  >
-                    {t.fila}
-                  </td>
+                  {!ocultas.has('prioridade') && (
+                    <td className={`px-3 ${alturaLinha}`}>
+                      <PriorityBadge label={t.prioridadeLabel} color={t.prioridadeCor} />
+                    </td>
+                  )}
+                  {!ocultas.has('fila') && (
+                    <td
+                      className={`whitespace-nowrap px-3 text-[var(--color-ink-2)] ${alturaLinha}`}
+                    >
+                      {t.fila}
+                    </td>
+                  )}
+                  {!ocultas.has('atendente') && (
                   <td
                     className={`truncate whitespace-nowrap px-3 text-[var(--color-ink-2)] ${alturaLinha}`}
                   >
-                    {t.atendente ?? 'Não atribuído'}
+                    <EdicaoNaLinha
+                      ticketId={t.id}
+                      campo="atendente"
+                      valor={t.atendenteId ?? ''}
+                      opcoes={[{ valor: '', rotulo: 'Não atribuído' }, ...atendentesEditaveis]}
+                      rotulo={`Atendente do chamado ${t.numero}`}
+                      podeEditar={permissoes.atribuir}
+                    >
+                      <span className="text-sm">{t.atendente ?? 'Não atribuído'}</span>
+                    </EdicaoNaLinha>
                   </td>
+                  )}
                   {/* O SLA deixou de ser uma coluna e virou a COR e a palavra
                       deste prazo. Uma coluna inteira para repetir "No prazo" em
                       quase toda linha custava 160px que o título não tinha — e
@@ -403,12 +505,15 @@ export function ListaDeTickets({
                       {t.prazo}
                     </span>
                   </div>
-                  <Link
-                    href={`/tickets/${t.id}` as Route}
-                    className="mt-1 block font-semibold leading-snug text-[var(--color-ink)]"
-                  >
-                    {t.titulo}
-                  </Link>
+                  <span className="mt-1 block font-semibold leading-snug text-[var(--color-ink)]">
+                    <LinkDoChamado
+                      id={t.id}
+                      titulo={t.titulo}
+                      href={comGaveta(t.id)}
+                      aoAbrir={() => setCursor(i)}
+                      router={router}
+                    />
+                  </span>
                   <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-ink-2)]">
                     <PriorityBadge label={t.prioridadeLabel} color={t.prioridadeCor} />
                     <span>{t.fila}</span>
@@ -431,6 +536,48 @@ export function ListaDeTickets({
         />
       )}
     </div>
+  )
+}
+
+/**
+ * O título do chamado.
+ *
+ * O `href` aponta para a PÁGINA INTEIRA de propósito, e o clique comum é
+ * interceptado para abrir a gaveta. Com isso as duas coisas valem ao mesmo
+ * tempo: clicar fica no contexto da lista, e Ctrl+clique, botão do meio ou
+ * "abrir em nova aba" continuam levando à página — que é o que o navegador
+ * promete ao mostrar o endereço na barra de status. Um `<button>` aqui
+ * quebraria essa promessa, e um link para a própria lista faria "abrir em nova
+ * aba" devolver a lista.
+ */
+function LinkDoChamado({
+  id,
+  titulo,
+  href,
+  aoAbrir,
+  router,
+}: {
+  id: string
+  titulo: string
+  href: string
+  aoAbrir: () => void
+  router: ReturnType<typeof useRouter>
+}) {
+  return (
+    <Link
+      href={`/tickets/${id}` as Route}
+      title={titulo}
+      data-testid="abrir-chamado"
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+        e.preventDefault()
+        aoAbrir()
+        router.push(href as Route, { scroll: false })
+      }}
+      className="font-medium text-[var(--color-brand-ink)] hover:underline"
+    >
+      {titulo}
+    </Link>
   )
 }
 

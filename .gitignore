@@ -27,3 +27,7 @@ agente/dist/
 
 # Modo local (docs/22): banco de desenvolvimento e anexos em disco.
 .local-storage/
+
+# Scripts de captura de tela, criados fora do repositório durante o trabalho.
+.tirar.mjs
+.f3*.mjs

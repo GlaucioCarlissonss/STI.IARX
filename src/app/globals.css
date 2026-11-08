@@ -472,3 +472,27 @@ h3 {
     min-width: 0;
   }
 }
+
+/* A gaveta subindo de baixo, no celular. 180ms: tempo de dizer "veio daqui"
+   sem virar espera. Sob `prefers-reduced-motion` ela simplesmente aparece —
+   a regra geral no topo deste arquivo já zera a duração. */
+@keyframes gaveta-sobe {
+  from {
+    transform: translateY(12%);
+    opacity: 0.4;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.gaveta-sobe {
+  animation: gaveta-sobe 0.18s ease-out;
+}
+
+@media (width >= 64rem) {
+  .gaveta-sobe {
+    animation: none;
+  }
+}
