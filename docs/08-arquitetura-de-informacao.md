@@ -328,6 +328,14 @@ máquina de estados vive no banco (ADR-007), e quando a transição é recusada 
 valor **volta ao que era** com a mensagem ao lado. Há asserção para isso em
 `gaveta.spec.mjs` §4, que força uma transição proibida de propósito.
 
+**O mesmo padrão no inventário.** Duas coisas saíram da tela: a coluna de
+23rem com o formulário "Novo ativo", aberta o tempo todo inclusive para quem
+só consulta, e o painel de edição por linha — que existia na marcação para os
+50 ativos da página e fazia a tela buscar custódia e anexos do parque inteiro
+da página para alimentar painéis que quase ninguém abria. Agora são a mesma
+gaveta (`?aberto=<id>` e `?novo=1`), e custódia e anexos são consultados só
+para o ativo aberto: a tela ficou mais larga e a consulta, menor.
+
 **Quem não pode editar vê texto, não controle inerte.** Seletor desabilitado
 não explica nada, rouba uma parada de tabulação e ainda anuncia
 "indisponível" no leitor de tela: três incômodos para informar zero.

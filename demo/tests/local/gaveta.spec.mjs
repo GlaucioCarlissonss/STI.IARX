@@ -243,6 +243,57 @@ console.log('\n=== 6. Celular: a gaveta sobe de baixo ===')
   await cel.close()
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n=== 7. Inventário: a mesma gaveta, no lugar do formulário fixo ===')
+// ---------------------------------------------------------------------------
+{
+  await p.goto(`${BASE}/inventario`, { waitUntil: 'networkidle' })
+  await p.waitForTimeout(600)
+
+  /* O formulário de cadastro ocupava uma coluna de 23rem, aberta o dia todo. */
+  ok(
+    (await p.locator('text=Novo ativo').count()) > 0 &&
+      (await p.locator('input[name="asset_tag"]').count()) === 0,
+    'o cadastro virou botão: nenhum campo de formulário ocupa a tela por padrão',
+  )
+
+  const colunas = await p.locator('table thead th').count()
+  ok(colunas === 7, `a tabela usa a largura inteira (${colunas} colunas visíveis)`)
+
+  await p.locator('[data-testid="abrir-ativo"]').first().click()
+  await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+  ok(/aberto=/.test(p.url()), 'abrir um ativo também é endereço')
+  ok(
+    (await p.locator('[data-testid="gaveta"] h3:has-text("Custódia")').count()) === 1,
+    'e a gaveta traz ficha e custódia do ativo',
+  )
+
+  await p.keyboard.press('Escape')
+  await p.waitForTimeout(900)
+  ok((await p.locator('[data-testid="gaveta"]').count()) === 0, 'Esc fecha')
+
+  await p.locator('[data-testid="novo-ativo"]').click()
+  await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+  ok(
+    (await p.locator('[data-testid="gaveta"] input[name="asset_tag"]').count()) === 1,
+    'e "Novo ativo" abre o cadastro na mesma gaveta',
+  )
+
+  /* Quem só consulta não recebe o botão nem a gaveta de cadastro. */
+  const { ctx: c4, p: p4 } = await entrar('ana.atendente@iaroffice.com.br')
+  await p4.goto(`${BASE}/inventario`, { waitUntil: 'networkidle' })
+  await p4.waitForTimeout(600)
+  const temBotao = (await p4.locator('[data-testid="novo-ativo"]').count()) > 0
+  await p4.goto(`${BASE}/inventario?novo=1`, { waitUntil: 'networkidle' })
+  await p4.waitForTimeout(600)
+  const abriu = (await p4.locator('[data-testid="gaveta"]').count()) > 0
+  ok(
+    temBotao === abriu,
+    `botão e gaveta de cadastro concordam com a permissão (botão: ${temBotao}, gaveta: ${abriu})`,
+  )
+  await c4.close()
+}
+
 await ctx.close()
 await b.close()
 console.log(falhas === 0 ? '\nTODAS AS ASSERÇÕES PASSARAM' : `\n${falhas} ASSERÇÃO(ÕES) FALHOU/FALHARAM`)

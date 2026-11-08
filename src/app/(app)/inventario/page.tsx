@@ -1,18 +1,17 @@
-import { Fragment } from 'react'
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { agruparPor } from '@/lib/data/agrupar'
 import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
+import { comParametros } from '@/lib/data/endereco'
 import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
-import { assetStatusLabel, assetStatusTone, assetTypeLabel, custodyEventLabel, custodyReasonLabel } from '@/lib/i18n'
+import { assetStatusLabel, assetStatusTone, assetTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
-import type { Branch, BranchArea, CustodyEvent, ItAsset, Profile } from '@/lib/types'
-import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
-import { EditPanel } from '@/components/edit-panel'
-import { Attachments, type AttachmentRecord } from '@/components/attachments'
-import { CustodyForm, EditAssetForm, NewAssetForm } from './asset-forms'
+import type { BranchArea, ItAsset } from '@/lib/types'
+import { Badge, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
+import { GavetaDoAtivo } from './gaveta-do-ativo'
 
 export const metadata: Metadata = { title: 'Inventário de TI' }
 
@@ -27,7 +26,7 @@ interface ResumoDeAtivos {
 export default async function InventarioPage({
   searchParams,
 }: {
-  searchParams: Promise<{ pagina?: string }>
+  searchParams: Promise<{ pagina?: string; aberto?: string; novo?: string }>
 }) {
   const params = await searchParams
   await requireScreen('inventario.ativos.ver')
@@ -35,10 +34,10 @@ export default async function InventarioPage({
   const escopo = await escopoDeCliente()
   const pagina = lerPagina(params.pagina)
 
-  const [
-    { data: assets, count }, branches, agents, { data: suppliers },
-    { data: areas }, { data: resumo },
-  ] = await Promise.all([
+  /* `suppliers` saiu desta consulta junto com o formulário: quem precisa da
+     lista de fornecedores agora é a gaveta, e ela a busca por conta própria. */
+  const [{ data: assets, count }, branches, agents, { data: areas }, { data: resumo }] =
+    await Promise.all([
     /* Ativo sem filial é do tenant inteiro e entra em qualquer foco — ver a
        regra das colunas nulas em `src/lib/data/escopo.ts`. */
     paginar(
@@ -61,7 +60,6 @@ export default async function InventarioPage({
     ).returns<ItAsset[]>(),
     getBranches(),
     getAgents(),
-    supabase.from('suppliers').select('id, name').is('deleted_at', null).order('name'),
     supabase
       .from('branch_areas')
       .select('id, branch_id, name, code, kind, is_active, sort_order')
@@ -82,46 +80,15 @@ export default async function InventarioPage({
   ])
 
   /*
-   * Segunda rodada, e de propósito sequencial: custódia e anexos agora são
-   * buscados SÓ dos ativos desta página. Antes vinham todos — a timeline de 400
-   * eventos e os anexos do parque inteiro — para alimentar gavetas que, numa
-   * tela de 50 linhas, no máximo 50 pessoas abririam. É uma viagem a mais ao
-   * banco em troca de um payload que encolhe junto com a página.
+   * Custódia e anexos NÃO são mais buscados aqui.
    *
-   * Lista vazia nem chega a consultar: `.in('asset_id', [])` é uma ida ao banco
-   * garantidamente sem resultado.
+   * Eles alimentavam um painel por linha, e por isso a tela trazia a timeline e
+   * os anexos dos 50 ativos da página para abastecer painéis que, na prática,
+   * quase ninguém abria. Agora quem busca é a gaveta, e só do ativo que está
+   * aberto: uma consulta por chamada de verdade, em vez de cinquenta por
+   * precaução.
    */
-  const idsDaPagina = (assets ?? []).map((a) => a.id)
-
-  const [{ data: custodia }, { data: anexos }, podeEditar, podeCriar, podeAnexar, podeCustodiar] =
-    await Promise.all([
-      idsDaPagina.length > 0
-        ? supabase
-            .from('asset_custody_history')
-            .select(
-              'id, asset_id, event_type, previous_user_name, current_user_name, previous_branch_id, branch_id, previous_area_id, branch_area_id, reason, reason_note, performed_by_name, changed_at',
-            )
-            .in('asset_id', idsDaPagina)
-            .order('changed_at', { ascending: false })
-            .returns<CustodyEvent[]>()
-        : { data: null },
-      idsDaPagina.length > 0
-        ? supabase
-            .from('asset_attachments')
-            .select('id, asset_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
-            .in('asset_id', idsDaPagina)
-            .order('created_at', { ascending: false })
-            .returns<(AttachmentRecord & { asset_id: string })[]>()
-        : { data: null },
-      allowed('inventario.ativos.editar'),
-      allowed('inventario.ativos.criar'),
-      allowed('inventario.ativos.anexar'),
-      allowed('inventario.ativos.custodiar'),
-    ])
-  // Anexo por ativo. Quem pode anexar mas não editar também precisa do painel,
-  // então a linha aparece para qualquer uma das duas permissões.
-  const anexosPorAtivo = agruparPor(anexos, 'asset_id')
-  const custodiaPorAtivo = agruparPor(custodia, 'asset_id')
+  const podeCriar = await allowed('inventario.ativos.criar')
   const listaAreas = areas ?? []
   const areaName = new Map(listaAreas.map((a) => [a.id, a.name]))
   const list = assets ?? []
@@ -148,8 +115,23 @@ export default async function InventarioPage({
   const expiringWarranty = somar('garantia_90d')
   const totalValue = somar('valor_total')
 
+  /* Endereço desta tela com um parâmetro trocado — é assim que a gaveta abre e
+     fecha sem perder a página em que a pessoa estava. */
+  const endereco = (mudancas: Record<string, string | null>) =>
+    comParametros('/inventario', params, { ...mudancas, pagina: params.pagina ?? null })
+
+  const gavetaAberta = Boolean(params.aberto || params.novo)
+
   return (
-    <>
+    <div className={gavetaAberta ? 'lg:pr-[35rem]' : undefined}>
+      {gavetaAberta && (
+        <GavetaDoAtivo
+          id={params.aberto}
+          novo={Boolean(params.novo)}
+          fechar={endereco({ aberto: null, novo: null })}
+        />
+      )}
+
       <PageHeader
         title="Inventário de TI"
         description="Equipamentos, periféricos e licenças, com ciclo de vida rastreado."
@@ -158,13 +140,26 @@ export default async function InventarioPage({
              (LG-11): quem está com cada equipamento, desde quando e por quê. */
           /* `<a download>`, e não `<Link>`: `/api/exportar/...` é um Route
              Handler, e navegação do lado do cliente não baixa arquivo nenhum. */
-          <a
-            download
-            href="/api/exportar/custodia"
-            className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]"
-          >
-            Exportar custódia
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a
+              download
+              href="/api/exportar/custodia"
+              className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]"
+            >
+              Exportar custódia
+            </a>
+            {/* O cadastro deixou de ocupar um terço da tela o dia inteiro e
+                virou um botão — que só existe para quem pode criar. */}
+            {podeCriar && (
+              <Link
+                href={endereco({ novo: '1' }) as Route}
+                data-testid="novo-ativo"
+                className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]"
+              >
+                Novo ativo
+              </Link>
+            )}
+          </div>
         }
       />
 
@@ -180,7 +175,10 @@ export default async function InventarioPage({
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      {/* A tela inteira é a lista. A coluna de 23rem com o formulário de
+          cadastro — aberta o tempo todo, inclusive para quem só consulta —
+          virou a gaveta de "Novo ativo". */}
+      <div>
         <div>
           {list.length > 0 ? (
             <>
@@ -195,13 +193,20 @@ export default async function InventarioPage({
                 ]}
               >
                 {list.map((a) => (
-                  <Fragment key={a.id}>
-                  <tr className="hover:bg-[var(--color-surface-2)]">
+                  <tr key={a.id} className="hover:bg-[var(--color-surface-2)]">
                     <Td className="font-mono text-xs">{a.asset_tag ?? '—'}</Td>
                     <Td>
-                      <span className="font-medium text-[var(--color-ink)]">
+                      {/* O nome abre a gaveta. Antes, abrir um ativo era
+                          expandir um painel embaixo da linha, que empurrava
+                          todas as outras para baixo e fazia a lista "pular"
+                          debaixo do cursor. */}
+                      <Link
+                        href={endereco({ aberto: a.id }) as Route}
+                        data-testid="abrir-ativo"
+                        className="font-medium text-[var(--color-brand-ink)] hover:underline"
+                      >
                         {a.brand} {a.model}
-                      </span>
+                      </Link>
                       <p className="text-xs text-[var(--color-ink-3)]">
                         {assetTypeLabel[a.asset_type] ?? a.asset_type}
                       </p>
@@ -225,42 +230,6 @@ export default async function InventarioPage({
                     </Td>
                     <Td className="text-[var(--color-ink-2)]">{formatDate(a.warranty_until)}</Td>
                   </tr>
-                  {(podeEditar || podeAnexar || podeCustodiar) && (
-                    <tr>
-                      <Td className="bg-[var(--color-surface-2)]" colSpan={7}>
-                        <EditPanel
-                          title={`Ficha, custódia e anexos — ${[a.brand, a.model].filter(Boolean).join(' ') || a.asset_tag || 'ativo'}`}
-                        >
-                          <div className="flex flex-col gap-4">
-                            {podeEditar && (
-                              <EditAssetForm
-                                asset={a}
-                                branches={branches}
-                                areas={listaAreas}
-                                agents={agents}
-                                suppliers={suppliers ?? []}
-                              />
-                            )}
-                            <Custodia
-                              asset={a}
-                              eventos={custodiaPorAtivo.get(a.id) ?? []}
-                              branches={branches}
-                              areas={listaAreas}
-                              agents={agents}
-                              podeCustodiar={podeCustodiar}
-                            />
-                            <Attachments
-                              entity="ativos"
-                              entityId={a.id}
-                              records={anexosPorAtivo.get(a.id) ?? []}
-                              title="Notas fiscais e fotos"
-                            />
-                          </div>
-                        </EditPanel>
-                      </Td>
-                    </tr>
-                  )}
-                  </Fragment>
                 ))}
               </Table>
               <Pager
@@ -274,94 +243,15 @@ export default async function InventarioPage({
           ) : (
             <EmptyState
               title="Nenhum ativo cadastrado"
-              description="Cadastre o primeiro equipamento no formulário ao lado."
+              description={
+                podeCriar
+                  ? 'Cadastre o primeiro equipamento em "Novo ativo".'
+                  : 'Nenhum equipamento alcançável pelo seu perfil.'
+              }
             />
           )}
         </div>
-
-        {podeCriar && (
-          <Card title="Novo ativo">
-            <NewAssetForm
-              branches={branches}
-              areas={listaAreas}
-              agents={agents}
-              suppliers={suppliers ?? []}
-            />
-          </Card>
-        )}
       </div>
-    </>
-  )
-}
-
-/**
- * Custódia do equipamento: quem tem, onde está, e o rastro de como chegou lá.
- *
- * O banco guarda esse histórico desde a migração 0007 e nenhuma tela o mostrava
- * — a trigger gravava evento a cada troca de responsável, filial ou área, e o
- * registro ficava só no banco. A timeline É o valor do módulo: sem ela, "quem
- * está com o notebook" é um campo que alguém sobrescreve e ninguém audita.
- */
-function Custodia({
-  asset,
-  eventos,
-  branches,
-  areas,
-  agents,
-  podeCustodiar,
-}: {
-  asset: ItAsset
-  eventos: CustodyEvent[]
-  branches: Branch[]
-  areas: BranchArea[]
-  agents: Profile[]
-  podeCustodiar: boolean
-}) {
-  return (
-    <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold text-[var(--color-ink)]">Custódia</h3>
-        <span className="text-xs text-[var(--color-ink-3)]">
-          {eventos.length === 0 ? 'sem movimentação' : `${eventos.length} evento(s)`}
-        </span>
-      </div>
-
-      {podeCustodiar && (
-        <div className="mb-3">
-          <EditPanel label="Transferir custódia" title="Transferir custódia">
-            <CustodyForm asset={asset} branches={branches} areas={areas} agents={agents} />
-          </EditPanel>
-        </div>
-      )}
-
-      {eventos.length > 0 ? (
-        <ol className="flex flex-col gap-2">
-          {eventos.slice(0, 10).map((e) => (
-            <li key={e.id} className="text-sm text-[var(--color-ink-2)]">
-              <span className="font-medium text-[var(--color-ink)]">
-                {formatDate(e.changed_at)}
-              </span>{' '}
-              · {custodyEventLabel[e.event_type] ?? e.event_type}
-              {' · '}
-              <span className="text-[var(--color-ink-3)]">
-                {custodyReasonLabel[e.reason] ?? e.reason}
-              </span>
-              <p className="text-xs text-[var(--color-ink-3)]">
-                {e.previous_user_name ?? 'sem responsável'} → {e.current_user_name ?? 'sem responsável'}
-                {e.performed_by_name && ` · registrado por ${e.performed_by_name}`}
-              </p>
-              {e.reason_note && (
-                <p className="text-xs italic text-[var(--color-ink-3)]">{e.reason_note}</p>
-              )}
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="text-sm italic text-[var(--color-ink-3)]">
-          Nenhuma movimentação registrada. O histórico é gravado pelo banco a cada troca de
-          responsável, filial ou área.
-        </p>
-      )}
-    </section>
+    </div>
   )
 }
