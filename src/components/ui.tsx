@@ -1,5 +1,12 @@
 import Link from 'next/link'
-import { cloneElement, isValidElement, type ReactNode } from 'react'
+import {
+  Children,
+  Fragment,
+  cloneElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 import { enderecoDaPagina, totalDePaginas } from '@/lib/data/paginacao'
 import type { SlaState, TicketStatus } from '@/lib/types'
 import { slaStateLabel, ticketStatusLabel, ticketStatusTone } from '@/lib/i18n'
@@ -22,7 +29,10 @@ const toneClasses: Record<Tone, string> = {
 export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: ReactNode }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${toneClasses[tone]}`}
+      /* `whitespace-nowrap`: "Aguardando terceiro" e "SLA estourado" quebravam
+         em duas linhas dentro da coluna e empurravam a altura da linha inteira
+         — numa lista compacta isso custa duas linhas de dado por chamado. */
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${toneClasses[tone]}`}
     >
       {children}
     </span>
@@ -323,14 +333,78 @@ export function ErrorNote({ children }: { children: ReactNode }) {
 }
 
 /**
- * Tabela com rolagem horizontal em tela estreita.
+ * Percorre as linhas e carimba em cada célula o nome da sua coluna.
  *
- * `tabIndex={0}` e `role="region"` no invólucro não são enfeite: um `div` com
- * `overflow-x` só rola com ponteiro ou toque. Quem navega por teclado chegava ao
- * fim da tabela sem nunca ver as últimas colunas — e as últimas colunas são
- * sempre as de situação e ação, que é onde está o trabalho (WCAG 2.1.1). Com
- * `tabIndex`, as setas rolam a região; com `role` e `aria-label`, o leitor de
- * tela diz o que é aquilo antes de entrar.
+ * É isso que permite a tabela virar ficha no celular sem que nenhuma das 33
+ * telas precise ser reescrita: o rótulo que estava no `<thead>` passa a viajar
+ * junto com o dado, e o CSS o exibe quando a coluna deixa de existir.
+ *
+ * Três detalhes que não são opcionais:
+ *
+ * - **`Fragment` é atravessado.** Várias telas envolvem a linha do registro e a
+ *   linha do painel de edição num `<Fragment>`; sem recursão, essas tabelas
+ *   ficariam sem rótulo nenhum, que é justamente onde a ficha mais precisa.
+ * - **`colSpan` não recebe rótulo** e avança o índice pelo número de colunas
+ *   que ocupa. A linha do painel não é um dado de coluna, e numerá-la como se
+ *   fosse desalinharia todas as células seguintes.
+ * - **`false` e `null` passam intactos.** `{abre && <tr>…}` é o idioma usado em
+ *   todas essas telas.
+ */
+function comRotulos(nos: ReactNode, head: string[]): ReactNode {
+  return Children.map(nos, (no) => {
+    if (!isValidElement(no)) return no
+    const props = no.props as { children?: ReactNode }
+
+    if (no.type === Fragment) {
+      return cloneElement(
+        no as ReactElement<{ children?: ReactNode }>,
+        {},
+        comRotulos(props.children, head),
+      )
+    }
+
+    if (no.type !== 'tr') return no
+
+    let coluna = 0
+    const celulas = Children.map(props.children, (celula) => {
+      if (!isValidElement(celula)) return celula
+      const { colSpan } = celula.props as { colSpan?: number }
+      const largura = colSpan && colSpan > 1 ? colSpan : 1
+      const rotulo = largura > 1 ? undefined : head[coluna]
+      coluna += largura
+      if (!rotulo) return celula
+      return cloneElement(celula as ReactElement<{ 'data-rotulo'?: string }>, {
+        'data-rotulo': rotulo,
+      })
+    })
+
+    return cloneElement(no as ReactElement<{ children?: ReactNode }>, {}, celulas)
+  })
+}
+
+/**
+ * Tabela no computador, ficha no celular.
+ *
+ * ## Por que não bastava rolar de lado
+ *
+ * Bastava, e era o que havia: `min-w-[52rem]` com `overflow-x-auto`. Num
+ * aparelho de 390px isso significa que **toda** listagem do sistema chegava
+ * cortada na terceira coluna, e as colunas que ficam de fora são sempre as do
+ * fim — situação, prazo, ação —, que é onde está o trabalho. Em duas telas o
+ * estouro vazava do invólucro e empurrava a PÁGINA inteira para os lados: 892px
+ * de documento em 390px de tela, com o cabeçalho deslizando junto.
+ *
+ * Abaixo de `lg` a tabela vira uma pilha de fichas, cada célula com o seu
+ * rótulo à esquerda (ver `.tabela` em `globals.css`). Nada de componente
+ * paralelo: é a mesma marcação, a mesma ordem e o mesmo conteúdo — uma segunda
+ * implementação para celular divergiria da primeira no mês seguinte.
+ *
+ * ## `tabIndex={0}` e `role="region"`
+ *
+ * Não são enfeite: um `div` com `overflow-x` só rola com ponteiro ou toque. Quem
+ * navega por teclado chegava ao fim da tabela sem nunca ver as últimas colunas
+ * (WCAG 2.1.1). Com `tabIndex`, as setas rolam a região; com `role` e
+ * `aria-label`, o leitor de tela diz o que é aquilo antes de entrar.
  */
 export function Table({
   head,
@@ -346,9 +420,9 @@ export function Table({
       role="region"
       aria-label={label}
       tabIndex={0}
-      className="overflow-x-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]"
+      className="w-full min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] lg:overflow-x-auto"
     >
-      <table className="w-full min-w-[52rem] border-collapse text-sm">
+      <table className="tabela w-full border-collapse text-sm lg:min-w-[52rem]">
         <thead>
           <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-left">
             {head.map((h) => (
@@ -362,7 +436,7 @@ export function Table({
             ))}
           </tr>
         </thead>
-        <tbody>{children}</tbody>
+        <tbody>{comRotulos(children, head)}</tbody>
       </table>
     </div>
   )
@@ -372,15 +446,27 @@ export function Td({
   children,
   className = '',
   colSpan,
+  'data-rotulo': rotulo,
 }: {
   children: ReactNode
   className?: string
   /** Usado pelas linhas que abrem um painel abaixo do registro. */
   colSpan?: number
+  /** O nome da coluna, carimbado por `Table`. É o que vira rótulo na ficha. */
+  'data-rotulo'?: string
 }) {
   return (
-    <td colSpan={colSpan} className={`border-b border-[var(--color-border)] px-4 py-3 ${className}`}>
-      {children}
+    <td
+      colSpan={colSpan}
+      data-rotulo={rotulo}
+      className={`border-b border-[var(--color-border)] px-4 py-3 ${className}`}
+    >
+      {/* O invólucro existe por causa da ficha de celular: lá a célula é um
+          `flex` com o rótulo à esquerda, e sem ele cada filho do `<td>` viraria
+          uma coluna solta — "Dell Latitude 5450" e "Notebook" apareciam lado a
+          lado, brigando pela mesma faixa de 10 caracteres. Com o invólucro, o
+          valor inteiro é UM item do flex, e volta a empilhar como na tabela. */}
+      <div className="valor-da-celula">{children}</div>
     </td>
   )
 }

@@ -44,71 +44,105 @@ export function PaletaDeComandos({ telas }: { telas: TelaDaPaleta[] }) {
   const router = useRouter()
   const [aberta, setAberta] = useState(false)
   const [termo, setTermo] = useState('')
-  const [indice, setIndice] = useState(0)
-  const [registros, setRegistros] = useState<ResultadoDeBusca[]>([])
-  const [buscando, setBuscando] = useState(false)
   const campoRef = useRef<HTMLInputElement>(null)
   const listaRef = useRef<HTMLDivElement>(null)
 
+  /*
+   * O item escolhido guarda JUNTO o termo em que a escolha foi feita, e a
+   * resposta da busca guarda JUNTO a pergunta que a produziu.
+   *
+   * Parece rodeio e é o contrário: sem isso, cada um precisaria de um efeito
+   * para se zerar quando o termo muda — três efeitos sincronizando estado com
+   * estado, que é o padrão que o React desencoraja por causar renderizações em
+   * cascata, e que o lint deste projeto recusa. Guardando o contexto, tanto o
+   * índice quanto os registros são DERIVADOS: se o termo mudou, a escolha
+   * antiga e a resposta antiga simplesmente não valem mais, sem nada para
+   * limpar.
+   *
+   * O ganho prático é o defeito que some: a resposta da terceira letra não
+   * pode mais sobrescrever a lista da quinta, porque ela não casa com o termo
+   * atual e é descartada na renderização.
+   */
+  const [cursor, setCursor] = useState({ q: '', i: 0 })
+  const [resposta, setResposta] = useState<{ q: string; lista: ResultadoDeBusca[] }>({
+    q: '',
+    lista: [],
+  })
+
+  const q = termo.trim()
+  /* Mesmo critério da rota: um dígito é o número de um chamado, uma letra é
+     ruído. Repetir a regra aqui evita uma ida ao servidor que já sabemos que
+     volta vazia. */
+  const minimo = /^\d+$/.test(q) ? 1 : 2
+  const consultavel = aberta && q.length >= minimo
+
+  /* `useMemo` aqui é por identidade, não por custo: a lista entra na dependência
+     do `useMemo` dos itens, e um array novo a cada renderização o invalidaria
+     sempre. */
+  const registros = useMemo(
+    () => (consultavel && resposta.q === q ? resposta.lista : []),
+    [consultavel, resposta, q],
+  )
+  const buscando = consultavel && resposta.q !== q
+  const indice = cursor.q === termo ? cursor.i : 0
+
+  const escolher = useCallback((i: number, termoAtual: string) => {
+    setCursor({ q: termoAtual, i })
+  }, [])
+
   /* --- abrir e fechar ---------------------------------------------------- */
+  const abrir = useCallback(() => {
+    setTermo('')
+    setCursor({ q: '', i: 0 })
+    setAberta(true)
+  }, [])
+
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
-        setAberta((v) => !v)
+        if (aberta) setAberta(false)
+        else abrir()
       }
     }
     window.addEventListener('keydown', aoTeclar)
     return () => window.removeEventListener('keydown', aoTeclar)
-  }, [])
+  }, [aberta, abrir])
 
+  /* O foco precisa do próximo quadro: o campo ainda não existe no DOM quando o
+     estado muda. Este efeito não sincroniza estado — ele mexe no DOM, que é
+     exatamente para o que efeito serve. */
   useEffect(() => {
     if (!aberta) return
-    setTermo('')
-    setIndice(0)
-    setRegistros([])
-    /* O foco precisa do próximo quadro: o campo ainda não existe no DOM quando
-       o estado muda. */
     const t = setTimeout(() => campoRef.current?.focus(), 0)
     return () => clearTimeout(t)
   }, [aberta])
 
   /* --- busca de registros, com atraso e cancelamento --------------------- */
   useEffect(() => {
-    const q = termo.trim()
-    /* Mesmo critério da rota: um dígito é o número de um chamado, uma letra é
-       ruído. Repetir a regra aqui evita uma ida ao servidor que já sabemos que
-       volta vazia. */
-    const minimo = /^\d+$/.test(q) ? 1 : 2
-    if (!aberta || q.length < minimo) {
-      setRegistros([])
-      setBuscando(false)
-      return
-    }
+    if (!consultavel) return
     const controle = new AbortController()
-    setBuscando(true)
     /*
      * 180ms: curto o bastante para parecer instantâneo, longo o bastante para
-     * não disparar uma busca por letra digitada. O `AbortController` é o que
-     * impede a resposta da terceira letra de chegar depois da quinta e
-     * sobrescrever o resultado certo pelo errado — defeito que só aparece em
-     * rede ruim, que é justamente onde dói.
+     * não disparar uma busca por letra digitada. O `AbortController` evita
+     * manter em voo requisições que ninguém mais espera.
      */
     const t = setTimeout(() => {
       fetch(`/api/busca?q=${encodeURIComponent(q)}`, { signal: controle.signal })
         .then((r) => (r.ok ? r.json() : { resultados: [] }))
-        .then((d: { resultados: ResultadoDeBusca[] }) => setRegistros(d.resultados ?? []))
-        .catch(() => {
-          /* Abortada ou offline: a paleta continua servindo telas e ações. */
+        .then((d: { resultados: ResultadoDeBusca[] }) => setResposta({ q, lista: d.resultados ?? [] }))
+        .catch((e: Error) => {
+          /* Abortada é o caminho normal; offline encerra a espera com lista
+             vazia, para a paleta não ficar "buscando…" para sempre. */
+          if (e.name !== 'AbortError') setResposta({ q, lista: [] })
         })
-        .finally(() => setBuscando(false))
     }, 180)
 
     return () => {
       controle.abort()
       clearTimeout(t)
     }
-  }, [termo, aberta])
+  }, [consultavel, q])
 
   /* --- o que aparece ----------------------------------------------------- */
   const normal = (s: string) =>
@@ -156,10 +190,6 @@ export function PaletaDeComandos({ telas }: { telas: TelaDaPaleta[] }) {
     return [...telasFiltradas, ...acoes, ...regs]
   }, [telas, termo, registros])
 
-  useEffect(() => {
-    setIndice(0)
-  }, [termo])
-
   const ir = useCallback(
     (href: string) => {
       setAberta(false)
@@ -176,10 +206,10 @@ export function PaletaDeComandos({ telas }: { telas: TelaDaPaleta[] }) {
     if (!itens.length) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setIndice((i) => (i + 1) % itens.length)
+      escolher((indice + 1) % itens.length, termo)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setIndice((i) => (i - 1 + itens.length) % itens.length)
+      escolher((indice - 1 + itens.length) % itens.length, termo)
     } else if (e.key === 'Enter') {
       e.preventDefault()
       const alvo = itens[indice]
@@ -198,7 +228,7 @@ export function PaletaDeComandos({ telas }: { telas: TelaDaPaleta[] }) {
     <>
       <button
         type="button"
-        onClick={() => setAberta(true)}
+        onClick={abrir}
         data-testid="abrir-paleta"
         className="hidden items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-ink-3)] transition-colors hover:bg-[var(--color-surface-3)] md:flex"
       >
@@ -263,7 +293,7 @@ export function PaletaDeComandos({ telas }: { telas: TelaDaPaleta[] }) {
                     <button
                       type="button"
                       data-escolhido={i === indice ? '1' : '0'}
-                      onMouseEnter={() => setIndice(i)}
+                      onMouseEnter={() => escolher(i, termo)}
                       onClick={() => ir(item.href)}
                       className={`flex w-full items-center gap-2 px-4 py-1.5 text-left text-sm ${
                         i === indice

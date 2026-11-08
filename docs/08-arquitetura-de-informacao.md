@@ -232,6 +232,11 @@ Quem não alcança bloco nenhum recebe um aviso explícito, em vez de uma tela v
 | Área com nome repetido é recusada sem diferenciar maiúsculas | `demo/tests/prototipo.spec.mjs` §13 |
 | Operador de TI consulta o parque e não transfere custódia | `demo/tests/prototipo.spec.mjs` §14 |
 | **O menu abre e fecha**: clique, setinha girando, preferência que persiste, grupo da tela atual abrindo sozinho, Enter no teclado | `demo/tests/local/menu.spec.mjs` |
+| **A paleta**: atalho em qualquer tela, telas/ações/registros, teclado, e a busca que NÃO é porta dos fundos | `demo/tests/local/paleta.spec.mjs` |
+| **A lista**: visões e contagens, filtro sem botão, ordenação, densidade lembrada, teclado, ação em massa, e a barra que não oferece o que a permissão não dá | `demo/tests/local/lista.spec.mjs` |
+| **Celular**: nenhuma das cinco telas conferidas rola de lado; a tabela vira ficha | `demo/tests/local/lista.spec.mjs` §8 |
+| Nenhum texto da URL vira nome de coluna na consulta (inclui `__proto__`) | `src/lib/data/ordenacao.test.ts` |
+| O endereço preserva filtro, remove o que esvazia e volta para a página 1 | `src/lib/data/endereco.test.ts` |
 
 O teste de navegador não é enfeite: foi ele que achou `ROLE_RANK` invertido no
 protótipo e as regras de perfil paradas antes da migração 0020 — dois defeitos cujo
@@ -239,11 +244,52 @@ sintoma era um **botão ausente**, não um erro.
 
 ## 8. Lacunas
 
-- **`[LACUNA]` Busca global.** Com 25 itens, procurar pelo nome vale mais que
-  navegar. Não implementada: exige indexar ticket, ativo, título e cliente, e a
-  decisão de o que entra na busca é de produto.
+- ~~**`[LACUNA]` Busca global.**~~ **Resolvida** pela paleta de comandos: ela
+  busca telas, ações e registros (chamado, ativo, cliente) na mesma caixa, sob
+  RLS e sob a mesma permissão granular das telas (`src/app/api/busca/route.ts`).
 - **`[LACUNA]` Favoritos ou itens recentes.** Quem usa três telas todo dia não
   deveria percorrer o menu. Depende de gravar preferência por usuário.
-- **`[DECISÃO PENDENTE]` Barra compacta de celular.** Hoje é a lista plana sem
-  grupos, porque cabeçalho de grupo numa tira horizontal ocuparia o espaço dos
-  próprios itens. Com 25 itens ela fica longa; a alternativa é um menu em gaveta.
+- ~~**`[DECISÃO PENDENTE]` Barra compacta de celular.**~~ **Decidida**: gaveta,
+  com os mesmos oito grupos do computador, reaproveitando `SidebarNav`. A tira
+  horizontal saiu.
+- **`[LACUNA]` Visões salvas pela pessoa.** As cinco visões da lista de chamados
+  são fixas, escritas no código. Guardar uma visão própria ("críticos da minha
+  filial sem atendente") exige tabela com RLS por dono — está descrito na §9 e
+  não foi feito nesta fase, de propósito: o padrão da lista precisa ser aprovado
+  antes de ganhar persistência.
+
+## 9. A lista de trabalho
+
+A lista de chamados deixou de ser uma tabela com formulário em cima e virou o
+padrão que as outras 17 listagens vão seguir. O que mudou, e por quê:
+
+| Antes | Agora | Por quê |
+|---|---|---|
+| 5 linhas por tela de 900px | 14 linhas (densidade compacta, lembrada) | Trinta chamados abertos eram seis rolagens para ter ideia do dia |
+| Botão "Filtrar" entre a pergunta e a resposta | Filtro instantâneo em chips; o filtro É o endereço | Uma lista filtrada é uma pergunta, e pergunta se manda para outra pessoa |
+| Ordem fixa por score, invisível | Cabeçalho ordena, com `aria-sort` e direção na URL | "O que vence primeiro" era a pergunta mais feita e não tinha resposta |
+| Uma ação por vez, três telas por chamado | Seleção múltipla e barra de ação em massa | Atribuir três chamados eram doze cliques |
+| Nada de teclado | `J`/`K` anda, `X` marca, `Enter` abre, `Esc` limpa | É o padrão de Linear, Superhuman e Front; quem trabalha na lista o dia todo não quer o mouse |
+| Coluna de SLA repetindo "No prazo" | O prazo é o semáforo: cor + palavra | 160px de coluna para repetir a mesma palavra, que o título não tinha |
+
+Três decisões que não são óbvias:
+
+- **As visões são parâmetros, não um modo.** "Sem atendente" é
+  `?atendente=nenhum`, não `?visao=sem`. Por isso a aba combina com qualquer
+  filtro, o endereço continua explicando a si mesmo, e não existe um segundo
+  caminho de filtragem no servidor para manter em dia com o primeiro.
+- **A seleção é o único estado em memória.** Filtro, ordem e página vivem na
+  URL; a seleção morre ao trocar de página — de propósito, porque uma ação em
+  massa sobre chamados que a pessoa não está vendo é o defeito caro. Quem zera
+  é a `key` do componente, derivada da consulta; não há efeito limpando estado.
+- **A ação em massa escreve uma linha de cada vez.** A máquina de estados vive
+  no banco (ADR-007): num `update … in (…)`, um chamado em transição proibida
+  derrubaria os outros quarenta e nove. O retorno diz quantos ficaram de fora.
+  E a permissão é conferida POR AÇÃO — não existe "permissão de lote".
+
+**A tabela vira ficha no celular.** Abaixo de `lg`, `<Table>` empilha cada linha
+com o rótulo da coluna ao lado do valor (`.tabela` em `globals.css`). O rótulo
+vem do próprio `<thead>`, carimbado em cada célula — não há lista de nomes
+duplicada, e renomear uma coluna continua sendo um lugar só. Antes disso, duas
+telas empurravam a PÁGINA inteira para os lados (892px de documento em 390px de
+aparelho) e todas cortavam na terceira coluna.

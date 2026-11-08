@@ -24,19 +24,24 @@ import { usePathname } from 'next/navigation'
  * olhando para o menu, com a tela nova escondida atrás dele.
  */
 export function MenuCelular({ children }: { children: ReactNode }) {
-  const [aberto, setAberto] = useState(false)
   const caminho = usePathname()
   const fecharRef = useRef<HTMLButtonElement>(null)
 
-  /* Trocou de tela: a gaveta fez o trabalho dela e sai da frente. */
-  useEffect(() => {
-    setAberto(false)
-  }, [caminho])
+  /*
+   * A gaveta guarda EM QUE TELA foi aberta, e "está aberta" é uma comparação
+   * com a tela atual. Trocou de tela, a comparação falha e ela se fecha
+   * sozinha — sem um efeito observando o caminho para zerar estado, que é o
+   * padrão que causa renderização em cascata (e que o lint deste projeto
+   * recusa, com razão).
+   */
+  const [abertaEm, setAbertaEm] = useState<string | null>(null)
+  const aberto = abertaEm !== null && abertaEm === caminho
+  const setAberto = (v: boolean) => setAbertaEm(v ? caminho : null)
 
   useEffect(() => {
     if (!aberto) return
     const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setAberto(false)
+      if (e.key === 'Escape') setAbertaEm(null)
     }
     window.addEventListener('keydown', aoTeclar)
     /* Trava a rolagem do fundo: sem isso, arrastar a gaveta rola a página

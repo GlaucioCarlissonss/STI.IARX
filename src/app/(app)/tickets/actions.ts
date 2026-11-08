@@ -195,6 +195,129 @@ export async function transferQueue(_prev: ActionState, formData: FormData): Pro
   return { success: 'Ticket transferido.' }
 }
 
+/* --- Ações em massa ------------------------------------------------------ */
+
+const TETO_DO_LOTE = 50
+
+const loteSchema = z.object({
+  ids: z.array(uuid).min(1, 'Selecione ao menos um chamado.').max(TETO_DO_LOTE),
+  acao: z.enum(['atribuir', 'status', 'fila']),
+  valor: z.string(),
+  motivo: z.string().trim().optional(),
+})
+
+/**
+ * Atribuir, mudar status ou mover de fila vários chamados de uma vez.
+ *
+ * ## Por que uma linha de cada vez, e não um `update … in (…)`
+ *
+ * Porque a máquina de estados vive no banco (ADR-007) e é uma trigger: num
+ * `update` único, UM chamado numa transição proibida derruba a instrução
+ * inteira, e os outros quarenta e nove — perfeitamente válidos — não mudam.
+ * Pior: a pessoa recebe uma mensagem sobre um chamado que ela talvez nem
+ * lembre de ter marcado, e não tem como saber o que aconteceu com o resto.
+ *
+ * Com uma escrita por chamado, o que podia ser feito é feito, e o retorno diz
+ * exatamente quantos ficaram de fora. É mais viagem ao banco; é a diferença
+ * entre uma ação em massa que funciona e uma que falha por tudo ou nada.
+ *
+ * ## A permissão é conferida por AÇÃO
+ *
+ * Não existe uma permissão "mexer em lote": atribuir em lote exige a mesma
+ * chave que atribuir um, e mudar status em lote exige a de mudar status. O
+ * lote é uma conveniência da tela, não um atalho por fora do controle de
+ * acesso — e o RLS continua sendo quem recorta o tenant, em cada uma das
+ * escritas.
+ */
+export async function acaoEmLote(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const { profile } = await requireSession()
+
+  const parsed = loteSchema.safeParse({
+    ids: formData.getAll('id').map(String),
+    acao: formData.get('acao'),
+    valor: String(formData.get('valor') ?? ''),
+    motivo: formData.get('motivo') ?? undefined,
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Seleção inválida.' }
+  }
+
+  const { ids, acao, valor, motivo } = parsed.data
+
+  const permissao = {
+    atribuir: 'helpdesk.tickets.atribuir',
+    status: 'helpdesk.tickets.mudar_status',
+    fila: 'helpdesk.tickets.transferir',
+  }[acao]
+  const gate = await requirePermission(permissao)
+  if ('error' in gate) return gate
+
+  let campos: Record<string, string | null>
+  if (acao === 'atribuir') {
+    // Valor vazio é intenção legítima: tirar o atendente de tudo que está
+    // marcado é como se devolve um lote para a fila.
+    if (valor && !uuid.safeParse(valor).success) return { error: 'Atendente inválido.' }
+    campos = { assignee_id: valor || null }
+  } else if (acao === 'status') {
+    const estado = statusSchema.shape.status.safeParse(valor)
+    if (!estado.success) return { error: 'Status inválido.' }
+    campos = { status: estado.data }
+  } else {
+    if (!uuid.safeParse(valor).success) return { error: 'Fila inválida.' }
+    // RF-FIL-05: transferência exige motivo. Em lote a regra é a mesma — um
+    // motivo em branco para quarenta chamados é exatamente o histórico que
+    // ninguém consegue reconstituir seis meses depois.
+    if (!motivo || motivo.length < 3) return { error: 'Descreva o motivo da transferência.' }
+    campos = { queue_id: valor }
+  }
+
+  const supabase = await createClient()
+
+  const resultados = await Promise.all(
+    ids.map(async (id) => {
+      const { data, error } = await supabase
+        .from('tickets')
+        .update({ ...campos, change_source: 'ui' })
+        .eq('id', id)
+        .select('id')
+      // Sem erro e sem linha é RLS negando em silêncio: conta como recusado.
+      return !error && (data?.length ?? 0) > 0
+    }),
+  )
+
+  const feitos = resultados.filter(Boolean).length
+  const recusados = ids.length - feitos
+
+  if (feitos === 0) {
+    return { error: 'Nenhum chamado pôde ser alterado. Verifique a transição e a permissão.' }
+  }
+
+  if (acao === 'fila' && motivo) {
+    await supabase.from('ticket_history').insert(
+      ids.map((id) => ({
+        tenant_id: profile.tenant_id,
+        ticket_id: id,
+        actor_id: profile.id,
+        field: 'queue_transfer_reason',
+        new_value: motivo,
+        change_source: 'ui',
+        reason: motivo,
+      })),
+    )
+  }
+
+  revalidatePath('/tickets')
+  revalidatePath('/filas')
+  revalidatePath('/painel')
+
+  const plural = feitos === 1 ? 'chamado atualizado' : 'chamados atualizados'
+  return {
+    success: recusados
+      ? `${feitos} ${plural}; ${recusados} recusado(s) pela transição ou pela permissão.`
+      : `${feitos} ${plural}.`,
+  }
+}
+
 const commentSchema = z.object({
   ticket_id: uuid,
   body: z

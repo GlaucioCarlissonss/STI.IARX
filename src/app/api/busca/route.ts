@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { paraIlike } from '@/lib/data/ilike'
 import { allowed } from '@/lib/session'
 import { ticketStatusLabel } from '@/lib/i18n'
 import type { TicketStatus } from '@/lib/types'
@@ -45,11 +46,6 @@ export interface ResultadoDeBusca {
   titulo: string
   detalhe: string
   href: string
-}
-
-/** `%` e `_` são curingas no `ilike`: escapados, buscam a si mesmos. */
-function paraIlike(termo: string): string {
-  return `%${termo.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
 }
 
 export async function GET(request: Request) {

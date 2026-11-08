@@ -401,3 +401,74 @@ h3 {
 .tv-row-text {
   font-size: clamp(1rem, 1.5vw, 1.9rem);
 }
+
+/* ==========================================================================
+   A tabela vira ficha no celular
+   ==========================================================================
+
+   Abaixo de `lg` as colunas deixam de existir e cada linha vira um bloco com
+   "rótulo: valor". O rótulo vem do `data-rotulo` que `<Table>` carimba em cada
+   célula a partir do próprio `<thead>` — ou seja, não há lista de nomes
+   duplicada aqui dentro, e renomear uma coluna continua sendo um lugar só.
+
+   Por que CSS e não um segundo componente: são 33 tabelas no sistema. Uma
+   variante de celular para cada uma seriam 33 arquivos para manter em dia, e o
+   que acontece é sempre o mesmo — a variante que ninguém olha para de
+   acompanhar a tabela que todo mundo olha. */
+@media (width < 64rem) {
+  .tabela,
+  .tabela tbody,
+  .tabela tr {
+    display: block;
+    width: 100%;
+  }
+
+  /* O cabeçalho some porque o rótulo passou a viajar com o dado. */
+  .tabela thead {
+    display: none;
+  }
+
+  .tabela tr {
+    border-bottom: 1px solid var(--color-border);
+    padding: 0.4rem 0 0.55rem;
+  }
+
+  .tabela tr:last-child {
+    border-bottom: 0;
+  }
+
+  .tabela td {
+    display: flex;
+    align-items: baseline;
+    gap: 0.85rem;
+    border-bottom: 0;
+    padding: 0.2rem 1rem;
+    /* Um serial, um CNPJ ou uma URL sem espaço não podem empurrar a ficha para
+       fora da tela — foi exatamente assim que a página inteira passou a rolar
+       de lado. */
+    overflow-wrap: anywhere;
+  }
+
+  .tabela td[data-rotulo]::before {
+    content: attr(data-rotulo);
+    flex: none;
+    width: 7.25rem;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    line-height: 1.5;
+    text-transform: uppercase;
+    color: var(--color-ink-3);
+  }
+
+  /* A linha do painel de edição não é uma coluna: ocupa a ficha inteira. */
+  .tabela td[colspan] {
+    display: block;
+    padding: 0.6rem 0.75rem;
+  }
+
+  .tabela td > .valor-da-celula {
+    flex: 1;
+    min-width: 0;
+  }
+}
