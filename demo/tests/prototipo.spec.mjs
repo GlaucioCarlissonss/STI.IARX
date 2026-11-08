@@ -19,7 +19,11 @@
  * ponteiro. É legítimo: o protótipo usa delegação de evento no documento.
  */
 import { chromium } from 'playwright'
-const b = await chromium.launch({ executablePath:'/opt/pw-browsers/chromium-1194/chrome-linux/chrome' })
+/* Sem `executablePath`: o caminho estava fixo numa versão do navegador
+   (`chromium-1194`) e deixou de existir quando o ambiente atualizou. O
+   Playwright instalado sabe onde está o seu próprio navegador; dizer a ele
+   onde procurar só cria uma data de validade para a suíte. */
+const b = await chromium.launch()
 const p = await b.newPage({ viewport:{ width:1440, height:1000 } })
 const erros = []
 p.on('pageerror', e => erros.push('PAGEERROR: ' + e.message))

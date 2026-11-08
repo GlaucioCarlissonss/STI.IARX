@@ -3432,6 +3432,73 @@
         </tr>`).join('')}</tbody></table></div>`;
   };
 
+  /*
+   * Peças incorporadas.
+   *
+   * Havia nove protótipos publicados em nove endereços diferentes, e ninguém —
+   * nem quem fez — sabia dizer qual era o atual. Agora é um só: esta
+   * ferramenta. As peças que tinham conteúdo PRÓPRIO passaram a morar dentro
+   * dela, como páginas; as que eram versão anterior desta mesma ferramenta
+   * foram absorvidas e não existem mais em separado.
+   *
+   * Por que como página, e não copiadas para dentro de uma tela: são
+   * aplicações inteiras, com os próprios dados e a própria navegação. Reescrevê
+   * -las como telas daqui seria refazer o trabalho e, no caminho, perder
+   * detalhe. Como página, o endereço é um só e nada se perde.
+   */
+  const PECAS = [
+    ['Guia da Plataforma', 'pecas/guia-da-plataforma.html',
+     'O texto de apresentação: o que cada tela faz, quem abre o quê, o que falta. É o material que se manda para quem está chegando.'],
+    ['Painel de TI do Grupo', 'pecas/painel-do-grupo.html',
+     'A visão de diretoria: evolução mensal, compromisso contratado, custo por tipo e por filial, projetos em curso.'],
+    ['Gestão financeira', 'pecas/gestao-financeira.html',
+     'Despesas por reconhecer, projeção de doze meses, lançamentos e fechamento de competência — o protótipo financeiro completo.'],
+    ['Locação de impressão', 'pecas/locacao-de-impressao.html',
+     'Contratos de franquia, leitura de contadores e faturamento do parque de impressão.'],
+    ['Locação de impressão — versão anterior', 'pecas/locacao-de-impressao-anterior.html',
+     'A versão de agosto, guardada porque é a que algumas conversas citam.'],
+  ];
+
+  const ABSORVIDAS = [
+    ['Menu do STI', 'virou a tela "Mapa do menu", aqui dentro'],
+    ['STI Helpdesk (agosto)', 'versão anterior desta mesma ferramenta'],
+    ['STI · Suporte TI', 'versão anterior desta mesma ferramenta, mais antiga ainda'],
+  ];
+
+  views.arquivo = () => `
+    <div class="page-head"><div><p class="eyebrow">A ferramenta</p><h1>Peças incorporadas</h1>
+      <p class="lede">Tudo o que estava espalhado em protótipos separados passou a morar aqui.
+      Um endereço só — este.</p></div></div>
+
+    <div class="tiles" style="margin-bottom:1.5rem">
+      ${tile('Endereços antes', 9, 'nove protótipos, nenhum deles "o atual"')}
+      ${tile('Endereços agora', 1, 'esta ferramenta')}
+      ${tile('Peças guardadas', PECAS.length, 'as que tinham conteúdo próprio')}
+    </div>
+
+    ${PECAS.map(([nome, href, porque]) => `
+      <div class="card" style="margin-bottom:.85rem"><div class="card-body">
+        <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-start">
+          <div style="flex:1;min-width:16rem">
+            <h2 style="margin:0 0 .3rem">${esc(nome)}</h2>
+            <p class="dim" style="margin:0">${esc(porque)}</p>
+          </div>
+          <a class="btn" href="${href}" target="_blank" rel="noopener"
+             style="text-decoration:none;display:inline-block">Abrir ›</a>
+        </div>
+      </div></div>`).join('')}
+
+    <div class="card" style="margin-top:1.25rem"><div class="card-body">
+      <h2 style="margin-top:0">O que foi absorvido e não existe mais em separado</h2>
+      <p class="dim" style="margin:.3rem 0 .7rem">Não é perda: era a mesma coisa, em versão
+      anterior. O histórico completo continua no repositório.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Peça</th><th>Onde está agora</th></tr></thead>
+        <tbody>${ABSORVIDAS.map(([n, onde]) => `<tr>
+          <td class="strong">${esc(n)}</td><td class="muted">${esc(onde)}</td>
+        </tr>`).join('')}</tbody></table></div>
+    </div></div>`;
+
   views.satisfacao = () => {
     const encerrados = db.tickets.filter(t => t.status === 'resolved' || t.status === 'closed');
     const avaliados = encerrados.filter(t => typeof t.rating === 'number');
@@ -5958,6 +6025,7 @@
          destino padrão era a causa do laço de redirect. */
       ['painel','Visão geral',false,null],
       ['menu','Mapa do menu',false,null],
+      ['arquivo','Peças incorporadas',false,null],
     ]],
     ['Atendimento', [
       ['tickets','Tickets',false,'helpdesk.tickets.ver'],
