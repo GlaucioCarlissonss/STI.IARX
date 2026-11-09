@@ -334,16 +334,19 @@ console.log('\n=== 8. O mesmo padrão nas telas migradas ===')
 
   for (const [rota, campo] of telas) {
     await p.goto(BASE + rota, { waitUntil: 'networkidle' })
-    await p.waitForTimeout(500)
+    /* Espera o botão em vez de um tempo fixo: numa execução logo depois do
+       build, a primeira visita a cada rota ainda paga a compilação sob demanda
+       e passava do prazo — falha de ambiente lida como falha de produto. */
+    const temBotao = await p
+      .waitForSelector('[data-testid="novo-registro"]', { timeout: 20000 })
+      .then(() => true)
+      .catch(() => false)
 
     ok(
       (await p.locator(`main ${campo}`).count()) === 0,
       `${rota}: nenhum formulário ocupando a tela por padrão`,
     )
-    ok(
-      (await p.locator('[data-testid="novo-registro"]').count()) === 1,
-      `${rota}: o cadastro virou botão`,
-    )
+    ok(temBotao, `${rota}: o cadastro virou botão`)
 
     await p.locator('[data-testid="novo-registro"]').click()
     await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
