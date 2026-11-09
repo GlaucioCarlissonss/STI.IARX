@@ -294,6 +294,73 @@ console.log('\n=== 7. Inventário: a mesma gaveta, no lugar do formulário fixo 
   await c4.close()
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n=== 8. Financeiro: o mesmo padrão nas quatro telas ===')
+// ---------------------------------------------------------------------------
+{
+  /*
+   * Fase 5: as telas que tinham uma coluna de formulário aberta o tempo todo
+   * passam a ter botão + gaveta. O que este bloco confere em cada uma é o que
+   * define o padrão: nenhum campo de formulário ocupando a tela por padrão, o
+   * botão de criar abrindo a gaveta, Esc fechando, e nada rolando de lado no
+   * celular.
+   */
+  const telas = [
+    ['/financeiro/titulos-a-pagar', 'input[name="description"]'],
+    ['/financeiro/titulos-a-receber', 'input[name="description"]'],
+    ['/financeiro/contas-bancarias', 'input[name="name"]'],
+    ['/financeiro/centros-de-custo', 'input[name="code"]'],
+  ]
+
+  for (const [rota, campo] of telas) {
+    await p.goto(BASE + rota, { waitUntil: 'networkidle' })
+    await p.waitForTimeout(500)
+
+    ok(
+      (await p.locator(`main ${campo}`).count()) === 0,
+      `${rota}: nenhum formulário ocupando a tela por padrão`,
+    )
+    ok(
+      (await p.locator('[data-testid="novo-registro"]').count()) === 1,
+      `${rota}: o cadastro virou botão`,
+    )
+
+    await p.locator('[data-testid="novo-registro"]').click()
+    await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+    ok(
+      (await p.locator(`[data-testid="gaveta"] ${campo}`).count()) === 1,
+      `${rota}: e o botão abre o cadastro na gaveta`,
+    )
+
+    await p.keyboard.press('Escape')
+    await p.waitForTimeout(700)
+    ok((await p.locator('[data-testid="gaveta"]').count()) === 0, `${rota}: Esc fecha`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 9. Celular: as telas migradas também cabem ===')
+// ---------------------------------------------------------------------------
+{
+  const cel = await b.newContext({
+    viewport: { width: 390, height: 844 },
+    storageState: await ctx.storageState(),
+  })
+  const pc = await cel.newPage()
+  for (const rota of [
+    '/financeiro/titulos-a-pagar',
+    '/financeiro/titulos-a-receber',
+    '/financeiro/contas-bancarias',
+    '/financeiro/centros-de-custo',
+  ]) {
+    await pc.goto(BASE + rota, { waitUntil: 'networkidle' })
+    await pc.waitForTimeout(400)
+    const largura = await pc.evaluate(() => document.documentElement.scrollWidth)
+    ok(largura <= 392, `${rota} cabe na tela do celular (${largura}px)`)
+  }
+  await cel.close()
+}
+
 await ctx.close()
 await b.close()
 console.log(falhas === 0 ? '\nTODAS AS ASSERÇÕES PASSARAM' : `\n${falhas} ASSERÇÃO(ÕES) FALHOU/FALHARAM`)

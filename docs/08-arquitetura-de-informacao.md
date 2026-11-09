@@ -235,6 +235,8 @@ Quem não alcança bloco nenhum recebe um aviso explícito, em vez de uma tela v
 | **A paleta**: atalho em qualquer tela, telas/ações/registros, teclado, e a busca que NÃO é porta dos fundos | `demo/tests/local/paleta.spec.mjs` |
 | **A lista**: visões e contagens, filtro sem botão, ordenação, densidade lembrada, teclado, ação em massa, e a barra que não oferece o que a permissão não dá | `demo/tests/local/lista.spec.mjs` |
 | **Celular**: nenhuma das cinco telas conferidas rola de lado; a tabela vira ficha | `demo/tests/local/lista.spec.mjs` §8 |
+| **O padrão nas telas migradas**: nenhum formulário ocupando a tela, botão que abre a gaveta, Esc que fecha, e nada rolando de lado no celular | `demo/tests/local/gaveta.spec.mjs` §8-9 |
+| O que o formulário de despesa manda é o que o schema espera | `src/lib/schemas/payable.test.ts` |
 | **Os avisos**: confirmação que sobrevive à revalidação, campo que limpa, erro que fica até ser fechado, desfazer de lote, fio de progresso | `demo/tests/local/avisos.spec.mjs` |
 | **A gaveta**: endereço que se manda, Esc que não perde o filtro, J/K trocando o chamado aberto, volta honesta na edição recusada, e o que a permissão não dá | `demo/tests/local/gaveta.spec.mjs` |
 | Nenhum texto da URL vira nome de coluna na consulta (inclui `__proto__`) | `src/lib/data/ordenacao.test.ts` |
@@ -369,6 +371,40 @@ pior que esperar parado — e lento o bastante para a pessoa duvidar se o clique
 pegou. Um fio de 2px sob o cabeçalho, aceso por `useTransition`, resolve a
 dúvida sem roubar a tela. A contagem é de operações em curso, não um booleano:
 o filtro e a gaveta podem navegar ao mesmo tempo.
+
+## 12. Um idioma só (em andamento)
+
+Com a gaveta provada em chamados e inventário, a aplicação passou a ter **dois
+idiomas para abrir um registro**: a gaveta e o painel embutido na linha
+(`EditPanel`). Quem aprende numa tela desaprende na outra — é o tipo de
+inconsistência que ninguém reporta como defeito e todo mundo paga em
+hesitação. A Fase 5 unifica, tela por tela.
+
+O que a contagem no código mostrou antes de começar:
+
+| | Quantas |
+|---|---|
+| Telas com coluna de formulário aberta o tempo todo | 13 |
+| Larguras diferentes para essa mesma coluna | 4 (22, 23, 24 e 25rem) |
+| Cartões `Novo…` em coluna fixa | 13 |
+| Grades diferentes para a mesma faixa de indicadores | 5 |
+| Telas com indicador desenhado à mão, fora do `StatTile` | 7 |
+
+Nenhuma dessas variações foi decidida: é o que acontece quando cada tela
+resolve sozinha. Por isso a correção não é "padronizar o CSS", é tirar a
+decisão de dentro da tela — `FaixaDeIndicadores` deriva as colunas do número
+de indicadores, e `CabecalhoDaGaveta`/`CorpoDaGaveta` dão a mesma moldura a
+todas as gavetas.
+
+**Grupo 1, concluído — financeiro:** títulos a pagar, títulos a receber,
+contas bancárias e centros de custo. Além da coluna, saíram da consulta da
+tela oito lookups e os anexos da página inteira, que eram buscados em toda
+visita para alimentar formulários que, na maioria das visitas, ninguém abria.
+Em títulos a pagar a tabela ganhou **categoria e centro de custo como
+colunas** — existiam só dentro do painel porque não havia onde mostrá-los.
+
+Grupos seguintes: clientes, fornecedores, telefonia e links; depois filas, SLA
+e perfis, que são configuração e têm formulários maiores.
 
 **A tabela vira ficha no celular.** Abaixo de `lg`, `<Table>` empilha cada linha
 com o rótulo da coluna ao lado do valor (`.tabela` em `globals.css`). O rótulo

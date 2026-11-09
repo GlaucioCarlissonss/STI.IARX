@@ -1,16 +1,18 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { escopoDeCliente, porClienteOuGeral } from '@/lib/data/escopo'
 import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { requireScreen, allowed } from '@/lib/session'
 import { formatCurrency, formatDate } from '@/lib/format'
-import type { BankAccount, Client, CostCenter, Receivable } from '@/lib/types'
-import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
-import { EditPanel } from '@/components/edit-panel'
-import { RECEIVABLE_STATUS, tomDoVencimento } from '../titulos/labels'
+import { comParametros } from '@/lib/data/endereco'
+import type { Client, Receivable } from '@/lib/types'
 import {
-  EditReceivableForm, NewReceivableForm, SettlementForm,
-} from '../titulos/forms'
+  Badge, EmptyState, FaixaDeIndicadores, PageHeader, Pager, StatTile, Table, Td,
+} from '@/components/ui'
+import { RECEIVABLE_STATUS, tomDoVencimento } from '../titulos/labels'
+import { GavetaDeRecebivel } from './gaveta'
 
 export const metadata: Metadata = { title: 'Títulos a receber' }
 
@@ -27,28 +29,20 @@ interface ResumoDeRecebiveis {
 export default async function TitulosAReceberPage({
   searchParams,
 }: {
-  searchParams: Promise<{ pagina?: string }>
+  searchParams: Promise<{ pagina?: string; aberto?: string; novo?: string }>
 }) {
   const params = await searchParams
   await requireScreen('financeiro.titulos_receber.ver')
-  const [podeCriar, podeEditar, podeBaixar, podeCancelar] = await Promise.all([
-    allowed('financeiro.titulos_receber.criar'),
-    allowed('financeiro.titulos_receber.editar'),
-    allowed('financeiro.titulos_receber.baixar'),
-    allowed('financeiro.titulos_receber.cancelar'),
-  ])
+  /* Só a permissão que a LISTA usa; as de escrita são conferidas na gaveta. */
+  const podeCriar = await allowed('financeiro.titulos_receber.criar')
 
   const supabase = await createClient()
   const escopo = await escopoDeCliente()
   const pagina = lerPagina(params.pagina)
-  const [
-    { data: titulos, count },
-    { data: contas },
-    { data: clientes },
-    { data: contratos },
-    { data: centros },
-    { data: resumo },
-  ] = await Promise.all([
+  /* Contas bancárias, contratos e centros de custo saíram com o formulário:
+     quem precisa deles é a gaveta. A lista só precisa dos clientes, porque
+     mostra o nome de cada um na coluna. */
+  const [{ data: titulos, count }, { data: clientes }, { data: resumo }] = await Promise.all([
       /* Só a LISTA entra no escopo. Os quatro lookups abaixo alimentam o
          formulário e continuam completos de propósito: um seletor que perde a
          opção já gravada no título faria o campo voltar vazio ao salvar. */
@@ -62,16 +56,9 @@ export default async function TitulosAReceberPage({
         ),
         pagina,
       ).returns<Receivable[]>(),
-      supabase.from('bank_accounts')
-        .select('id, name, bank_name, bank_code, agency, account_number, account_type, holder_name, holder_document, opening_balance, credit_limit, status, notes')
-        .eq('status', 'active').is('deleted_at', null).order('name').returns<BankAccount[]>(),
       supabase.from('clients')
         .select('id, legal_name, trade_name, cnpj, contract_ref, status')
         .is('deleted_at', null).order('legal_name').returns<Client[]>(),
-      supabase.from('sla_contracts').select('id, name').eq('is_active', true).order('name'),
-      supabase.from('cost_centers')
-        .select('id, parent_id, code, name, description, branch_id, is_active')
-        .eq('is_active', true).order('code').returns<CostCenter[]>(),
       /* Indicadores da view criada na 0028, com `client_id` para acompanhar o
          foco por empresa. Sem ela, paginar transformaria "Em aberto: 312" em
          "Em aberto: 50" sem nenhum sinal de que o número mudou de significado. */
@@ -84,11 +71,6 @@ export default async function TitulosAReceberPage({
     ])
 
   const lista = titulos ?? []
-  const lookups = {
-    clients: clientes ?? [],
-    contracts: contratos ?? [],
-    costCenters: centros ?? [],
-  }
 
   const agregado = resumo ?? []
   const soma = (campo: keyof ResumoDeRecebiveis, status?: string) =>
@@ -109,14 +91,41 @@ export default async function TitulosAReceberPage({
   // O que de fato entrou: o combinado dos recebidos menos a diferença.
   const totalRecebido = soma('total', 'received') - diferenca
 
+  const endereco = (mudancas: Record<string, string | null>) =>
+    comParametros('/financeiro/titulos-a-receber', params, {
+      ...mudancas,
+      pagina: params.pagina ?? null,
+    })
+
+  const gavetaAberta = Boolean(params.aberto || params.novo)
+
   return (
-    <>
+    <div className={gavetaAberta ? 'lg:pr-[35rem]' : undefined}>
+      {gavetaAberta && (
+        <GavetaDeRecebivel
+          id={params.aberto}
+          novo={Boolean(params.novo)}
+          fechar={endereco({ aberto: null, novo: null })}
+        />
+      )}
+
       <PageHeader
         title="Títulos a receber"
         description="Receita combinada e sua baixa. Sem fluxo de aprovação: aprovar o que se vai receber não protege ninguém — o controle aqui é a baixa."
+        action={
+          podeCriar && (
+            <Link
+              href={endereco({ novo: '1' }) as Route}
+              data-testid="novo-registro"
+              className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]"
+            >
+              Lançar título
+            </Link>
+          )
+        }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile label="Em aberto" value={qtdAbertos} hint={formatCurrency(totalAberto)} />
         <StatTile label="Vencidos" value={qtdVencidos}
           hint={formatCurrency(totalVencido)}
@@ -126,16 +135,18 @@ export default async function TitulosAReceberPage({
           tone="ok" />
         <StatTile label="Diferença de baixa" value={formatCurrency(diferenca)}
           hint="desconto e recebimento parcial" tone={diferenca > 0 ? 'warn' : 'neutral'} />
-      </div>
+      </FaixaDeIndicadores>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <div>
         <div>
           {lista.length === 0 ? (
             <EmptyState title="Nenhum título a receber"
-              description="Lance a primeira cobrança no formulário ao lado." />
+              description={podeCriar
+                ? 'Lance a primeira cobrança em "Lançar título".'
+                : 'Nenhum título alcançável pelo seu perfil.'} />
           ) : (
             <>
-            <Table head={['Vencimento', 'Descrição', 'Cliente', 'Valor', 'Situação', '']} label="Títulos a receber">
+            <Table head={['Vencimento', 'Descrição', 'Cliente', 'Valor', 'Situação']} label="Títulos a receber">
               {lista.map((t) => {
                 const st = RECEIVABLE_STATUS[t.status]
                 const encerrado = t.status === 'received' || t.status === 'cancelled'
@@ -154,7 +165,13 @@ export default async function TitulosAReceberPage({
                         : 'text-[var(--color-ink-3)]'}`}>{venc.texto}</div>
                     </Td>
                     <Td>
-                      <div className="font-medium text-[var(--color-ink)]">{t.description}</div>
+                      <Link
+                        href={endereco({ aberto: t.id }) as Route}
+                        data-testid="abrir-registro"
+                        className="font-medium text-[var(--color-brand-ink)] hover:underline"
+                      >
+                        {t.description}
+                      </Link>
                       <div className="text-xs text-[var(--color-ink-3)]">
                         {t.document_ref ? `doc ${t.document_ref}` : 'sem documento'}
                         {t.installment_total > 1 &&
@@ -173,21 +190,6 @@ export default async function TitulosAReceberPage({
                       )}
                     </Td>
                     <Td><Badge tone={st.tone}>{st.label}</Badge></Td>
-                    <Td>
-                      <div className="flex flex-col gap-2">
-                        {podeBaixar && t.status === 'open' && (
-                          <EditPanel label="Dar baixa" title={`Recebimento de ${t.description}`}>
-                            <SettlementForm receivable={t} accounts={contas ?? []} />
-                          </EditPanel>
-                        )}
-                        {podeEditar && (
-                          <EditPanel label="Detalhes" title={t.description}>
-                            <EditReceivableForm receivable={t} lookups={lookups}
-                              podeCancelar={podeCancelar} />
-                          </EditPanel>
-                        )}
-                      </div>
-                    </Td>
                   </tr>
                 )
               })}
@@ -202,13 +204,7 @@ export default async function TitulosAReceberPage({
             </>
           )}
         </div>
-
-        {podeCriar && (
-          <Card title="Lançar título a receber">
-            <NewReceivableForm lookups={lookups} />
-          </Card>
-        )}
       </div>
-    </>
+    </div>
   )
 }

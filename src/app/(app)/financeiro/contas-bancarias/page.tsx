@@ -1,18 +1,17 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireScreen, allowed } from '@/lib/session'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { BankAccount, BankAccountBalance, BankMovement, CostCenter } from '@/lib/types'
-import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
-import { EditPanel } from '@/components/edit-panel'
+import { comParametros } from '@/lib/data/endereco'
+import {
+  Badge, EmptyState, FaixaDeIndicadores, PageHeader, StatTile, Table, Td,
+} from '@/components/ui'
 import { ActionForm, SubmitButton } from '@/components/action-form'
 import { toggleMovementReconciled } from '../actions'
-import {
-  EditBankAccountForm,
-  MovementForm,
-  NewBankAccountForm,
-  TransferForm,
-} from './forms'
+import { GavetaDeConta } from './gaveta'
 
 export const metadata: Metadata = { title: 'Contas bancárias' }
 
@@ -29,7 +28,17 @@ const SITUACAO: Record<BankAccount['status'], { label: string; tone: 'ok' | 'neu
   blocked: { label: 'Bloqueada', tone: 'breach' },
 }
 
-export default async function ContasBancariasPage() {
+export default async function ContasBancariasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    aberto?: string
+    novo?: string
+    movimentar?: string
+    transferir?: string
+  }>
+}) {
+  const params = await searchParams
   await requireScreen('financeiro.contas_bancarias.ver')
   const [podeEditar, podeCriar, podeMovimentar, podeTransferir] = await Promise.all([
     allowed('financeiro.contas_bancarias.editar'),
@@ -84,14 +93,57 @@ export default async function ContasBancariasPage() {
   // extrato, não depois de alguém somar as colunas na mão.
   const estouradas = saldos.filter((s) => Number(s.current_balance) < -Number(s.credit_limit))
 
+  const endereco = (mudancas: Record<string, string | null>) =>
+    comParametros('/financeiro/contas-bancarias', params, mudancas)
+
+  const gavetaAberta = Boolean(
+    params.aberto || params.novo || params.movimentar || params.transferir,
+  )
+
+  const acao =
+    'rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]'
+
   return (
-    <>
+    <div className={gavetaAberta ? 'lg:pr-[35rem]' : undefined}>
+      {gavetaAberta && (
+        <GavetaDeConta
+          id={params.aberto}
+          novo={Boolean(params.novo)}
+          movimentar={Boolean(params.movimentar)}
+          transferir={Boolean(params.transferir)}
+          fechar={endereco({ aberto: null, novo: null, movimentar: null, transferir: null })}
+        />
+      )}
+
       <PageHeader
         title="Contas bancárias"
         description="Saldo, extrato e conciliação. O saldo é derivado das movimentações — nunca gravado — para não divergir do extrato no primeiro arredondamento."
+        action={
+          <div className="flex flex-wrap gap-2">
+            {podeMovimentar && saldos.length > 0 && (
+              <Link href={endereco({ movimentar: '1' }) as Route} className={acao}>
+                Lançar movimentação
+              </Link>
+            )}
+            {podeTransferir && saldos.length > 1 && (
+              <Link href={endereco({ transferir: '1' }) as Route} className={acao}>
+                Transferir
+              </Link>
+            )}
+            {podeCriar && (
+              <Link
+                href={endereco({ novo: '1' }) as Route}
+                data-testid="novo-registro"
+                className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]"
+              >
+                Nova conta
+              </Link>
+            )}
+          </div>
+        }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile label="Contas ativas" value={ativas.length} />
         <StatTile
           label="Saldo consolidado"
@@ -111,9 +163,9 @@ export default async function ContasBancariasPage() {
           hint="saldo abaixo do limite de crédito"
           tone={estouradas.length > 0 ? 'crit' : 'neutral'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-6">
           {saldos.length === 0 ? (
             <EmptyState
@@ -158,9 +210,13 @@ export default async function ContasBancariasPage() {
                     </Td>
                     <Td>
                       {podeEditar && conta && (
-                        <EditPanel title={`Editar ${conta.name}`}>
-                          <EditBankAccountForm account={conta} />
-                        </EditPanel>
+                        <Link
+                          href={endereco({ aberto: conta.id }) as Route}
+                          data-testid="abrir-registro"
+                          className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-sm font-medium text-[var(--color-brand-ink)] hover:bg-[var(--color-surface-2)]"
+                        >
+                          Editar
+                        </Link>
                       )}
                     </Td>
                   </tr>
@@ -229,24 +285,7 @@ export default async function ContasBancariasPage() {
           )}
         </div>
 
-        <div className="flex flex-col gap-6">
-          {podeCriar && (
-            <Card title="Nova conta">
-              <NewBankAccountForm />
-            </Card>
-          )}
-          {podeMovimentar && saldos.length > 0 && (
-            <Card title="Lançar movimentação">
-              <MovementForm accounts={saldos} costCenters={costCenters ?? []} />
-            </Card>
-          )}
-          {podeTransferir && saldos.length > 1 && (
-            <Card title="Transferir entre contas">
-              <TransferForm accounts={saldos} />
-            </Card>
-          )}
-        </div>
       </div>
-    </>
+    </div>
   )
 }
