@@ -1,7 +1,7 @@
-import { Fragment } from 'react'
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { getAgents, getBranches } from '@/lib/data/lookups'
 import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
@@ -10,11 +10,10 @@ import { contractStatusTone, lineStatusLabel, lineTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { BranchArea, TelecomDashboardRow, TelecomLine } from '@/lib/types'
 import {
-  Badge, Card, EmptyState, Field, PageHeader, Pager, StatTile, Table, Td, inputClass,
+  Badge, EmptyState, FaixaDeIndicadores, Field, PageHeader, Pager, StatTile, Table, Td, inputClass,
 } from '@/components/ui'
-import { EditPanel } from '@/components/edit-panel'
-import { Attachments, type AttachmentRecord } from '@/components/attachments'
-import { EditLineForm, NewLineForm } from './line-forms'
+import { comParametros } from '@/lib/data/endereco'
+import { GavetaDeLinha } from './gaveta'
 
 export const metadata: Metadata = { title: 'Telefonia' }
 
@@ -26,6 +25,8 @@ export default async function TelefoniaPage({
     operadora?: string
     situacao?: string
     pagina?: string
+    aberto?: string
+    novo?: string
   }>
 }) {
   const filtros = await searchParams
@@ -34,10 +35,10 @@ export default async function TelefoniaPage({
   const escopo = await escopoDeCliente()
   const pagina = lerPagina(filtros.pagina)
 
-  const [
-    { data: lines, count }, { data: painel }, branches, agents,
-    { data: areas }, { data: devices },
-  ] = await Promise.all([
+  /* `devices` saiu com o formulário de linha: quem precisa da lista de
+     aparelhos para vincular é a gaveta. */
+  const [{ data: lines, count }, { data: painel }, branches, agents, { data: areas }] =
+    await Promise.all([
     /*
      * Os filtros saíram da memória e foram para o banco.
      *
@@ -90,32 +91,15 @@ export default async function TelefoniaPage({
       .eq('is_active', true)
       .order('sort_order')
       .returns<BranchArea[]>(),
-    supabase
-      .from('it_assets')
-      .select('id, asset_tag, brand, model')
-      .in('asset_type', ['smartphone', 'tablet'])
-      .is('deleted_at', null),
-    // Uma consulta para todas as linhas; agrupada em memória para não virar N+1.
   ])
 
-  /* Anexos só das linhas desta página. */
-  const idsDaPagina = (lines ?? []).map((l) => l.id)
-  const { data: anexos } =
-    idsDaPagina.length > 0
-      ? await supabase
-          .from('telecom_line_attachments')
-          .select('id, line_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
-          .in('line_id', idsDaPagina)
-          .order('created_at', { ascending: false })
-          .returns<(AttachmentRecord & { line_id: string })[]>()
-      : { data: null }
-
-  const [podeEditar, podeCriar, podeAnexar] = await Promise.all([
+  /* Os anexos saíram da tela: eram buscados para todas as linhas da página a
+     fim de alimentar um painel por linha. Agora quem busca é a gaveta, da
+     linha que está aberta. */
+  const [podeEditar, podeCriar] = await Promise.all([
     allowed('telefonia.linhas.editar'),
     allowed('telefonia.linhas.criar'),
-    allowed('telefonia.linhas.anexar'),
   ])
-  const anexosPorLinha = agruparPor(anexos, 'line_id')
   const list = lines ?? []
 
   /* A lista de operadoras do seletor vem do PAINEL, não da lista.
@@ -151,8 +135,20 @@ export default async function TelefoniaPage({
 
   const activeCost = somaPainel('monthly_total', 'active')
 
+  const endereco = (mudancas: Record<string, string | null>) =>
+    comParametros('/telefonia', filtros, { ...mudancas, pagina: filtros.pagina ?? null })
+
+  const gavetaAberta = Boolean(filtros.aberto || filtros.novo)
+
   return (
-    <>
+    <div className={gavetaAberta ? 'lg:pr-[35rem]' : undefined}>
+      {gavetaAberta && (
+        <GavetaDeLinha
+          id={filtros.aberto}
+          novo={Boolean(filtros.novo)}
+          fechar={endereco({ aberto: null, novo: null })}
+        />
+      )}
       <PageHeader
         title="Telefonia"
         description="Linhas móveis e fixas, com custo mensal por filial e operadora."
@@ -162,17 +158,28 @@ export default async function TelefoniaPage({
              e não as 50 da página visível. */
           /* `<a download>`, e não `<Link>`: `/api/exportar/...` é um Route
              Handler, e navegação do lado do cliente não baixa arquivo nenhum. */
-          <a
-            download
-            href="/api/exportar/telefonia"
-            className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]"
-          >
-            Exportar CSV
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a
+              download
+              href="/api/exportar/telefonia"
+              className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]"
+            >
+              Exportar CSV
+            </a>
+            {podeCriar && (
+              <Link
+                href={endereco({ novo: '1' }) as Route}
+                data-testid="novo-registro"
+                className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]"
+              >
+                Nova linha
+              </Link>
+            )}
+          </div>
         }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile label="Linhas cadastradas" value={totalLinhas} />
         <StatTile label="Ativas" value={ativas} tone="ok" />
         <StatTile
@@ -192,7 +199,7 @@ export default async function TelefoniaPage({
           value={semFidelidade}
           hint="podem ser canceladas sem multa"
         />
-      </div>
+      </FaixaDeIndicadores>
 
       {/* `method="get"` sem JavaScript, como em /tickets: o recorte fica na barra
           de endereço e pode ser guardado nos favoritos ou mandado a outra pessoa. */}
@@ -246,7 +253,7 @@ export default async function TelefoniaPage({
         )}
       </form>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <div>
         <div className="flex flex-col gap-6">
           {list.length > 0 ? (
             <>
@@ -258,9 +265,20 @@ export default async function TelefoniaPage({
               ]}
             >
               {list.map((l) => (
-                <Fragment key={l.id}>
-                <tr className="hover:bg-[var(--color-surface-2)]">
-                  <Td className="font-mono text-xs font-medium">{l.phone_number}</Td>
+                <tr key={l.id} className="hover:bg-[var(--color-surface-2)]">
+                  <Td className="font-mono text-xs font-medium">
+                    {podeEditar ? (
+                      <Link
+                        href={endereco({ aberto: l.id }) as Route}
+                        data-testid="abrir-registro"
+                        className="text-[var(--color-brand-ink)] hover:underline"
+                      >
+                        {l.phone_number}
+                      </Link>
+                    ) : (
+                      l.phone_number
+                    )}
+                  </Td>
                   <Td>
                     <span className="font-medium text-[var(--color-ink)]">{l.carrier}</span>
                     <p className="text-xs text-[var(--color-ink-3)]">{l.plan_name ?? '—'}</p>
@@ -285,32 +303,6 @@ export default async function TelefoniaPage({
                   <Td className="tabular-nums">{formatCurrency(l.monthly_cost)}</Td>
                   <Td className="text-[var(--color-ink-2)]">{formatDate(l.loyalty_until)}</Td>
                 </tr>
-                {(podeEditar || podeAnexar) && (
-                  <tr>
-                    <Td className="bg-[var(--color-surface-2)]" colSpan={8}>
-                      <EditPanel title={`Ficha e anexos — ${l.phone_number}`}>
-                        <div className="flex flex-col gap-4">
-                          {podeEditar && (
-                            <EditLineForm
-                              line={l}
-                              branches={branches}
-                              areas={listaAreas}
-                              agents={agents}
-                              devices={devices ?? []}
-                            />
-                          )}
-                          <Attachments
-                            entity="linhas"
-                            entityId={l.id}
-                            records={anexosPorLinha.get(l.id) ?? []}
-                            title="Contratos e termos"
-                          />
-                        </div>
-                      </EditPanel>
-                    </Td>
-                  </tr>
-                )}
-                </Fragment>
               ))}
             </Table>
             <Pager
@@ -381,18 +373,7 @@ export default async function TelefoniaPage({
             )}
           </section>
         </div>
-
-        {podeCriar && (
-          <Card title="Nova linha">
-            <NewLineForm
-              branches={branches}
-              areas={listaAreas}
-              agents={agents}
-              devices={devices ?? []}
-            />
-          </Card>
-        )}
       </div>
-    </>
+    </div>
   )
 }

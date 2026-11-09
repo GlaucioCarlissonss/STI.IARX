@@ -164,7 +164,10 @@ export function FaixaDeIndicadores({ children }: { children: ReactNode }) {
         : quantos === 5
           ? 'sm:grid-cols-2 xl:grid-cols-5'
           : quantos >= 6
-            ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
+            ? /* Seis em uma linha só cabe em tela muito larga: a 1440px um
+                 valor em reais encosta na borda do bloco. Até lá, três por
+                 linha. */
+              'sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6'
             : 'sm:grid-cols-2 xl:grid-cols-4'
 
   return <div className={`mb-6 grid gap-3 ${colunas}`}>{children}</div>

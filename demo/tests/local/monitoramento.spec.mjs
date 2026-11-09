@@ -54,10 +54,16 @@ console.log('\n=== 1. A tela cria a entrada, e o endereço funciona ===')
 // ---------------------------------------------------------------------------
 await p.goto(`${BASE}/conectividade/links`, { waitUntil: 'networkidle' })
 
+/* Desde a Fase 5, a entrada de monitoramento é um MODO DA GAVETA
+   (`?monitoramento=1`), não um cartão fixo na lateral: ela é configuração do
+   tenant, e ocupava 25rem ao lado de uma tabela de nove colunas. O botão
+   continua existindo só para quem administra conectividade. */
 ok(
-  await p.locator('text=Entrada de monitoramento').first().isVisible(),
-  'o cartão aparece para quem administra conectividade',
+  await p.locator('[data-testid="abrir-monitoramento"]').isVisible(),
+  'o botão aparece para quem administra conectividade',
 )
+await p.locator('[data-testid="abrir-monitoramento"]').click()
+await p.waitForSelector('[data-testid="gaveta"]', { timeout: 15000 })
 
 /* Um host exclusivo desta rodada: a suíte roda contra um banco que outras
    suítes também usam, e disputar o mesmo link produziria falha intermitente —
@@ -84,9 +90,13 @@ ok(/\/api\/monitoramento\/[A-Za-z0-9_-]{20,}$/.test(url), `o endereço é mostra
  * campo existe no formulário: sem ele, a entrada funcionaria e nenhum alerta
  * acharia link nenhum, que é a falha mais silenciosa possível deste recurso.
  *
- * O painel de edição é `<details>`/`<summary>`: abrir é clicar no resumo.
+ * Desde a Fase 5 a ficha do link mora na gaveta: abrir é clicar no número do
+ * contrato na lista.
  */
-await p.locator('summary:has-text("Editar")').first().click()
+await p.goto(`${BASE}/conectividade/links`, { waitUntil: 'networkidle' })
+await p.waitForTimeout(500)
+await p.locator('[data-testid="abrir-registro"]').first().click()
+await p.waitForSelector('[data-testid="gaveta"]', { timeout: 15000 })
 await p.waitForTimeout(400)
 const campoHost = p.locator('input[name="monitoring_host"]').first()
 ok(await campoHost.isVisible().catch(() => false), 'o cadastro do link tem o campo "Host de monitoramento"')
@@ -177,7 +187,8 @@ console.log('\n=== 3. O que é configuração errada não faz o Zabbix repetir =
 console.log('\n=== 4. A tela mostra que o Zabbix falou ===')
 // ---------------------------------------------------------------------------
 {
-  await p.goto(`${BASE}/conectividade/links`, { waitUntil: 'networkidle' })
+  await p.goto(`${BASE}/conectividade/links?monitoramento=1`, { waitUntil: 'networkidle' })
+  await p.waitForSelector('[data-testid="gaveta"]', { timeout: 15000 })
   const linha = p.locator('li').filter({ hasText: nome }).first()
   const texto = await linha.innerText().catch(() => '')
   ok(
@@ -200,11 +211,13 @@ console.log('\n=== 5. A suíte limpa o que criou ===')
  * endereço um dia funcionou.
  */
 {
-  await p.goto(`${BASE}/conectividade/links`, { waitUntil: 'networkidle' })
+  await p.goto(`${BASE}/conectividade/links?monitoramento=1`, { waitUntil: 'networkidle' })
+  await p.waitForSelector('[data-testid="gaveta"]', { timeout: 15000 })
   const linha = p.locator('li').filter({ hasText: nome }).first()
   await linha.locator('button:has-text("Desligar")').click()
   await p.waitForTimeout(1500)
-  await p.goto(`${BASE}/conectividade/links`, { waitUntil: 'networkidle' })
+  await p.goto(`${BASE}/conectividade/links?monitoramento=1`, { waitUntil: 'networkidle' })
+  await p.waitForSelector('[data-testid="gaveta"]', { timeout: 15000 })
   const depois = await p.locator('li').filter({ hasText: nome }).first().innerText()
   ok(/desligada/.test(depois), 'a entrada da suíte fica desligada ao fim')
 

@@ -45,6 +45,22 @@ async function entrar(email, viewport = { width: 1440, height: 900 }) {
 
 const tituloDaGaveta = (p) => p.locator('[data-testid="gaveta"] h2').innerText()
 
+/**
+ * Espera a gaveta sumir.
+ *
+ * Esperar um tempo fixo reprovava a tela de links por ela ser a mais pesada do
+ * grupo: a gaveta fechava, mas depois do prazo do teste. Falha por corrida é
+ * pior que falha por defeito — ensina a desconfiar da suíte.
+ */
+async function gavetaFecha(pagina, limite = 8000) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < limite) {
+    if ((await pagina.locator('[data-testid="gaveta"]').count()) === 0) return true
+    await pagina.waitForTimeout(120)
+  }
+  return false
+}
+
 const { ctx, p } = await entrar('admin@iaroffice.com.br')
 
 // ---------------------------------------------------------------------------
@@ -295,7 +311,7 @@ console.log('\n=== 7. Inventário: a mesma gaveta, no lugar do formulário fixo 
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n=== 8. Financeiro: o mesmo padrão nas quatro telas ===')
+console.log('\n=== 8. O mesmo padrão nas telas migradas ===')
 // ---------------------------------------------------------------------------
 {
   /*
@@ -310,6 +326,10 @@ console.log('\n=== 8. Financeiro: o mesmo padrão nas quatro telas ===')
     ['/financeiro/titulos-a-receber', 'input[name="description"]'],
     ['/financeiro/contas-bancarias', 'input[name="name"]'],
     ['/financeiro/centros-de-custo', 'input[name="code"]'],
+    ['/clientes', 'input[name="legal_name"]'],
+    ['/fornecedores', 'input[name="name"]'],
+    ['/telefonia', 'input[name="phone_number"]'],
+    ['/conectividade/links', 'select[name="branch_id"]'],
   ]
 
   for (const [rota, campo] of telas) {
@@ -333,8 +353,7 @@ console.log('\n=== 8. Financeiro: o mesmo padrão nas quatro telas ===')
     )
 
     await p.keyboard.press('Escape')
-    await p.waitForTimeout(700)
-    ok((await p.locator('[data-testid="gaveta"]').count()) === 0, `${rota}: Esc fecha`)
+    ok(await gavetaFecha(p), `${rota}: Esc fecha`)
   }
 }
 
@@ -352,6 +371,10 @@ console.log('\n=== 9. Celular: as telas migradas também cabem ===')
     '/financeiro/titulos-a-receber',
     '/financeiro/contas-bancarias',
     '/financeiro/centros-de-custo',
+    '/clientes',
+    '/fornecedores',
+    '/telefonia',
+    '/conectividade/links',
   ]) {
     await pc.goto(BASE + rota, { waitUntil: 'networkidle' })
     await pc.waitForTimeout(400)

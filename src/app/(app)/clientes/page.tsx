@@ -1,21 +1,27 @@
-import { Fragment } from 'react'
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import type { Route } from 'next'
 import { requireScreen, allowed } from '@/lib/session'
-import { createClient } from '@/lib/supabase/server'
-import { agruparPor } from '@/lib/data/agrupar'
-import { escopoDeCliente, porFilial } from '@/lib/data/escopo'
-import { getBranches, getBusinessHours, getClients } from '@/lib/data/lookups'
+import { escopoDeCliente } from '@/lib/data/escopo'
+import { getBranches, getClients } from '@/lib/data/lookups'
 import { formatCnpj } from '@/lib/format'
-import { areaKindLabel } from '@/lib/i18n'
-import type { BranchArea } from '@/lib/types'
+import { comParametros } from '@/lib/data/endereco'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
-import { EditPanel } from '@/components/edit-panel'
-import { EditBranchForm, EditClientForm, NewClientForm, NewBranchForm } from './forms'
-import { EditAreaForm, NewAreaForm, SeedAreasForm } from './area-forms'
+import { GavetaDeCliente } from './gaveta'
 
 export const metadata: Metadata = { title: 'Clientes e filiais' }
 
-export default async function ClientesPage() {
+export default async function ClientesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    aberto?: string
+    filial?: string
+    novo?: string
+    novaFilial?: string
+  }>
+}) {
+  const params = await searchParams
   await requireScreen('clientes.grupos.ver')
   /*
    * `clientes.filiais.ver` governa a seção de filiais inteira — tabela e
@@ -30,42 +36,23 @@ export default async function ClientesPage() {
     podeEditarFilial,
     podeCriarFilial,
     podeVerArea,
-    podeCriarArea,
-    podeEditarArea,
-    podeInativarArea,
   ] = await Promise.all([
     allowed('clientes.grupos.editar'),
     allowed('clientes.grupos.criar'),
     allowed('clientes.filiais.ver'),
     allowed('clientes.filiais.editar'),
     allowed('clientes.filiais.criar'),
+    /* As permissões de ESCRITA em área são conferidas na gaveta, onde a
+       escrita acontece. A tela só precisa saber se a pessoa alcança as áreas
+       para decidir se o nome da filial abre alguma coisa. */
     allowed('clientes.areas.ver'),
-    allowed('clientes.areas.criar'),
-    allowed('clientes.areas.editar'),
-    allowed('clientes.areas.inativar'),
   ])
 
-  const supabase = await createClient()
   const escopo = await escopoDeCliente()
-  const [todosClientes, todasFiliais, businessHours, { data: areas }] = await Promise.all([
-    getClients(),
-    getBranches(),
-    getBusinessHours(),
-    // Uma consulta para todas as filiais, agrupada em memória. Uma por filial
-    // viraria N+1 no primeiro cliente com muitas unidades.
-    /* `branch_areas.branch_id` é NOT NULL, então `porFilial`. A página já
-       filtrava as filiais em memória; sem isto, ela continuava trazendo do
-       banco as áreas de todas as empresas para desenhar as de uma. */
-    podeVerArea
-      ? porFilial(
-          supabase
-            .from('branch_areas')
-            .select('id, branch_id, name, code, kind, is_active, sort_order')
-            .order('sort_order'),
-          escopo,
-        ).returns<BranchArea[]>()
-      : { data: null },
-  ])
+  /* As ÁREAS saíram daqui: elas vivem dentro da gaveta da filial, e a tela
+     trazia do banco as áreas de todas as filiais de todos os clientes para
+     desenhar as de uma, quando alguém abrisse o painel. */
+  const [todosClientes, todasFiliais] = await Promise.all([getClients(), getBranches()])
 
   /* Aqui o escopo é aplicado EM MEMÓRIA, não na consulta — é a única tela onde
      isso acontece, e por um motivo: `getClients()` é a mesma consulta que
@@ -80,21 +67,57 @@ export default async function ClientesPage() {
     ? todasFiliais.filter((b) => escopo.branchIds!.includes(b.id))
     : todasFiliais
 
-  const areasPorFilial = agruparPor(areas, 'branch_id')
-
   /* A linha do painel aparece para quem edita a filial OU alcança as áreas: são
      dois assuntos distintos, e exigir a permissão de filial para ver a área
      esconderia o cadastro de quem justamente o administra. */
   const abrePainelFilial = podeEditarFilial || podeVerArea
 
+  const endereco = (mudancas: Record<string, string | null>) =>
+    comParametros('/clientes', params, mudancas)
+
+  const gavetaAberta = Boolean(
+    params.aberto || params.filial || params.novo || params.novaFilial,
+  )
+
   return (
-    <>
+    <div className={gavetaAberta ? 'lg:pr-[35rem]' : undefined}>
+      {gavetaAberta && (
+        <GavetaDeCliente
+          cliente={params.aberto}
+          filial={params.filial}
+          novo={Boolean(params.novo)}
+          novaFilial={Boolean(params.novaFilial)}
+          fechar={endereco({ aberto: null, filial: null, novo: null, novaFilial: null })}
+        />
+      )}
+
       <PageHeader
         title="Clientes e filiais"
         description="Grupos econômicos atendidos e suas unidades. A filial define a visibilidade dos atendentes e o fuso usado no cálculo de SLA."
+        action={
+          <div className="flex flex-wrap gap-2">
+            {podeVerFilial && podeCriarFilial && (
+              <Link
+                href={endereco({ novaFilial: '1' }) as Route}
+                className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]"
+              >
+                Nova filial
+              </Link>
+            )}
+            {podeCriarCliente && (
+              <Link
+                href={endereco({ novo: '1' }) as Route}
+                data-testid="novo-registro"
+                className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]"
+              >
+                Novo cliente
+              </Link>
+            )}
+          </div>
+        }
       />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <div>
         <div className="flex flex-col gap-4">
           {clients.length === 0 && <EmptyState title="Nenhum cliente cadastrado" />}
 
@@ -115,7 +138,17 @@ export default async function ClientesPage() {
                     />
                     <div>
                       <h2 className="text-base font-semibold text-[var(--color-ink)]">
-                        {c.trade_name ?? c.legal_name}
+                        {podeEditarCliente ? (
+                          <Link
+                            href={endereco({ aberto: c.id }) as Route}
+                            data-testid="abrir-registro"
+                            className="text-[var(--color-brand-ink)] hover:underline"
+                          >
+                            {c.trade_name ?? c.legal_name}
+                          </Link>
+                        ) : (
+                          (c.trade_name ?? c.legal_name)
+                        )}
                       </h2>
                       <p className="text-xs text-[var(--color-ink-3)]">
                         {c.legal_name} · {formatCnpj(c.cnpj)}
@@ -126,16 +159,6 @@ export default async function ClientesPage() {
                     {c.status === 'active' ? 'Ativo' : c.status}
                   </Badge>
                 </div>
-
-                {/* Largura do cartão inteiro: na coluna dos selos o formulário
-                    seria uma tira estreita de campos. */}
-                {podeEditarCliente && (
-                  <div className="mt-4">
-                    <EditPanel title={`Editar ${c.trade_name ?? c.legal_name}`}>
-                      <EditClientForm client={c} />
-                    </EditPanel>
-                  </div>
-                )}
 
                 {podeVerFilial && (
                   <div className="mt-4">
@@ -151,12 +174,20 @@ export default async function ClientesPage() {
                         ]}
                       >
                         {clientBranches.map((b) => (
-                          // O painel de edição ocupa uma linha própria, não a
-                          // última célula: dentro de uma coluna estreita o
-                          // formulário ficaria espremido a ponto de atrapalhar.
-                          <Fragment key={b.id}>
-                            <tr>
-                              <Td className="font-medium text-[var(--color-ink)]">{b.name}</Td>
+                            <tr key={b.id}>
+                              <Td className="font-medium text-[var(--color-ink)]">
+                                {abrePainelFilial ? (
+                                  <Link
+                                    href={endereco({ filial: b.id }) as Route}
+                                    data-testid="abrir-filial"
+                                    className="text-[var(--color-brand-ink)] hover:underline"
+                                  >
+                                    {b.name}
+                                  </Link>
+                                ) : (
+                                  b.name
+                                )}
+                              </Td>
                               <Td className="font-mono text-xs text-[var(--color-ink-2)]">
                                 {b.code ?? '—'}
                               </Td>
@@ -168,33 +199,6 @@ export default async function ClientesPage() {
                                 {b.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
                               </Td>
                             </tr>
-                            {abrePainelFilial && (
-                              <tr>
-                                <Td className="bg-[var(--color-surface-2)]" colSpan={5}>
-                                  <EditPanel title={`Editar ${b.name}`}>
-                                    <div className="flex flex-col gap-5">
-                                      {podeEditarFilial && (
-                                        <EditBranchForm
-                                          branch={b}
-                                          clients={clients}
-                                          businessHours={businessHours}
-                                        />
-                                      )}
-                                      {podeVerArea && (
-                                        <AreasDaFilial
-                                          branchId={b.id}
-                                          areas={areasPorFilial.get(b.id) ?? []}
-                                          podeCriar={podeCriarArea}
-                                          podeEditar={podeEditarArea}
-                                          podeInativar={podeInativarArea}
-                                        />
-                                      )}
-                                    </div>
-                                  </EditPanel>
-                                </Td>
-                              </tr>
-                            )}
-                          </Fragment>
                         ))}
                       </Table>
                     ) : (
@@ -208,103 +212,7 @@ export default async function ClientesPage() {
             )
           })}
         </div>
-
-        <div className="flex flex-col gap-6">
-          {podeCriarCliente && (
-            <Card title="Novo cliente">
-              <NewClientForm />
-            </Card>
-          )}
-          {podeVerFilial && podeCriarFilial && (
-            <Card title="Nova filial">
-              <NewBranchForm clients={clients} businessHours={businessHours} />
-            </Card>
-          )}
-        </div>
       </div>
-    </>
-  )
-}
-
-/**
- * Painel de áreas de uma filial.
- *
- * Server Component: decide por permissão aqui, então o formulário de cadastro
- * nem chega ao HTML de quem não pode criar. Os controles interativos moram em
- * `area-forms.tsx`, que é cliente.
- */
-function AreasDaFilial({
-  branchId,
-  areas,
-  podeCriar,
-  podeEditar,
-  podeInativar,
-}: {
-  branchId: string
-  areas: BranchArea[]
-  podeCriar: boolean
-  podeEditar: boolean
-  podeInativar: boolean
-}) {
-  const ativas = areas.filter((a) => a.is_active).length
-
-  return (
-    <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold text-[var(--color-ink)]">Áreas da filial</h3>
-        <span className="text-xs text-[var(--color-ink-3)]">
-          {areas.length === 0
-            ? 'nenhuma área'
-            : `${ativas} ativa(s) de ${areas.length}`}
-        </span>
-      </div>
-
-      {areas.length === 0 ? (
-        <p className="mb-3 text-sm text-[var(--color-ink-2)]">
-          Sem área cadastrada, ativo, linha e link desta filial ficam sem lugar. Comece pelas
-          áreas padrão e ajuste depois.
-        </p>
-      ) : (
-        <ul className="mb-3 flex flex-col gap-1.5">
-          {areas.map((a) => (
-            <li
-              key={a.id}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2"
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <span className="text-sm font-medium text-[var(--color-ink)]">
-                  {a.name}
-                  {a.code && (
-                    <span className="ml-2 font-mono text-xs text-[var(--color-ink-3)]">{a.code}</span>
-                  )}
-                </span>
-                <span className="flex items-center gap-2">
-                  <Badge tone={a.kind === 'assistencial' ? 'warn' : 'neutral'}>
-                    {areaKindLabel[a.kind] ?? a.kind}
-                  </Badge>
-                  {!a.is_active && <Badge>Inativa</Badge>}
-                </span>
-              </div>
-              {(podeEditar || podeInativar) && (
-                <div className="mt-2">
-                  <EditPanel label="Editar área" title={`Editar ${a.name}`}>
-                    <EditAreaForm area={a} canDeactivate={podeInativar} />
-                  </EditPanel>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {podeCriar && (
-        <div className="flex flex-col gap-3">
-          {areas.length === 0 && <SeedAreasForm branchId={branchId} />}
-          <EditPanel label="Nova área" title="Nova área">
-            <NewAreaForm branchId={branchId} />
-          </EditPanel>
-        </div>
-      )}
-    </section>
+    </div>
   )
 }

@@ -1,32 +1,34 @@
-import { Fragment } from 'react'
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { formatCnpj, formatCurrency, formatDate, formatMinutes } from '@/lib/format'
 import type { Supplier, SupplierContract } from '@/lib/types'
+import { comParametros } from '@/lib/data/endereco'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
-import { EditPanel } from '@/components/edit-panel'
-import { EditSupplierForm, NewSupplierForm } from './supplier-forms'
-import { EditSupplierContractForm, NewSupplierContractForm } from './supplier-contract-forms'
+import { GavetaDeFornecedor } from './gaveta'
 
 export const metadata: Metadata = { title: 'Fornecedores' }
 
-export default async function FornecedoresPage() {
+export default async function FornecedoresPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ aberto?: string; novo?: string }>
+}) {
+  const params = await searchParams
   await requireScreen('fornecedores.cadastro.ver')
   /*
    * `fornecedores.contratos.ver` governa a seção de contratos. Sem ela nem a
    * consulta sai: a chave existia no catálogo sem ser lida em lugar nenhum, o
    * que fazia o administrador desmarcar e nada mudar.
    */
-  const [podeEditar, podeCriar, podeVerContrato, podeEditarContrato, podeCriarContrato] =
-    await Promise.all([
-      allowed('fornecedores.cadastro.editar'),
-      allowed('fornecedores.cadastro.criar'),
-      allowed('fornecedores.contratos.ver'),
-      allowed('fornecedores.contratos.editar'),
-      allowed('fornecedores.contratos.criar'),
-    ])
+  const [podeEditar, podeCriar, podeVerContrato] = await Promise.all([
+    allowed('fornecedores.cadastro.editar'),
+    allowed('fornecedores.cadastro.criar'),
+    allowed('fornecedores.contratos.ver'),
+  ])
   const supabase = await createClient()
 
   const [{ data: suppliers }, { data: contracts }] = await Promise.all([
@@ -50,14 +52,38 @@ export default async function FornecedoresPage() {
   const list = suppliers ?? []
   const bySupplier = agruparPor(contracts, 'supplier_id')
 
+  const endereco = (mudancas: Record<string, string | null>) =>
+    comParametros('/fornecedores', params, mudancas)
+
+  const gavetaAberta = Boolean(params.aberto || params.novo)
+
   return (
-    <>
+    <div className={gavetaAberta ? 'lg:pr-[35rem]' : undefined}>
+      {gavetaAberta && (
+        <GavetaDeFornecedor
+          id={params.aberto}
+          novo={Boolean(params.novo)}
+          fechar={endereco({ aberto: null, novo: null })}
+        />
+      )}
+
       <PageHeader
         title="Fornecedores"
         description="Prestadores de serviço de TI, contratos vigentes e SLAs contratados."
+        action={
+          podeCriar && (
+            <Link
+              href={endereco({ novo: '1' }) as Route}
+              data-testid="novo-registro"
+              className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]"
+            >
+              Novo fornecedor
+            </Link>
+          )
+        }
       />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <div>
         <div className="flex flex-col gap-4">
           {list.length === 0 && <EmptyState title="Nenhum fornecedor cadastrado" />}
 
@@ -67,7 +93,15 @@ export default async function FornecedoresPage() {
               <Card key={s.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="text-base font-semibold text-[var(--color-ink)]">{s.name}</h2>
+                    <h2 className="text-base font-semibold text-[var(--color-ink)]">
+                      <Link
+                        href={endereco({ aberto: s.id }) as Route}
+                        data-testid="abrir-registro"
+                        className="text-[var(--color-brand-ink)] hover:underline"
+                      >
+                        {s.name}
+                      </Link>
+                    </h2>
                     <p className="text-xs text-[var(--color-ink-3)]">
                       {s.legal_name ?? '—'} · {formatCnpj(s.cnpj)}
                     </p>
@@ -109,8 +143,7 @@ export default async function FornecedoresPage() {
                       ]}
                     >
                       {supplierContracts.map((c) => (
-                        <Fragment key={c.id}>
-                          <tr>
+                          <tr key={c.id}>
                             <Td>
                               <span className="font-medium text-[var(--color-ink)]">
                                 {c.contract_number ?? '—'}
@@ -127,48 +160,29 @@ export default async function FornecedoresPage() {
                               {c.is_active ? <Badge tone="ok">Ativo</Badge> : <Badge>Inativo</Badge>}
                             </Td>
                           </tr>
-                          {podeEditarContrato && (
-                            <tr>
-                              <Td className="bg-[var(--color-surface-2)]" colSpan={6}>
-                                <EditPanel title={`Editar contrato ${c.contract_number ?? ''}`}>
-                                  <EditSupplierContractForm contract={c} />
-                                </EditPanel>
-                              </Td>
-                            </tr>
-                          )}
-                        </Fragment>
                       ))}
                     </Table>
                   </div>
                 )}
 
-                {/* Ocupa a largura do cartão: espremido na coluna dos selos, o
-                    formulário viraria uma tira de campos de 6rem. */}
-                {(podeEditar || (podeVerContrato && podeCriarContrato)) && (
-                  <div className="mt-4 flex flex-col gap-3">
-                    {podeEditar && (
-                      <EditPanel title={`Editar ${s.name}`}>
-                        <EditSupplierForm supplier={s} />
-                      </EditPanel>
-                    )}
-                    {podeVerContrato && podeCriarContrato && (
-                      <EditPanel label="+ Novo contrato">
-                        <NewSupplierContractForm supplierId={s.id} />
-                      </EditPanel>
-                    )}
+                {/* Editar o fornecedor e mexer nos contratos dele acontece na
+                    gaveta: aqui a tela é de consulta, e consulta não precisa de
+                    formulário embutido em cada cartão. */}
+                {podeEditar && (
+                  <div className="mt-4">
+                    <Link
+                      href={endereco({ aberto: s.id }) as Route}
+                      className="text-sm font-semibold text-[var(--color-brand-ink)] hover:underline"
+                    >
+                      Editar fornecedor e contratos ›
+                    </Link>
                   </div>
                 )}
               </Card>
             )
           })}
         </div>
-
-        {podeCriar && (
-          <Card title="Novo fornecedor">
-            <NewSupplierForm />
-          </Card>
-        )}
       </div>
-    </>
+    </div>
   )
 }

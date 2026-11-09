@@ -1,27 +1,20 @@
-import { Fragment } from 'react'
-import { headers } from 'next/headers'
+import Link from 'next/link'
+import type { Route } from 'next'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { agruparPor } from '@/lib/data/agrupar'
 import { requireScreen, allowed } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
 import { escopoDeCliente, porFilial } from '@/lib/data/escopo'
 import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { contractStatusTone, linkStateLabel, linkStateTone, linkStatusLabel, linkTechnologyLabel } from '@/lib/i18n'
-import { formatCurrency, formatDate, formatMinutes } from '@/lib/format'
-import type { ConnectivityCostRow, InternetLink, LinkAvailabilityEvent } from '@/lib/types'
-import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
-import { EditPanel } from '@/components/edit-panel'
-import { Attachments, type AttachmentRecord } from '@/components/attachments'
+import { formatCurrency } from '@/lib/format'
+import type { ConnectivityCostRow, InternetLink } from '@/lib/types'
 import {
-  EditLinkForm,
-  LinkOutageForm,
-  LinkStatusShortcut,
-  NewLinkForm,
-  type AreaOption,
-  type SupplierOption,
-} from './link-forms'
-import { MonitoramentoCard, type EntradaDeMonitoramento } from './monitoramento'
+  Badge, EmptyState, FaixaDeIndicadores, PageHeader, Pager, StatTile, Table, Td,
+} from '@/components/ui'
+import { comParametros } from '@/lib/data/endereco'
+import { GavetaDeLink } from './gaveta'
+import type { AreaOption, SupplierOption } from './link-forms'
 
 export const metadata: Metadata = { title: 'Links de internet' }
 
@@ -59,7 +52,12 @@ interface ResumoDeLinks {
 export default async function LinksDeInternetPage({
   searchParams,
 }: {
-  searchParams: Promise<{ pagina?: string }>
+  searchParams: Promise<{
+    pagina?: string
+    aberto?: string
+    novo?: string
+    monitoramento?: string
+  }>
 }) {
   const params = await searchParams
   await requireScreen('conectividade.links.ver')
@@ -150,47 +148,40 @@ export default async function LinksDeInternetPage({
    * abririam.
    */
   const idsDaPagina = lista.map((k) => k.id)
-  /* Só busca as entradas de monitoramento para quem pode administrá-las: a
-     linha carrega o hash do token, e a policy já recusaria — mas pedir o que
-     se sabe que será negado gasta uma ida ao banco em toda visita de quem só
-     consulta. */
-  const { data: entradasMonitoramento } = podeMonitorar
-    ? await supabase
-        .from('monitoring_webhooks')
-        .select('id, name, active, last_seen_at, created_at')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-    : { data: [] }
 
-  const [{ data: anexos }, { data: eventos }] = await Promise.all([
+  /*
+   * A lista mostra DOIS fatos por link: "tem contrato anexado?" e "tem queda em
+   * aberto?". Antes, para saber isso, a tela trazia todos os anexos e todos os
+   * eventos de todos os links da página — porque o painel embutido precisava
+   * deles. Com o painel na gaveta, basta perguntar pelos dois fatos, e cada
+   * consulta devolve só a coluna `link_id`.
+   */
+  const [{ data: comContrato }, { data: comQueda }] = await Promise.all([
     idsDaPagina.length > 0
       ? supabase
           .from('internet_link_attachments')
-          .select('id, link_id, storage_path, file_name, mime_type, size_bytes, created_at, kind')
+          .select('link_id')
+          .eq('kind', 'contract')
           .in('link_id', idsDaPagina)
-          .order('created_at', { ascending: false })
-          .returns<(AttachmentRecord & { link_id: string })[]>()
       : { data: null },
     idsDaPagina.length > 0
       ? supabase
           .from('link_availability_events')
-          .select('id, link_id, state, started_at, ended_at, duration_seconds, source, note')
+          .select('link_id')
+          .eq('state', 'down')
+          .is('ended_at', null)
           .in('link_id', idsDaPagina)
-          .order('started_at', { ascending: false })
-          .returns<(LinkAvailabilityEvent & { link_id: string })[]>()
       : { data: null },
   ])
   const branchName = new Map(branches.map((b) => [b.id, b.name]))
   const areaName = new Map((areas ?? []).map((a) => [a.id, a.name]))
   const fornecedorName = new Map((fornecedores ?? []).map((f) => [f.id, f.name]))
 
-  const anexosPorLink = agruparPor(anexos, 'link_id')
-  const eventosPorLink = agruparPor(eventos, 'link_id')
-
-  const temContrato = (id: string) =>
-    (anexosPorLink.get(id) ?? []).some((a) => a.kind === 'contract')
-  const quedaAberta = (id: string) =>
-    (eventosPorLink.get(id) ?? []).some((e) => e.state === 'down' && e.ended_at === null)
+  const temContrato = new Set((comContrato ?? []).map((a) => a.link_id))
+  /* Queda em aberto AGORA, por link desta página: a coluna de estado mostra o
+     último estado conhecido, e este conjunto é o que distingue "fora do ar há
+     pouco" de "queda ainda aberta no registro". */
+  const comQuedaAberta = new Set((comQueda ?? []).map((e) => e.link_id))
 
   /*
    * Indicadores a partir da view, somando as linhas agregadas. A regra de cada
@@ -220,17 +211,57 @@ export default async function LinksDeInternetPage({
   const operadora = (k: InternetLink) =>
     (k.supplier_id ? fornecedorName.get(k.supplier_id) : null) ?? k.carrier_name ?? '—'
 
+  /* Quem alcança qualquer uma das quatro ações do link tem o número do
+     contrato como link para a gaveta; quem só consulta lê o número. */
   const abrePainel = podeEditar || podeAnexar || podeRegistrar || podeMudarStatus
-  const colunas = 9
+
+  const endereco = (mudancas: Record<string, string | null>) =>
+    comParametros('/conectividade/links', params, {
+      ...mudancas,
+      pagina: params.pagina ?? null,
+    })
+
+  const gavetaAberta = Boolean(params.aberto || params.novo || params.monitoramento)
 
   return (
-    <>
+    <div className={gavetaAberta ? 'lg:pr-[35rem]' : undefined}>
+      {gavetaAberta && (
+        <GavetaDeLink
+          id={params.aberto}
+          novo={Boolean(params.novo)}
+          monitoramento={Boolean(params.monitoramento)}
+          fechar={endereco({ aberto: null, novo: null, monitoramento: null })}
+        />
+      )}
+
       <PageHeader
         title="Links de internet"
         description="Contrato, banda, IP, CPE e monitoração por filial. Link sem host monitorado aparece como não monitorado — nunca como fora do ar."
+        action={
+          <div className="flex flex-wrap gap-2">
+            {podeMonitorar && (
+              <Link
+                href={endereco({ monitoramento: '1' }) as Route}
+                data-testid="abrir-monitoramento"
+                className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-ink)] hover:bg-[var(--color-surface-2)]"
+              >
+                Entrada de monitoramento
+              </Link>
+            )}
+            {podeCriar && (
+              <Link
+                href={endereco({ novo: '1' }) as Route}
+                data-testid="novo-registro"
+                className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]"
+              >
+                Novo link
+              </Link>
+            )}
+          </div>
+        }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <FaixaDeIndicadores>
         <StatTile label="Links cadastrados" value={totalLinks} />
         <StatTile label="Ativos" value={totalAtivos} tone="ok" />
         <StatTile
@@ -247,7 +278,7 @@ export default async function LinksDeInternetPage({
           hint="governança documental"
           tone={semContrato > 0 ? 'warn' : 'ok'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
       {vencendo > 0 && (
         <p className="mb-6 rounded-lg bg-[var(--color-warn-soft)] px-4 py-3 text-sm text-[var(--color-warn-ink)]">
@@ -256,7 +287,7 @@ export default async function LinksDeInternetPage({
         </p>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_25rem]">
+      <div>
         <div className="flex flex-col gap-6">
           {lista.length > 0 ? (
             <>
@@ -275,9 +306,20 @@ export default async function LinksDeInternetPage({
               ]}
             >
               {lista.map((k) => (
-                <Fragment key={k.id}>
-                  <tr className="hover:bg-[var(--color-surface-2)]">
-                    <Td className="font-mono text-xs font-medium">{k.contract_number ?? '—'}</Td>
+                  <tr key={k.id} className="hover:bg-[var(--color-surface-2)]">
+                    <Td className="font-mono text-xs font-medium">
+                      {abrePainel ? (
+                        <Link
+                          href={endereco({ aberto: k.id }) as Route}
+                          data-testid="abrir-registro"
+                          className="text-[var(--color-brand-ink)] hover:underline"
+                        >
+                          {k.contract_number ?? 'sem número'}
+                        </Link>
+                      ) : (
+                        (k.contract_number ?? '—')
+                      )}
+                    </Td>
                     <Td className="font-medium text-[var(--color-ink)]">{operadora(k)}</Td>
                     <Td className="text-[var(--color-ink-2)]">
                       {linkTechnologyLabel[k.technology] ?? k.technology}
@@ -304,12 +346,20 @@ export default async function LinksDeInternetPage({
                       </Badge>
                     </Td>
                     <Td>
-                      <Badge tone={linkStateTone[k.last_state] ?? 'neutral'}>
-                        {linkStateLabel[k.last_state] ?? k.last_state}
+                      <Badge
+                        tone={
+                          comQuedaAberta.has(k.id)
+                            ? 'breach'
+                            : (linkStateTone[k.last_state] ?? 'neutral')
+                        }
+                      >
+                        {comQuedaAberta.has(k.id)
+                          ? 'queda em aberto'
+                          : (linkStateLabel[k.last_state] ?? k.last_state)}
                       </Badge>
                     </Td>
                     <Td>
-                      {temContrato(k.id) ? (
+                      {temContrato.has(k.id) ? (
                         <Badge tone="ok">anexado</Badge>
                       ) : (
                         <Badge tone="crit">faltando</Badge>
@@ -318,83 +368,6 @@ export default async function LinksDeInternetPage({
                     <Td className="tabular-nums">{formatCurrency(k.monthly_cost)}</Td>
                   </tr>
 
-                  {abrePainel && (
-                    <tr>
-                      <Td className="bg-[var(--color-surface-2)]" colSpan={colunas}>
-                        <EditPanel
-                          title={`Ficha, disponibilidade e anexos — ${k.contract_number ?? operadora(k)}`}
-                        >
-                          <div className="flex flex-col gap-4">
-                            {podeEditar && (
-                              <EditLinkForm
-                                link={k}
-                                branches={branches}
-                                areas={areas ?? []}
-                                suppliers={fornecedores ?? []}
-                              />
-                            )}
-
-                            {podeMudarStatus && <LinkStatusShortcut link={k} />}
-
-                            <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-                              <h3 className="mb-2 text-sm font-semibold text-[var(--color-ink)]">
-                                Disponibilidade
-                              </h3>
-                              {k.monitoring_host ? (
-                                <p className="mb-3 text-sm text-[var(--color-ink-2)]">
-                                  Host monitorado:{' '}
-                                  <span className="font-mono text-xs">{k.monitoring_host}</span> ·
-                                  último estado em {formatDate(k.last_state_at)}
-                                </p>
-                              ) : (
-                                <p className="mb-3 text-sm text-[var(--color-ink-2)]">
-                                  Link sem host monitorado. Informe o host na ficha para acompanhar
-                                  disponibilidade — até então o estado é <em>não monitorado</em>, e
-                                  não &ldquo;no ar&rdquo;.
-                                </p>
-                              )}
-
-                              {podeRegistrar && (
-                                <div className="mb-3">
-                                  <LinkOutageForm link={k} aberta={quedaAberta(k.id)} />
-                                </div>
-                              )}
-
-                              {(eventosPorLink.get(k.id) ?? []).length > 0 ? (
-                                <ol className="flex flex-col gap-1.5 text-sm">
-                                  {(eventosPorLink.get(k.id) ?? []).slice(0, 8).map((e) => (
-                                    <li key={e.id} className="text-[var(--color-ink-2)]">
-                                      <span className="font-medium text-[var(--color-ink)]">
-                                        {formatDate(e.started_at)}
-                                      </span>{' '}
-                                      —{' '}
-                                      {e.ended_at
-                                        ? `${formatMinutes(Math.round((e.duration_seconds ?? 0) / 60))} fora do ar`
-                                        : 'em aberto'}
-                                      {e.source !== 'manual' && ` · ${e.source}`}
-                                      {e.note && ` · ${e.note}`}
-                                    </li>
-                                  ))}
-                                </ol>
-                              ) : (
-                                <p className="text-sm italic text-[var(--color-ink-3)]">
-                                  Nenhuma queda registrada.
-                                </p>
-                              )}
-                            </section>
-
-                            <Attachments
-                              entity="links"
-                              entityId={k.id}
-                              records={anexosPorLink.get(k.id) ?? []}
-                              title="Contratos e laudos"
-                            />
-                          </div>
-                        </EditPanel>
-                      </Td>
-                    </tr>
-                  )}
-                </Fragment>
               ))}
             </Table>
             <Pager
@@ -442,41 +415,7 @@ export default async function LinksDeInternetPage({
           </section>
         </div>
 
-        {podeMonitorar && (
-          <Card title="Entrada de monitoramento">
-            <MonitoramentoCard
-              entradas={(entradasMonitoramento ?? []) as EntradaDeMonitoramento[]}
-              origem={await origemDaRequisicao()}
-            />
-          </Card>
-        )}
-
-        {podeCriar && (
-          <Card title="Novo link">
-            <NewLinkForm
-              branches={branches}
-              areas={areas ?? []}
-              suppliers={fornecedores ?? []}
-            />
-          </Card>
-        )}
       </div>
-    </>
+    </div>
   )
-}
-
-/**
- * A base da URL, vinda do cabeçalho da requisição.
- *
- * O endereço do webhook precisa ser COPIÁVEL, e um caminho relativo não serve
- * para colar num script de mídia do Zabbix. `window.location` não existe na
- * primeira pintura, e uma variável de ambiente estaria errada em qualquer
- * ambiente que não fosse o configurado — inclusive na máquina de quem
- * desenvolve.
- */
-async function origemDaRequisicao(): Promise<string> {
-  const h = await headers()
-  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000'
-  const protocolo = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https')
-  return `${protocolo}://${host}`
 }
