@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireScreen, allowed } from '@/lib/session'
 import { competenciaAtual, paraExibicao } from '@/lib/projetos/competencia'
 import { emReais, ROTULO_DA_ORIGEM, somar } from '@/lib/orcamento/rateio'
-import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, StatTile, Table, Td } from '@/components/ui'
 import { LancamentoForm } from './lancamento-form'
 import { Fechamento } from './fechamento'
 
@@ -283,7 +283,7 @@ export default async function OrcamentoPage({
         )}
       </div>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile
           label={`Custo em ${paraExibicao(competencia)}`}
           value={emReais(totalDoMes)}
@@ -308,7 +308,7 @@ export default async function OrcamentoPage({
           hint="pago por uma, consumido por outras"
           tone="neutral"
         />
-      </div>
+      </FaixaDeIndicadores>
 
       {fechamentoDaCompetencia && (
         <div

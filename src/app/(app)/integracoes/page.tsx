@@ -6,7 +6,7 @@ import { requireScreen } from '@/lib/session'
 import { integrationStatusLabel, integrationStatusTone } from '@/lib/i18n'
 import { formatDateTime, formatNumber } from '@/lib/format'
 import type { Integration } from '@/lib/types'
-import { Badge, Card, EmptyState, PageHeader, StatTile } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, StatTile } from '@/components/ui'
 import { IntegrationControls } from './integration-controls'
 
 export const metadata: Metadata = { title: 'Integrações' }
@@ -51,7 +51,7 @@ export default async function IntegracoesPage() {
         description="Motor genérico de entrada de tickets. Adicionar uma origem nova é cadastro e mapeamento — não exige código."
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile label="Integrações" value={list.length} />
         <StatTile label="Ativas" value={list.filter((i) => i.status === 'active').length} tone="ok" />
         <StatTile label="Requisições" value={formatNumber(totalRequests)} />
@@ -60,7 +60,7 @@ export default async function IntegracoesPage() {
           value={formatNumber(totalErrors)}
           tone={totalErrors > 0 ? 'breach' : 'neutral'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
       {list.length === 0 ? (
         <EmptyState

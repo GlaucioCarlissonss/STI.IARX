@@ -6,7 +6,7 @@ import { requireScreen, allowed } from '@/lib/session'
 import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
 import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { desdeQuando } from '@/lib/agent/inventario'
-import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 import { InscricaoForm } from './inscricao-form'
 
 export const metadata: Metadata = { title: 'Agentes nas máquinas' }
@@ -179,7 +179,7 @@ export default async function AgentesPage({
         description="O parque que está ligado e reportando. O inventário destas máquinas não é digitado."
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <FaixaDeIndicadores>
         <StatTile label="Máquinas com agente" value={todas.length} />
         {/* Alertas abertos vem em segundo, e não no fim: é o número que diz se
             alguém precisa fazer alguma coisa hoje. */}
@@ -207,7 +207,7 @@ export default async function AgentesPage({
           hint="cadastro e máquina discordam"
           tone={divergentes > 0 ? 'warn' : 'ok'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
       <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar a frota">
         {(

@@ -13,7 +13,7 @@ import {
   tomDaVariacao,
   variacao,
 } from '@/lib/gestao/conferencia'
-import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, StatTile, Table, Td } from '@/components/ui'
 import { SerieDoResultado, type PontoDaSerie } from './serie'
 
 export const metadata: Metadata = { title: 'Visão de resultado' }
@@ -375,7 +375,7 @@ export default async function ResultadoPage({
       {/* Os quatro indicadores. A ordem é a do GSTI: dinheiro primeiro, porque é
           o que o gestor presta contas; compromisso em seguida, porque é o número
           que surpreende; depois entrega e atendimento. */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile
           label={`Gasto de TI em ${paraExibicao(competencia)}`}
           value={podeFinanceiro ? emReais(Number(r?.gasto_mes ?? 0)) : '—'}
@@ -423,7 +423,7 @@ export default async function ResultadoPage({
           }
           tone={podeSla ? tomDaConformidade(r?.sla_conformidade ?? null) : 'neutral'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
       {!podeFinanceiro && !podeProjetos && !podeSla && (
         <EmptyState

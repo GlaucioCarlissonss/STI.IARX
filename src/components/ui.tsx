@@ -150,6 +150,22 @@ export function StatTile({
  *
  * Agora a quantidade de colunas sai do NÚMERO de indicadores, e a regra de
  * quebra é uma só. No celular, todas viram uma coluna.
+ *
+ * ## As três faixas que continuam escrevendo a própria classe
+ *
+ * Não por esquecimento:
+ *
+ *  - A de `/painel` tem oito indicadores numa faixa só, metade deles atrás de
+ *    permissão. Pela regra daqui, oito viram três por linha — e ali eles são
+ *    quatro de propósito, porque a faixa é a primeira coisa que a tela mostra.
+ *  - A de `/mapas` usa `mb-3` em vez de `mb-6`: a faixa encosta no mapa logo
+ *    abaixo, e o respiro maior separaria os dois como se não falassem do mesmo
+ *    recorte.
+ *  - A de `/inventario/agentes/[id]` desenha uma faixa por DISCO, dentro de um
+ *    cartão. A quantidade varia com a máquina, e a margem é a do cartão.
+ *
+ * Ou seja: a faixa padronizou dezesseis telas e as exceções têm motivo escrito.
+ * É a diferença entre uma regra e uma uniformização.
  */
 export function FaixaDeIndicadores({ children }: { children: ReactNode }) {
   const quantos = Children.count(children)

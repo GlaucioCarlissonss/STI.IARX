@@ -12,7 +12,7 @@ import {
   tamanhoDoRegistro,
   type LinhaDaTrilha,
 } from '@/lib/auditoria'
-import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 
 export const metadata: Metadata = { title: 'Trilha de alterações' }
 
@@ -120,7 +120,7 @@ export default async function AuditoriaPage({
         }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile label="Eventos" value={count ?? 0} hint="no seu ambiente" />
         <StatTile label="Criações" value={porAcao('insert')} hint="nos 5.000 mais recentes" />
         <StatTile label="Alterações" value={porAcao('update')} hint="nos 5.000 mais recentes" />
@@ -131,7 +131,7 @@ export default async function AuditoriaPage({
           hint="nos 5.000 mais recentes"
           tone={porAcao('delete') > 0 ? 'warn' : 'ok'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
       <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar a trilha">
         {(

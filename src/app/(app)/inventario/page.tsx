@@ -10,7 +10,7 @@ import { getAgents, getBranches } from '@/lib/data/lookups'
 import { assetStatusLabel, assetStatusTone, assetTypeLabel } from '@/lib/i18n'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { BranchArea, ItAsset } from '@/lib/types'
-import { Badge, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
+import { Badge, EmptyState, FaixaDeIndicadores, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 import { GavetaDoAtivo } from './gaveta-do-ativo'
 
 export const metadata: Metadata = { title: 'Inventário de TI' }
@@ -163,7 +163,7 @@ export default async function InventarioPage({
         }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile label="Ativos cadastrados" value={totalAtivos} />
         <StatTile label="Em uso" value={emUso} tone="ok" />
         <StatTile label="Em manutenção" value={emManutencao} tone="warn" />
@@ -173,7 +173,7 @@ export default async function InventarioPage({
           hint="próximos 90 dias"
           tone={expiringWarranty > 0 ? 'crit' : 'neutral'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
       {/* A tela inteira é a lista. A coluna de 23rem com o formulário de
           cadastro — aberta o tempo todo, inclusive para quem só consulta —

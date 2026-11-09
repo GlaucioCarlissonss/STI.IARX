@@ -66,6 +66,27 @@ async function abrirPaleta(pagina) {
 const itens = (p) =>
   p.$$eval('[data-escolhido]', (ns) => ns.map((n) => n.innerText.replace(/\n+/g, ' · ').trim()))
 
+/**
+ * Digita e espera a resposta CHEGAR, em vez de esperar um tempo.
+ *
+ * A busca tem 350ms de espera antes de sair mais a ida ao servidor. Com os
+ * 500ms fixos que estavam aqui, a asserção de "acha a tela pelo nome"
+ * reprovava em duas execuções de cada três — e o campo tinha o texto certo, a
+ * resposta é que ainda não tinha voltado. Falha por corrida é pior que falha
+ * por defeito: ensina a ignorar a suíte.
+ */
+async function buscar(pagina, texto, condicao = (r) => r.length > 0, limite = 8000) {
+  await pagina.keyboard.type(texto)
+  const t0 = Date.now()
+  let r = []
+  while (Date.now() - t0 < limite) {
+    r = await itens(pagina)
+    if (condicao(r)) return r
+    await pagina.waitForTimeout(100)
+  }
+  return r
+}
+
 // ---------------------------------------------------------------------------
 console.log('\n=== 1. O atalho abre de qualquer tela ===')
 // ---------------------------------------------------------------------------
@@ -90,18 +111,14 @@ console.log('\n=== 2. Telas, ações e registros na mesma caixa ===')
 // ---------------------------------------------------------------------------
 {
   await abrirPaleta(p)
-  await p.keyboard.type('fluxo')
-  await p.waitForTimeout(500)
-  const r = await itens(p)
+  const r = await buscar(p, 'fluxo')
   ok(
     r.some((x) => /Fluxo de caixa/.test(x) && /Financeiro/.test(x)),
     'acha a tela pelo nome, com o grupo ao lado para dar contexto',
   )
 
   await p.fill('[data-testid="paleta"] input', '')
-  await p.keyboard.type('servidor')
-  await p.waitForTimeout(900)
-  const comRegistro = await itens(p)
+  const comRegistro = await buscar(p, 'servidor', (r) => r.some((x) => /#\d+\s+Servidor/.test(x)))
   ok(
     comRegistro.some((x) => /#\d+\s+Servidor/.test(x)),
     'acha o CHAMADO pelo título, sem passar pela tela de tickets',
@@ -113,10 +130,9 @@ console.log('\n=== 2. Telas, ações e registros na mesma caixa ===')
 
   /* O número puro é como as pessoas se referem ao chamado no telefone. */
   await p.fill('[data-testid="paleta"] input', '')
-  await p.keyboard.type('5')
-  await p.waitForTimeout(900)
+  const porNumero = await buscar(p, '5', (r) => r.some((x) => /#5\s/.test(x)))
   ok(
-    (await itens(p)).some((x) => /#5\s/.test(x)),
+    porNumero.some((x) => /#5\s/.test(x)),
     'número puro acha o chamado pelo NÚMERO',
   )
 

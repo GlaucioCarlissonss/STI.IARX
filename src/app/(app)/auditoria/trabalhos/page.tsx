@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireScreen } from '@/lib/session'
 import { formatDateTime } from '@/lib/format'
-import { Badge, Card, EmptyState, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, StatTile, Table, Td } from '@/components/ui'
 
 export const metadata: Metadata = { title: 'Trabalhos agendados' }
 
@@ -103,7 +103,7 @@ export default async function TrabalhosPage() {
         />
       ) : (
         <>
-          <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <FaixaDeIndicadores>
             <StatTile label="Trabalhos" value={resumo.length} hint="que já rodaram ao menos uma vez" />
             {/* O indicador que importa: silêncio, não falha. */}
             <StatTile
@@ -118,7 +118,7 @@ export default async function TrabalhosPage() {
               hint="o trabalho rodou e deu erro"
               tone={comFalha.length > 0 ? 'warn' : 'ok'}
             />
-          </div>
+          </FaixaDeIndicadores>
 
           <Card title="Situação por trabalho" className="mb-6">
             <Table

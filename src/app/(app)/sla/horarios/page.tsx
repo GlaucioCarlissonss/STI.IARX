@@ -3,7 +3,7 @@ import Link from 'next/link'
 import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { requireScreen, allowed } from '@/lib/session'
-import { Card, EmptyState, PageHeader, StatTile } from '@/components/ui'
+import { Card, EmptyState, FaixaDeIndicadores, PageHeader, StatTile } from '@/components/ui'
 import { ExpedienteForm } from './expediente-form'
 import { ExpedienteCard } from './expediente-card'
 
@@ -114,7 +114,7 @@ export default async function HorariosPage() {
         }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+      <FaixaDeIndicadores>
         <StatTile label="Expedientes" value={lista.length} />
         {/* O indicador que importa: expediente sem faixa é um relógio parado que
             ninguém vê. O contrato aponta para ele, a conta roda e nunca vence. */}
@@ -130,7 +130,7 @@ export default async function HorariosPage() {
           hint="dias em que o prazo não corre"
           tone={feriadosFuturos === 0 ? 'warn' : 'ok'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
       {lista.length === 0 ? (
         <EmptyState

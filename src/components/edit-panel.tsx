@@ -1,7 +1,26 @@
 import type { ReactNode } from 'react'
 
 /**
- * Revelador do formulário de edição, na própria linha do registro.
+ * Revelador de uma SEÇÃO dentro de um registro já aberto.
+ *
+ * ## O que ele deixou de ser
+ *
+ * Até a Fase 5 ele era o jeito de abrir um REGISTRO: um `<details>` por linha
+ * de tabela, com o formulário inteiro dentro da célula. Treze telas faziam
+ * isso, e em todas o formulário herdava a largura da coluna em que nasceu — o
+ * editor da regra de mapeamento chegou a ter nove campos na largura de uma
+ * coluna chamada "Ações". Esse idioma acabou: registro se abre na gaveta
+ * (`components/gaveta.tsx`), que tem largura própria, endereço próprio e `Esc`.
+ *
+ * O que sobrou — e é legítimo — são **seções dentro da gaveta**: editar um dos
+ * contratos do fornecedor que já está aberto, transferir a custódia do ativo
+ * que já está aberto. Essas não competem com a gaveta, fazem parte dela. Hoje
+ * são dois usos, em `fornecedores/gaveta.tsx` e `clientes/gaveta.tsx`.
+ *
+ * Um `EditPanel` novo numa PÁGINA, em vez de dentro de uma gaveta, é o idioma
+ * voltando — e a suíte `demo/tests/local/gaveta.spec.mjs` reprova isso em cada
+ * uma das treze telas, conferindo que nenhum campo de formulário aparece na
+ * tela por padrão.
  *
  * É `<details>`/`<summary>` puro, sem estado no cliente: já vem com
  * abre/fecha por teclado, `aria-expanded` implícito e busca-na-página do

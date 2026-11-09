@@ -5,7 +5,7 @@ import { requireScreen } from '@/lib/session'
 import { escopoDeCliente, porClienteOuGeral } from '@/lib/data/escopo'
 import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { formatDateTime } from '@/lib/format'
-import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 
 export const metadata: Metadata = { title: 'Satisfação' }
 
@@ -108,7 +108,7 @@ export default async function SatisfacaoPage({
         description="Avaliação de 1 a 5 enviada a quem abriu o chamado, depois do encerramento."
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile
           label="Nota média"
           value={media === null ? '—' : media.toFixed(1).replace('.', ',')}
@@ -127,7 +127,7 @@ export default async function SatisfacaoPage({
           tone={ruins > 0 ? 'breach' : 'ok'}
         />
         <StatTile label="Convites enviados" value={universo.length} />
-      </div>
+      </FaixaDeIndicadores>
 
       {lista.length === 0 ? (
         <EmptyState

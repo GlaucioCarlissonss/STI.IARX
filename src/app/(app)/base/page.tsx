@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireScreen, allowed } from '@/lib/session'
 import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { formatDate } from '@/lib/format'
-import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 
 export const metadata: Metadata = { title: 'Base de conhecimento' }
 
@@ -159,7 +159,7 @@ export default async function BasePage({
       </form>
 
       {podeEscrever && (
-        <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <FaixaDeIndicadores>
           <StatTile label="Artigos publicados" value={publicados} />
           {/* O indicador que importa. Ver o comentário do componente. */}
           <StatTile
@@ -175,7 +175,7 @@ export default async function BasePage({
             tone={rascunhos > 0 ? 'warn' : 'ok'}
           />
           <StatTile label="Leituras" value={leituras} />
-        </div>
+        </FaixaDeIndicadores>
       )}
 
       {podeEscrever && (

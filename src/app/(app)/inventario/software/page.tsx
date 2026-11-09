@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireScreen } from '@/lib/session'
 import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { formatDateTime } from '@/lib/format'
-import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 
 export const metadata: Metadata = { title: 'Software instalado' }
 
@@ -95,7 +95,7 @@ export default async function SoftwarePage({
         description="O que está instalado na frota, contado por programa. Vem do agente — não é digitado."
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <FaixaDeIndicadores>
         <StatTile label="Programas distintos" value={todos.length} />
         <StatTile
           label="Deixaram de aparecer"
@@ -108,7 +108,7 @@ export default async function SoftwarePage({
           value={emUmaSo}
           hint="candidatos a licença ociosa"
         />
-      </div>
+      </FaixaDeIndicadores>
 
       <form className="mb-4 flex flex-wrap gap-2" role="search">
         <label className="sr-only" htmlFor="busca">

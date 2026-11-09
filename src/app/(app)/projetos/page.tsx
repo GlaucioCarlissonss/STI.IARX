@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireScreen, allowed } from '@/lib/session'
 import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { paraExibicao } from '@/lib/projetos/competencia'
-import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 import { ProjetoForm } from './projeto-form'
 
 export const metadata: Metadata = { title: 'Projetos' }
@@ -129,7 +129,7 @@ export default async function ProjetosPage({
         description="Cronograma mensal de TI. Atraso e desvio são calculados, nunca digitados."
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile label="Projetos" value={todos.length} />
         <StatTile label="Em andamento" value={emAndamento} />
         {/* O que importa: ninguém marca um projeto como atrasado, então o número
@@ -150,7 +150,7 @@ export default async function ProjetosPage({
           hint={concluidos.length > 0 ? `nos ${concluidos.length} entregues` : 'nada entregue ainda'}
           tone={desvioMedio !== null && desvioMedio > 0 ? 'warn' : 'ok'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
       <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar projetos">
         {(

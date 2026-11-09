@@ -6,7 +6,7 @@ import { requireScreen, allowed } from '@/lib/session'
 import { lerPagina, paginar } from '@/lib/data/paginacao'
 import { desdeQuando } from '@/lib/agent/inventario'
 import { ROTULO_DO_CANAL, type TipoDeCanal } from '@/lib/canais/registro'
-import { Badge, Card, EmptyState, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, PageHeader, Pager, StatTile, Table, Td } from '@/components/ui'
 
 export const metadata: Metadata = { title: 'Conversas' }
 
@@ -121,7 +121,7 @@ export default async function ConversasPage({
         }
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile label="Conversas" value={todas.length} />
         <StatTile label="Abertas agora" value={abertas} />
         {/* O que importa: contato anônimo abre chamado sem SLA, sem satisfação e
@@ -139,7 +139,7 @@ export default async function ConversasPage({
           hint="o cliente não recebeu"
           tone={comFalha > 0 ? 'breach' : 'ok'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
       <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar conversas">
         {(

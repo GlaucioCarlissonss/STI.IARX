@@ -4,7 +4,7 @@ import { requireScreen, allowed } from '@/lib/session'
 import { formatDateTime } from '@/lib/format'
 import { centavosEmDolar } from '@/lib/ia/regras'
 import { ROTULO_DA_SUGESTAO, PRECO_POR_MILHAO, type TipoDeSugestao } from '@/lib/ia/tipos'
-import { Badge, Card, PageHeader, StatTile, Table, Td } from '@/components/ui'
+import { Badge, Card, FaixaDeIndicadores, PageHeader, StatTile, Table, Td } from '@/components/ui'
 import { ConfigForm } from './config-form'
 
 export const metadata: Metadata = { title: 'Sugestões de IA' }
@@ -93,7 +93,7 @@ export default async function IAPage() {
         description="Resposta, classificação e artigo — sugeridos, nunca aplicados. A chave mora no ambiente, nunca aqui."
       />
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile
           label="Situação"
           value={config?.enabled ? 'ligada' : 'desligada'}
@@ -121,7 +121,7 @@ export default async function IAPage() {
           hint={decididas > 0 ? `${aceitas} de ${decididas} decididas` : 'nenhuma decidida ainda'}
           tone="neutral"
         />
-      </div>
+      </FaixaDeIndicadores>
 
       <ConfigForm
         config={

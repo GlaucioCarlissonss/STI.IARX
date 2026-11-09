@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireScreen, allowed } from '@/lib/session'
 import { paraExibicao } from '@/lib/projetos/competencia'
 import { emOrdemDeLeitura, type TarefaDoCronograma } from '@/lib/projetos/cronograma'
-import { Badge, Card, PageHeader, StatTile } from '@/components/ui'
+import { Badge, Card, FaixaDeIndicadores, PageHeader, StatTile } from '@/components/ui'
 import { Gantt } from './gantt'
 import { TarefasDoProjeto } from './tarefas'
 import { EnvolvidosDoProjeto, type Envolvido } from './envolvidos'
@@ -121,7 +121,7 @@ export default async function ProjetoPage({ params }: { params: Promise<{ id: st
         </Card>
       )}
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile label="Tarefas" value={lista.length} />
         <StatTile label="Entregues" value={entregues.length} />
         <StatTile
@@ -138,7 +138,7 @@ export default async function ProjetoPage({ params }: { params: Promise<{ id: st
           hint={entregues.length > 0 ? `${noPrazo} de ${entregues.length}` : 'nada entregue ainda'}
           tone="neutral"
         />
-      </div>
+      </FaixaDeIndicadores>
 
       <Card title="Cronograma" className="mb-6">
         <Gantt tarefas={lista} />

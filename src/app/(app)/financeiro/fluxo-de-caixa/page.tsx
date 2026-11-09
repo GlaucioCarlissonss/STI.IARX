@@ -4,7 +4,7 @@ import { escopoDeCliente, porFilialOuGeral } from '@/lib/data/escopo'
 import { requireScreen } from '@/lib/session'
 import { formatCurrency, formatDate, formatMonth } from '@/lib/format'
 import type { CashFlowBucket, CostCenter } from '@/lib/types'
-import { Badge, Card, EmptyState, Field, PageHeader, StatTile, Table, Td, inputClass } from '@/components/ui'
+import { Badge, Card, EmptyState, FaixaDeIndicadores, Field, PageHeader, StatTile, Table, Td, inputClass } from '@/components/ui'
 
 export const metadata: Metadata = { title: 'Fluxo de caixa' }
 
@@ -192,7 +192,7 @@ export default async function FluxoDeCaixaPage({
         </form>
       </Card>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <FaixaDeIndicadores>
         <StatTile
           label="Saldo hoje"
           value={formatCurrency(saldoD0)}
@@ -215,7 +215,7 @@ export default async function FluxoDeCaixaPage({
           }
           tone={primeiroNegativo ? 'breach' : 'ok'}
         />
-      </div>
+      </FaixaDeIndicadores>
 
       {/* Os avisos são aritmética, não limiar inventado: um diz que a soma fica
           negativa, o outro só relata onde o dinheiro se concentra. */}
