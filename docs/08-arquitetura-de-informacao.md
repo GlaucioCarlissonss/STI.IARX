@@ -235,6 +235,7 @@ Quem não alcança bloco nenhum recebe um aviso explícito, em vez de uma tela v
 | **A paleta**: atalho em qualquer tela, telas/ações/registros, teclado, e a busca que NÃO é porta dos fundos | `demo/tests/local/paleta.spec.mjs` |
 | **A lista**: visões e contagens, filtro sem botão, ordenação, densidade lembrada, teclado, ação em massa, e a barra que não oferece o que a permissão não dá | `demo/tests/local/lista.spec.mjs` |
 | **Celular**: nenhuma das cinco telas conferidas rola de lado; a tabela vira ficha | `demo/tests/local/lista.spec.mjs` §8 |
+| **Os avisos**: confirmação que sobrevive à revalidação, campo que limpa, erro que fica até ser fechado, desfazer de lote, fio de progresso | `demo/tests/local/avisos.spec.mjs` |
 | **A gaveta**: endereço que se manda, Esc que não perde o filtro, J/K trocando o chamado aberto, volta honesta na edição recusada, e o que a permissão não dá | `demo/tests/local/gaveta.spec.mjs` |
 | Nenhum texto da URL vira nome de coluna na consulta (inclui `__proto__`) | `src/lib/data/ordenacao.test.ts` |
 | O endereço preserva filtro, remove o que esvazia e volta para a página 1 | `src/lib/data/endereco.test.ts` |
@@ -339,6 +340,35 @@ para o ativo aberto: a tela ficou mais larga e a consulta, menor.
 **Quem não pode editar vê texto, não controle inerte.** Seletor desabilitado
 não explica nada, rouba uma parada de tabulação e ainda anuncia
 "indisponível" no leitor de tela: três incômodos para informar zero.
+
+## 11. O que a tela diz depois da escrita
+
+Esta parte não nasceu de uma ideia de melhoria: nasceu de uma medição. Publicar
+um comentário **gravava no banco e a tela não dizia nada** — a confirmação
+nunca aparecia, o texto continuava no campo e a conversa não mudava. Da cadeira
+de quem atende isso é indistinguível de "não funcionou", e a reação natural é
+clicar de novo: dois comentários iguais no chamado do cliente.
+
+A causa era estrutural, e por isso valia para as **87 confirmações** que as
+ações devolvem: a mensagem vivia dentro do componente que a revalidação da
+própria ação recria. Quanto mais a ação acertava em atualizar a tela, mais
+certo era que a confirmação dela sumisse.
+
+| Decisão | Por quê |
+|---|---|
+| A confirmação mora numa região do **layout**, alimentada por uma loja de módulo | É o que a revalidação não recria. Não depende de árvore, provedor nem contexto |
+| O aviso é publicado **logo depois da ação**, não num efeito que lê o estado | No caso em que a ação esvazia a lista, o componente que a disparou some antes de qualquer efeito rodar — e era justamente quando tudo tinha dado certo |
+| **Confirmação some sozinha; erro fica** | Mensagem de erro que desaparece é mensagem que ninguém leu, e erro quase sempre explica o que fazer em seguida |
+| O **erro de formulário continua no formulário** | "Escreva um comentário" não faz sentido flutuando no rodapé da tela |
+| O campo **limpa quando gravou** | Campo cheio depois de publicar é a pista mais forte de que "não foi" |
+| **Desfazer** no lugar de "tem certeza?" | Perguntar antes cobra um clique em toda vez certa para salvar as raras erradas |
+
+**O fio de progresso.** As navegações levam de 110 a 250ms (medido). É rápido
+demais para esqueleto — ele apareceria e sumiria antes de ser lido, e piscar é
+pior que esperar parado — e lento o bastante para a pessoa duvidar se o clique
+pegou. Um fio de 2px sob o cabeçalho, aceso por `useTransition`, resolve a
+dúvida sem roubar a tela. A contagem é de operações em curso, não um booleano:
+o filtro e a gaveta podem navegar ao mesmo tempo.
 
 **A tabela vira ficha no celular.** Abaixo de `lg`, `<Table>` empilha cada linha
 com o rótulo da coluna ao lado do valor (`.tabela` em `globals.css`). O rótulo

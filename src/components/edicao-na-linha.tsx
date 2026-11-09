@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import type { ActionState } from '@/lib/actions/estado'
 import { assignTicket, changeStatus } from '@/app/(app)/tickets/actions'
+import { avisar } from './avisos'
 
 /**
  * Trocar status ou atendente sem sair da lista.
@@ -82,7 +83,28 @@ export function EdicaoNaLinha({
       if (r.error) {
         setEscolhido(antes === valor ? null : antes)
         setErro(r.error)
+        return
       }
+
+      /*
+       * Deu certo e a linha já mostra o novo valor — mas isso não basta: uma
+       * troca de status pode tirar o chamado do filtro atual, e aí a linha
+       * some. Sem aviso, o que a pessoa vê é um registro desaparecendo.
+       *
+       * O "desfazer" existe só para atribuição: voltar um atendente é sempre
+       * possível, enquanto voltar um status depende da máquina de estados do
+       * banco — oferecer um desfazer que pode ser recusado seria pior do que
+       * não oferecer.
+       */
+      const rotulo = opcoes.find((o) => o.valor === novo)?.rotulo ?? novo
+      avisar({
+        tipo: 'ok',
+        texto: campo === 'status' ? `Status: ${rotulo}.` : `Atendente: ${rotulo}.`,
+        desfazer:
+          campo === 'atendente'
+            ? { rotulo: 'desfazer', aoClicar: () => mudar(antes) }
+            : undefined,
+      })
     })
   }
 

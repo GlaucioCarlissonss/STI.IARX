@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { comParametros } from '@/lib/data/endereco'
+import { useProgresso } from './progresso'
 
 /**
  * Os filtros da lista, sem botão "Filtrar".
@@ -57,6 +58,9 @@ export function FiltrosDeLista({
 }) {
   const router = useRouter()
   const [pendente, iniciar] = useTransition()
+  /* O filtro já sabia que estava navegando; essa informação morria num
+     atributo que ninguém desenhava. Agora ela acende o fio do cabeçalho. */
+  useProgresso(pendente)
   const [texto, setTexto] = useState(params[nomeDaBusca] ?? '')
   const digitado = useRef(false)
 

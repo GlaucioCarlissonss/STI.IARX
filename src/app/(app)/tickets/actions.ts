@@ -369,5 +369,9 @@ export async function addComment(_prev: ActionState, formData: FormData): Promis
   if (error) return { error: mensagemDeErro(error) }
 
   revalidatePath(`/tickets/${parsed.data.ticket_id}`)
+  /* E a LISTA: desde a gaveta, comentar acontece em `/tickets`, não em
+     `/tickets/[id]`. Sem esta linha, quem publicava pela gaveta não via o
+     próprio texto entrar na conversa — e concluía que não tinha ido. */
+  revalidatePath('/tickets')
   return { success: 'Comentário publicado.' }
 }

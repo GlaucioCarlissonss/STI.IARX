@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { Route } from 'next'
 import {
-  useActionState,
   useEffect,
+  useTransition,
   useRef,
   useState,
   useSyncExternalStore,
@@ -14,6 +14,8 @@ import { comParametros } from '@/lib/data/endereco'
 import type { SlaState, TicketStatus } from '@/lib/types'
 import { PriorityBadge, StatusBadge } from './ui'
 import { EdicaoNaLinha, type OpcaoDeEdicao } from './edicao-na-linha'
+import { avisar } from './avisos'
+import { useProgresso } from './progresso'
 import { acaoEmLote } from '@/app/(app)/tickets/actions'
 
 /**
@@ -168,6 +170,11 @@ export function ListaDeTickets({
   aberto: string | null
 }) {
   const router = useRouter()
+  /* Abrir a gaveta e andar com J/K são navegações: dentro de uma transição,
+     elas acendem o fio de progresso do cabeçalho em vez de parecerem um
+     clique que não pegou. */
+  const [navegando, iniciarNavegacao] = useTransition()
+  useProgresso(navegando)
   /* A mesma lista de atendentes do lote serve à edição na linha — duas listas
      divergiriam no dia em que alguém entrasse na equipe. */
   const atendentesEditaveis = atendentes
@@ -248,7 +255,9 @@ export function ListaDeTickets({
       const irPara = (indice: number) => {
         setCursor(indice)
         const alvo = tickets[indice]
-        if (aberto && alvo) router.push(enderecoDaGaveta(alvo.id) as Route, { scroll: false })
+        if (aberto && alvo) {
+          iniciarNavegacao(() => router.push(enderecoDaGaveta(alvo.id) as Route, { scroll: false }))
+        }
       }
 
       if (tecla === 'j' || e.key === 'ArrowDown') {
@@ -276,7 +285,9 @@ export function ListaDeTickets({
              é olhar e decidir, e para isso sair da lista é custo sem retorno.
              Quem precisa da página inteira tem o link dentro da gaveta — e
              Ctrl+clique no título continua abrindo em outra aba. */
-          router.push(enderecoDaGaveta(alvo.id) as Route, { scroll: false })
+          iniciarNavegacao(() =>
+            router.push(enderecoDaGaveta(alvo.id) as Route, { scroll: false }),
+          )
         }
       } else if (e.key === 'Escape' && marcados.size > 0) {
         e.preventDefault()
@@ -286,7 +297,7 @@ export function ListaDeTickets({
 
     window.addEventListener('keydown', aoTeclar)
     return () => window.removeEventListener('keydown', aoTeclar)
-  }, [tickets, cursor, marcados.size, router, aberto, base, params])
+  }, [tickets, cursor, marcados.size, router, aberto, base, params, iniciarNavegacao])
 
   /* O cursor tem que ficar visível: andar para fora da tela é o mesmo que não
      andar. `nearest` evita o salto brusco de centralizar a cada tecla. */
@@ -532,6 +543,7 @@ export function ListaDeTickets({
           atendentes={atendentes}
           filas={filas}
           permissoes={permissoes}
+          anteriores={Object.fromEntries(tickets.map((t) => [t.id, t.atendenteId ?? '']))}
           aoLimpar={() => setMarcados(new Set())}
         />
       )}
@@ -563,6 +575,8 @@ function LinkDoChamado({
   aoAbrir: () => void
   router: ReturnType<typeof useRouter>
 }) {
+  const [pendente, iniciar] = useTransition()
+  useProgresso(pendente)
   return (
     <Link
       href={`/tickets/${id}` as Route}
@@ -572,7 +586,7 @@ function LinkDoChamado({
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
         e.preventDefault()
         aoAbrir()
-        router.push(href as Route, { scroll: false })
+        iniciar(() => router.push(href as Route, { scroll: false }))
       }}
       className="font-medium text-[var(--color-brand-ink)] hover:underline"
     >
@@ -669,12 +683,14 @@ function BarraDeLote({
   atendentes,
   filas,
   permissoes,
+  anteriores,
   aoLimpar,
 }: {
   ids: string[]
   atendentes: OpcaoDeLote[]
   filas: OpcaoDeLote[]
   permissoes: PermissoesDaLista
+  anteriores: Record<string, string>
   aoLimpar: () => void
 }) {
   const nada = !permissoes.atribuir && !permissoes.status && !permissoes.transferir
@@ -696,13 +712,28 @@ function BarraDeLote({
           rotulo="Atribuir a…"
           ids={ids}
           opcoes={[{ valor: '', rotulo: 'Sem atendente' }, ...atendentes]}
+          anteriores={anteriores}
+          aoConcluir={aoLimpar}
         />
       )}
       {permissoes.status && (
-        <AcaoEmMassa acao="status" rotulo="Mudar status…" ids={ids} opcoes={STATUS_EM_LOTE} />
+        <AcaoEmMassa
+          acao="status"
+          rotulo="Mudar status…"
+          ids={ids}
+          opcoes={STATUS_EM_LOTE}
+          aoConcluir={aoLimpar}
+        />
       )}
       {permissoes.transferir && (
-        <AcaoEmMassa acao="fila" rotulo="Mover de fila…" ids={ids} opcoes={filas} pedeMotivo />
+        <AcaoEmMassa
+          acao="fila"
+          rotulo="Mover de fila…"
+          ids={ids}
+          opcoes={filas}
+          pedeMotivo
+          aoConcluir={aoLimpar}
+        />
       )}
 
       {nada && (
@@ -740,25 +771,101 @@ function AcaoEmMassa({
   ids,
   opcoes,
   pedeMotivo = false,
+  anteriores,
+  aoConcluir,
 }: {
   acao: 'atribuir' | 'status' | 'fila'
   rotulo: string
   ids: string[]
   opcoes: OpcaoDeLote[]
   pedeMotivo?: boolean
+  /** Atendente de cada chamado ANTES do lote — é o que permite desfazer. */
+  anteriores?: Record<string, string>
+  aoConcluir?: () => void
 }) {
-  const [estado, enviar, enviando] = useActionState(acaoEmLote, {})
-  const formRef = useRef<HTMLFormElement>(null)
+  const [enviando, iniciar] = useTransition()
   const motivoRef = useRef<HTMLInputElement>(null)
-  const [valor, setValor] = useState('')
+  const [valor, setValor] = useState('__')
+
+  /*
+   * A ação é chamada DIRETAMENTE, não por `useActionState` com um efeito
+   * lendo o resultado — e a diferença não é de estilo.
+   *
+   * O lote muda os chamados que estão marcados, e marcar quase sempre vem de
+   * um filtro: "sem atendente", "em aberto". Atribuir os dois últimos sem
+   * atendente esvazia a lista, a tela troca para o estado vazio e ESTE
+   * componente deixa de existir — antes de qualquer efeito dele rodar. Era
+   * exatamente aí que a confirmação sumia: no caso em que o lote funcionou
+   * inteiro.
+   *
+   * Chamando a ação aqui e avisando logo depois, a mensagem é publicada numa
+   * loja de módulo que não depende de componente nenhum continuar montado.
+   */
+  function aplicar(escolha: string) {
+    const motivo = motivoRef.current?.value.trim() ?? ''
+    /* Transferir sem motivo é recusado pelo servidor; pedir aqui evita a ida e
+       volta e deixa o cursor onde falta escrever. */
+    if (pedeMotivo && !motivo) {
+      motivoRef.current?.focus()
+      setValor('__')
+      return
+    }
+
+    const dados = new FormData()
+    for (const id of ids) dados.append('id', id)
+    dados.set('acao', acao)
+    dados.set('valor', escolha)
+    if (motivo) dados.set('motivo', motivo)
+
+    iniciar(async () => {
+      const r = await acaoEmLote({}, dados)
+      if (r.error) {
+        avisar({ tipo: 'erro', texto: r.error })
+        setValor('__')
+        return
+      }
+      if (!r.success) return
+
+      /*
+       * Desfazer só para atribuição, e só quando sabemos de onde cada chamado
+       * veio. Voltar um atendente é sempre possível; voltar um status depende
+       * da máquina de estados do banco, e um desfazer que pode ser recusado é
+       * pior que nenhum.
+       */
+      const podeDesfazer = acao === 'atribuir' && anteriores !== undefined
+      avisar({
+        tipo: 'ok',
+        texto: r.success,
+        desfazer: podeDesfazer
+          ? {
+              rotulo: 'desfazer',
+              aoClicar: () => {
+                /* Agrupa por valor anterior: um lote por destino, em vez de
+                   uma escrita por chamado. */
+                const porValor = new Map<string, string[]>()
+                for (const id of ids) {
+                  const antes = anteriores?.[id] ?? ''
+                  porValor.set(antes, [...(porValor.get(antes) ?? []), id])
+                }
+                for (const [antes, grupo] of porValor) {
+                  const volta = new FormData()
+                  for (const id of grupo) volta.append('id', id)
+                  volta.set('acao', 'atribuir')
+                  volta.set('valor', antes)
+                  void acaoEmLote({}, volta).then((v) => {
+                    if (v.error) avisar({ tipo: 'erro', texto: v.error })
+                  })
+                }
+              },
+            }
+          : undefined,
+      })
+      aoConcluir?.()
+    })
+  }
 
   return (
-    <form ref={formRef} action={enviar} className="flex items-center gap-1.5">
-      {ids.map((id) => (
-        <input key={id} type="hidden" name="id" value={id} />
-      ))}
-      <input type="hidden" name="acao" value={acao} />
-
+    <div className="flex items-center gap-1.5">
       {pedeMotivo && (
         <input
           ref={motivoRef}
@@ -770,37 +877,23 @@ function AcaoEmMassa({
       )}
 
       <select
-        name="valor"
         value={valor}
         disabled={enviando}
         aria-label={rotulo}
         data-testid={`lote-${acao}`}
         onChange={(e) => {
           setValor(e.target.value)
-          if (e.target.value === '__') return
-          /* Transferir sem motivo é recusado pelo servidor; pedir aqui evita a
-             ida e volta e deixa o cursor onde falta escrever. */
-          if (pedeMotivo && !motivoRef.current?.value.trim()) {
-            motivoRef.current?.focus()
-            return
-          }
-          formRef.current?.requestSubmit()
+          if (e.target.value !== '__') aplicar(e.target.value)
         }}
         className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-xs text-[var(--color-surface)]"
       >
-        <option value="__">{rotulo}</option>
+        <option value="__">{enviando ? 'aplicando…' : rotulo}</option>
         {opcoes.map((o) => (
           <option key={o.valor || 'vazio'} value={o.valor} className="text-[var(--color-ink)]">
             {o.rotulo}
           </option>
         ))}
       </select>
-
-      {(estado.error || estado.success) && (
-        <span role="status" className="max-w-56 text-xs opacity-90">
-          {estado.error ?? estado.success}
-        </span>
-      )}
-    </form>
+    </div>
   )
 }

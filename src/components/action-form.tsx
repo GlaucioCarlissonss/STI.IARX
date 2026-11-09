@@ -1,9 +1,10 @@
 'use client'
 
-import { useActionState, type ReactNode } from 'react'
+import { useActionState, useRef, type ReactNode } from 'react'
 import { useFormStatus } from 'react-dom'
 import type { ActionState } from '@/lib/actions/estado'
 import { ErrorNote } from './ui'
+import { avisar } from './avisos'
 
 /**
  * Formulário ligado a uma Server Action, com feedback de erro/sucesso.
@@ -16,28 +17,56 @@ export function ActionForm({
   action,
   children,
   className = '',
+  /** Formulário de edição que não deve voltar aos valores iniciais ao salvar. */
+  manterCampos = false,
 }: {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>
   children: ReactNode
   className?: string
+  manterCampos?: boolean
 }) {
-  const [state, formAction] = useActionState<ActionState, FormData>(action, {})
+  const formRef = useRef<HTMLFormElement>(null)
+
+  /*
+   * O aviso e a limpeza acontecem AQUI, logo depois que a ação responde — não
+   * num efeito que lê o estado depois.
+   *
+   * A diferença é o caso em que a ação funciona bem demais: ela revalida, o
+   * servidor manda a árvore nova, e o formulário que disparou tudo pode deixar
+   * de existir nesse mesmo instante (uma lista que esvazia, uma gaveta que
+   * troca de conteúdo). Um efeito agendado nesse componente simplesmente não
+   * roda, e a confirmação some justamente quando a escrita deu certo — foi o
+   * defeito medido que originou esta fase, e ele voltou uma vez por este
+   * caminho.
+   *
+   * Envolvendo a ação, o aviso é publicado numa loja de módulo que não depende
+   * de árvore nenhuma, antes de qualquer re-renderização.
+   *
+   * Limpar o campo importa tanto quanto avisar: campo ainda cheio depois de
+   * publicar é a pista mais forte de que "não foi", e é o que leva ao segundo
+   * clique e ao comentário duplicado no chamado do cliente.
+   */
+  const comAviso = async (anterior: ActionState, dados: FormData): Promise<ActionState> => {
+    const r = await action(anterior, dados)
+    if (r.success) {
+      avisar({ tipo: 'ok', texto: r.success })
+      if (!manterCampos) formRef.current?.reset()
+    }
+    return r
+  }
+
+  const [state, formAction] = useActionState<ActionState, FormData>(comAviso, {})
 
   return (
-    <form action={formAction} className={className}>
+    <form ref={formRef} action={formAction} className={className}>
       {children}
+      {/* O ERRO continua aqui, ao lado do campo que o causou — "escreva um
+          comentário" não faz sentido flutuando no rodapé da tela. Quem vai
+          para a região de avisos é a confirmação, que é o que sumia. */}
       {state.error && (
         <div className="mt-3">
           <ErrorNote>{state.error}</ErrorNote>
         </div>
-      )}
-      {state.success && (
-        <p
-          role="status"
-          className="mt-3 rounded-lg bg-[var(--color-ok-soft)] px-3.5 py-2.5 text-sm font-medium text-[var(--color-ok-ink)]"
-        >
-          {state.success}
-        </p>
       )}
     </form>
   )

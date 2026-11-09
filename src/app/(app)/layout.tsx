@@ -9,6 +9,8 @@ import { initials } from '@/lib/format'
 import { signOut } from '@/app/login/actions'
 import { ClientFocus } from '@/components/client-focus'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { RegiaoDeAvisos } from '@/components/avisos'
+import { BarraDeNavegacao } from '@/components/progresso'
 import { getClients } from '@/lib/data/lookups'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -124,6 +126,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {children}
         </main>
       </div>
+
+      {/* A região de avisos fica AQUI, fora do `<main>`: é o que a revalidação
+          de uma ação não recria, e é por isso que a confirmação sobrevive a
+          ela. Uma vez só, para a aplicação inteira. */}
+      <BarraDeNavegacao />
+      <RegiaoDeAvisos />
     </div>
   )
 }
