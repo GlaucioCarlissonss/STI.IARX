@@ -1,26 +1,18 @@
-import { Fragment } from 'react'
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import type { Route } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { escopoDeCliente, porCliente, porClienteOuGeral } from '@/lib/data/escopo'
 import { agruparCompliance, type LinhaDeCompliance } from '@/lib/data/compliance'
 import { requireScreen, allowed } from '@/lib/session'
-import { getBranches, getBusinessHours, getCategories, getClients, getPriorities } from '@/lib/data/lookups'
 import { formatDate, formatMinutes } from '@/lib/format'
+import { comParametros } from '@/lib/data/endereco'
 import type { Category, Priority, SlaContract } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
-import { EditPanel } from '@/components/edit-panel'
-import { EditCategoryForm, NewCategoryForm } from './category-forms'
-import { EditPriorityForm, NewPriorityForm } from './priority-forms'
-import { EditSlaContractForm, NewSlaContractForm } from './sla-contract-forms'
-import { EditSlaDefinitionForm, NewSlaDefinitionForm, type SlaDefinitionDefaults } from './sla-definition-forms'
+import { GavetaDeSla, lerTipo } from './gaveta'
+import { SELECT_DE_DEFINICAO, type DefinitionRow } from './linhas'
 
 export const metadata: Metadata = { title: 'SLA' }
-
-interface DefinitionRow extends SlaDefinitionDefaults {
-  priority: { label: string; color: string } | null
-  category: { name: string } | null
-  contract: { name: string } | null
-}
 
 /** Compliance abaixo de 95% é o limiar em que a operação precisa reagir. */
 function complianceTone(pct: number | null) {
@@ -30,7 +22,12 @@ function complianceTone(pct: number | null) {
   return 'breach' as const
 }
 
-export default async function SlaPage() {
+export default async function SlaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tipo?: string; aberto?: string; novo?: string }>
+}) {
+  const params = await searchParams
   await requireScreen('sla.compliance.ver')
   /*
    * As 4 telas de configuração moram nesta página, então a guarda é por bloco e
@@ -90,11 +87,6 @@ export default async function SlaPage() {
     { data: allCategories },
     { data: allPriorities },
     { data: contracts },
-    clients,
-    branches,
-    businessHours,
-    activeCategories,
-    activePriorities,
   ] = await Promise.all([
     /* A view já agrupa por `client_id` (0011:304), então filtrar por cliente
        não altera a granularidade das linhas — só escolhe quais voltam.
@@ -116,9 +108,7 @@ export default async function SlaPage() {
     ).returns<LinhaDeCompliance[]>(),
     supabase
       .from('sla_definitions')
-      .select(
-        'id, contract_id, category_id, priority_id, first_response_minutes, resolution_minutes, business_hours_id, is_active, priority:ticket_priorities(label, color), category:ticket_categories(name), contract:sla_contracts(name)',
-      )
+      .select(SELECT_DE_DEFINICAO)
       .order('resolution_minutes')
       .returns<DefinitionRow[]>(),
     // Cobertura: tickets que nenhuma definição de SLA alcançou. É o relatório
@@ -146,11 +136,6 @@ export default async function SlaPage() {
         .order('name'),
       escopo,
     ).returns<SlaContract[]>(),
-    getClients(),
-    getBranches(),
-    getBusinessHours(),
-    getCategories(),
-    getPriorities(),
   ])
 
   // Com `{ count: 'exact', head: true }` o Supabase devolve `data: null` e o
@@ -164,16 +149,56 @@ export default async function SlaPage() {
   const priorities = allPriorities ?? []
   const slaContracts = contracts ?? []
   const topLevelCategories = categories.filter((c) => c.parent_id === null)
-  const contractLookups = { clients, branches, businessHours }
-  const definitionLookups = {
-    contracts: slaContracts,
-    categories: activeCategories,
-    priorities: activePriorities,
-    businessHours,
-  }
+
+  const endereco = (mudancas: Record<string, string | null>) =>
+    comParametros('/sla', params, mudancas)
+  const tipo = lerTipo(params.tipo)
+  const gavetaAberta = Boolean(tipo && (params.aberto || params.novo))
+  const fechar = endereco({ tipo: null, aberto: null, novo: null })
+
+  /** O link que abre um dos quatro cadastros — em branco ou num registro. */
+  const abrir = (t: string, alvo: { aberto?: string; novo?: boolean }) =>
+    endereco({
+      tipo: t,
+      aberto: alvo.aberto ?? null,
+      novo: alvo.novo ? '1' : null,
+    }) as Route
+
+  /* O mesmo botão nos quatro cartões: "+ Nova prioridade" dentro do cartão de
+     prioridades, e não um botão só no cabeçalho da página — são quatro
+     cadastros diferentes, e um botão genérico exigiria escolher o tipo depois
+     de clicar. */
+  const botaoNovo = (t: string, rotulo: string) => (
+    <Link
+      href={abrir(t, { novo: true })}
+      data-testid={`novo-${t}`}
+      className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-sm font-medium text-[var(--color-brand-ink)] hover:bg-[var(--color-surface-2)]"
+    >
+      {rotulo}
+    </Link>
+  )
+
+  const linkEditar = (t: string, id: string) => (
+    <Link
+      href={abrir(t, { aberto: id })}
+      data-testid="abrir-registro"
+      className="text-sm font-medium text-[var(--color-brand-ink)] hover:underline"
+    >
+      Editar
+    </Link>
+  )
 
   return (
-    <>
+    <div className={gavetaAberta ? 'lg:pr-[35rem]' : undefined}>
+      {gavetaAberta && tipo && (
+        <GavetaDeSla
+          tipo={tipo}
+          id={params.aberto}
+          novo={Boolean(params.novo)}
+          fechar={fechar}
+        />
+      )}
+
       <PageHeader
         title="SLA"
         description="Compliance por período e fila, e a configuração de categorias, prioridades, contratos e definições."
@@ -243,36 +268,47 @@ export default async function SlaPage() {
           <h2 className="mb-3 text-lg font-semibold text-[var(--color-ink)]">Configuração</h2>
           <div className="grid gap-6 xl:grid-cols-2">
             {verCategorias && (
-              <Card title="Categorias">
+              <Card
+                title="Categorias"
+                action={criarCategoria && botaoNovo('categoria', '+ Nova categoria')}
+              >
                 <div className="flex flex-col gap-3">
                   {categories.length === 0 && <EmptyState title="Nenhuma categoria cadastrada" />}
                   {topLevelCategories.map((parent) => {
                     const children = categories.filter((c) => c.parent_id === parent.id)
                     return (
-                      <div key={parent.id} className="rounded-lg border border-[var(--color-border)] p-3">
+                      <div
+                        key={parent.id}
+                        className="rounded-lg border border-[var(--color-border)] p-3"
+                      >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="font-medium text-[var(--color-ink)]">{parent.name}</span>
                           <div className="flex items-center gap-2">
-                            {parent.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
-                            {editarCategoria && (
-                              <EditPanel title={`Editar ${parent.name}`}>
-                                <EditCategoryForm category={parent} topLevel={topLevelCategories} />
-                              </EditPanel>
+                            {parent.is_active ? (
+                              <Badge tone="ok">Ativa</Badge>
+                            ) : (
+                              <Badge>Inativa</Badge>
                             )}
+                            {editarCategoria && linkEditar('categoria', parent.id)}
                           </div>
                         </div>
                         {children.length > 0 && (
                           <ul className="mt-2 flex flex-col gap-1.5 border-l border-[var(--color-border)] pl-3">
                             {children.map((child) => (
-                              <li key={child.id} className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="text-sm text-[var(--color-ink-2)]">{child.name}</span>
+                              <li
+                                key={child.id}
+                                className="flex flex-wrap items-center justify-between gap-2"
+                              >
+                                <span className="text-sm text-[var(--color-ink-2)]">
+                                  {child.name}
+                                </span>
                                 <div className="flex items-center gap-2">
-                                  {child.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
-                                  {editarCategoria && (
-                                    <EditPanel title={`Editar ${child.name}`}>
-                                      <EditCategoryForm category={child} topLevel={topLevelCategories} />
-                                    </EditPanel>
+                                  {child.is_active ? (
+                                    <Badge tone="ok">Ativa</Badge>
+                                  ) : (
+                                    <Badge>Inativa</Badge>
                                   )}
+                                  {editarCategoria && linkEditar('categoria', child.id)}
                                 </div>
                               </li>
                             ))}
@@ -281,130 +317,113 @@ export default async function SlaPage() {
                       </div>
                     )
                   })}
-            </div>
-
-            {criarCategoria && (
-              <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-                <EditPanel label="+ Nova categoria">
-                  <NewCategoryForm topLevel={topLevelCategories} />
-                </EditPanel>
-              </div>
-            )}
-          </Card>
+                </div>
+              </Card>
             )}
 
             {verPrioridades && (
-          <Card title="Prioridades">
-            <div className="flex flex-col gap-2">
-              {priorities.length === 0 && <EmptyState title="Nenhuma prioridade cadastrada" />}
-              {priorities.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] p-3"
-                >
-                  <span className="inline-flex items-center gap-2 font-medium" style={{ color: p.color }}>
-                    <span aria-hidden="true" className="inline-block size-2.5 rounded-full" style={{ background: p.color }} />
-                    {p.label}
-                    <span className="text-xs text-[var(--color-ink-3)]">peso {p.weight}</span>
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {p.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
-                    {editarPrioridade && (
-                      <EditPanel title={`Editar ${p.label}`}>
-                        <EditPriorityForm priority={p} />
-                      </EditPanel>
-                    )}
-                  </div>
+              <Card
+                title="Prioridades"
+                action={criarPrioridade && botaoNovo('prioridade', '+ Nova prioridade')}
+              >
+                <div className="flex flex-col gap-2">
+                  {priorities.length === 0 && <EmptyState title="Nenhuma prioridade cadastrada" />}
+                  {priorities.map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] p-3"
+                    >
+                      <span
+                        className="inline-flex items-center gap-2 font-medium"
+                        style={{ color: p.color }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="inline-block size-2.5 rounded-full"
+                          style={{ background: p.color }}
+                        />
+                        {p.label}
+                        <span className="text-xs text-[var(--color-ink-3)]">peso {p.weight}</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {p.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}
+                        {editarPrioridade && linkEditar('prioridade', p.id)}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-
-            {criarPrioridade && (
-              <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-                <EditPanel label="+ Nova prioridade">
-                  <NewPriorityForm />
-                </EditPanel>
-              </div>
-            )}
-          </Card>
+              </Card>
             )}
 
             {verContratos && (
-          <Card title="Contratos de SLA">
-            <div className="flex flex-col gap-2">
-              {slaContracts.length === 0 && <EmptyState title="Nenhum contrato de SLA cadastrado" />}
-              {slaContracts.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] p-3"
-                >
-                  <span className="font-medium text-[var(--color-ink)]">{c.name}</span>
-                  <div className="flex items-center gap-2">
-                    {c.is_active ? <Badge tone="ok">Ativo</Badge> : <Badge>Inativo</Badge>}
-                    {editarContrato && (
-                      <EditPanel title={`Editar ${c.name}`}>
-                        <EditSlaContractForm contract={c} {...contractLookups} />
-                      </EditPanel>
-                    )}
-                  </div>
+              <Card
+                title="Contratos de SLA"
+                action={criarContrato && botaoNovo('contrato', '+ Novo contrato')}
+              >
+                <div className="flex flex-col gap-2">
+                  {slaContracts.length === 0 && (
+                    <EmptyState title="Nenhum contrato de SLA cadastrado" />
+                  )}
+                  {slaContracts.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] p-3"
+                    >
+                      <span className="font-medium text-[var(--color-ink)]">{c.name}</span>
+                      <div className="flex items-center gap-2">
+                        {c.is_active ? <Badge tone="ok">Ativo</Badge> : <Badge>Inativo</Badge>}
+                        {editarContrato && linkEditar('contrato', c.id)}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-
-            {criarContrato && (
-              <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-                <EditPanel label="+ Novo contrato de SLA">
-                  <NewSlaContractForm {...contractLookups} />
-                </EditPanel>
-              </div>
-            )}
-          </Card>
+              </Card>
             )}
 
             {verDefinicoes && (
-          <Card title="Definições de SLA">
-            {definitions && definitions.length > 0 ? (
-              <Table head={['Contrato', 'Categoria', 'Prioridade', '1ª resposta', 'Resolução', '', '']} label="Definições de SLA">
-                {definitions.map((d) => (
-                  <Fragment key={d.id}>
-                    <tr>
-                      <Td className="text-[var(--color-ink-2)]">{d.contract?.name ?? 'Padrão do tenant'}</Td>
-                      <Td className="text-[var(--color-ink-2)]">{d.category?.name ?? 'Todas'}</Td>
-                      <Td>
-                        <span className="font-semibold" style={{ color: d.priority?.color }}>
-                          {d.priority?.label ?? '—'}
-                        </span>
-                      </Td>
-                      <Td className="tabular-nums">{formatMinutes(d.first_response_minutes)}</Td>
-                      <Td className="tabular-nums">{formatMinutes(d.resolution_minutes)}</Td>
-                      <Td>{d.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}</Td>
-                      <Td>
-                        {editarDefinicao && (
-                          <EditPanel title="Editar definição de SLA">
-                            <EditSlaDefinitionForm definition={d} {...definitionLookups} />
-                          </EditPanel>
-                        )}
-                      </Td>
-                    </tr>
-                  </Fragment>
-                ))}
-              </Table>
-            ) : (
-              <EmptyState title="Nenhuma definição de SLA cadastrada" />
-            )}
-
-            {criarDefinicao && (
-              <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-                <EditPanel label="+ Nova definição de SLA">
-                  <NewSlaDefinitionForm {...definitionLookups} />
-                </EditPanel>
-              </div>
-            )}
-          </Card>
+              <Card
+                title="Definições de SLA"
+                action={criarDefinicao && botaoNovo('definicao', '+ Nova definição')}
+              >
+                {definitions && definitions.length > 0 ? (
+                  <Table
+                    head={[
+                      'Contrato',
+                      'Categoria',
+                      'Prioridade',
+                      '1ª resposta',
+                      'Resolução',
+                      'Situação',
+                      editarDefinicao ? 'Ajustar' : '',
+                    ]}
+                    label="Definições de SLA"
+                  >
+                    {definitions.map((d) => (
+                      <tr key={d.id}>
+                        <Td className="text-[var(--color-ink-2)]">
+                          {d.contract?.name ?? 'Padrão do tenant'}
+                        </Td>
+                        <Td className="text-[var(--color-ink-2)]">{d.category?.name ?? 'Todas'}</Td>
+                        <Td>
+                          <span className="font-semibold" style={{ color: d.priority?.color }}>
+                            {d.priority?.label ?? '—'}
+                          </span>
+                        </Td>
+                        <Td className="tabular-nums">{formatMinutes(d.first_response_minutes)}</Td>
+                        <Td className="tabular-nums">{formatMinutes(d.resolution_minutes)}</Td>
+                        <Td>{d.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Inativa</Badge>}</Td>
+                        <Td>{editarDefinicao && linkEditar('definicao', d.id)}</Td>
+                      </tr>
+                    ))}
+                  </Table>
+                ) : (
+                  <EmptyState title="Nenhuma definição de SLA cadastrada" />
+                )}
+              </Card>
             )}
           </div>
         </>
       )}
-    </>
+    </div>
   )
 }

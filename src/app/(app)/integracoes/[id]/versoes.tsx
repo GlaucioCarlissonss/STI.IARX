@@ -1,8 +1,7 @@
-import { ActionForm, SubmitButton } from '@/components/action-form'
-import { EditPanel } from '@/components/edit-panel'
+import Link from 'next/link'
+import type { Route } from 'next'
 import { Card, EmptyState, Table, Td } from '@/components/ui'
 import { formatDateTime } from '@/lib/format'
-import { restaurarMapeamento } from './mapeamento-actions'
 
 export interface VersaoNaTela {
   id: string
@@ -33,15 +32,22 @@ const ROTULO_DA_NOTA: Record<string, string> = {
  * delas — a trigger gravava uma versão por LINHA alterada, então uma edição de
  * cinco regras deixava dez versões, e nove eram estados intermediários que o
  * mapeamento nunca teve como conjunto.
+ *
+ * ## Por que restaurar deixou de ser um botão na linha
+ *
+ * Porque a contagem diz *quantas* regras voltam, e não *quais*. Abrir a versão
+ * na gaveta mostra as regras daquela versão, uma a uma, antes do botão que
+ * troca o mapeamento inteiro por elas — e a troca é a operação mais destrutiva
+ * desta tela.
  */
 export function Versoes({
-  integrationId,
   versoes,
   podeRestaurar,
+  endereco,
 }: {
-  integrationId: string
   versoes: VersaoNaTela[]
   podeRestaurar: boolean
+  endereco: (mudancas: Record<string, string | null>) => Route
 }) {
   return (
     <Card title={`Histórico do mapeamento (${versoes.length})`}>
@@ -81,20 +87,13 @@ export function Versoes({
               <Td className="tabular-nums">{v.regras}</Td>
               <Td>
                 {podeRestaurar && i > 0 && (
-                  <EditPanel label="Voltar a esta" title={`Restaurar a versão #${v.version}`}>
-                    <p className="mb-3 text-sm text-[var(--color-ink-2)]">
-                      O mapeamento atual é <strong>trocado inteiro</strong> pelo desta versão, em
-                      uma transação — não há instante com o mapeamento vazio. A troca também vira
-                      uma versão nova, então dá para voltar atrás da volta.
-                    </p>
-                    <ActionForm action={restaurarMapeamento}>
-                      <input type="hidden" name="integration_id" value={integrationId} />
-                      <input type="hidden" name="version" value={v.version} />
-                      <SubmitButton variant="danger" pendingLabel="Restaurando…">
-                        Restaurar a versão #{v.version} ({v.regras} regra(s))
-                      </SubmitButton>
-                    </ActionForm>
-                  </EditPanel>
+                  <Link
+                    href={endereco({ versao: String(v.version), regra: null })}
+                    data-testid="abrir-versao"
+                    className="font-medium text-[var(--color-brand-ink)] hover:underline"
+                  >
+                    Ver e restaurar
+                  </Link>
                 )}
               </Td>
             </tr>

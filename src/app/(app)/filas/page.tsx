@@ -1,4 +1,3 @@
-import { Fragment } from 'react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { Route } from 'next'
@@ -6,31 +5,19 @@ import { createClient } from '@/lib/supabase/server'
 import { escopoDeCliente, porClienteOuGeral } from '@/lib/data/escopo'
 import { requireScreen, allowed } from '@/lib/session'
 import { getBranches } from '@/lib/data/lookups'
+import { comParametros } from '@/lib/data/endereco'
 import type { EnrichedTicket, Queue, QueueRule } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
-import { EditPanel } from '@/components/edit-panel'
-import {
-  EditRuleForm,
-  NewRuleForm,
-  type CategoryOption,
-  type PriorityOption,
-  type QueueOption,
-} from './rule-forms'
-import { EditQueueForm, NewQueueForm } from './queue-forms'
-
-/**
- * Origens aceitas na condição de roteamento.
- *
- * Lista fechada e curta de propósito: `tickets.source_system` é texto livre, mas
- * oferecer um campo aberto aqui criaria regra que depende de alguém digitar
- * exatamente o mesmo valor que a integração grava — e um acento de diferença
- * faria a regra nunca casar, em silêncio.
- */
-const ORIGENS = ['bitrix24', 'api', 'email'] as const
+import { GavetaDeFila } from './gaveta'
 
 export const metadata: Metadata = { title: 'Filas' }
 
-export default async function FilasPage() {
+export default async function FilasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ aberto?: string; regra?: string; novo?: string }>
+}) {
+  const params = await searchParams
   await requireScreen('helpdesk.filas.ver')
   const [podeConfigurar, podeCriarFila, podeEditarFila, podeInativarFila] = await Promise.all([
     allowed('helpdesk.filas.configurar_regras'),
@@ -77,37 +64,36 @@ export default async function FilasPage() {
       .select('id, queue_id, name, conditions, sort_order, is_active')
       .order('sort_order')
       .returns<QueueRule[]>(),
+    /* Só os NOMES das categorias e prioridades: a tela descreve a condição em
+       português, quem monta seletor é a gaveta. As prioridades vêm junto com as
+       categorias numa chamada só para não serializar duas idas ao banco. */
     supabase
       .from('ticket_categories')
-      .select('id, name, parent_id')
-      .eq('is_active', true)
+      .select('id, name')
       .order('name')
-      .returns<CategoryOption[]>(),
+      .returns<{ id: string; name: string }[]>(),
     supabase
       .from('ticket_priorities')
       .select('key, label')
-      .eq('is_active', true)
       .order('sort_order')
-      .returns<PriorityOption[]>(),
+      .returns<{ key: string; label: string }[]>(),
     getBranches(),
   ])
 
   const tickets = openTickets ?? []
   const listaRegras = rules ?? []
   const listaFilas = queues ?? []
-  const filas: QueueOption[] = listaFilas.map((q) => ({ id: q.id, name: q.name }))
   const abrePainelFila = podeEditarFila || podeInativarFila
-  const lookups = {
-    queues: filas,
-    categories: categories ?? [],
-    priorities: priorities ?? [],
-    branches,
-    sources: [...ORIGENS],
-  }
-  const nomeFila = new Map(filas.map((q) => [q.id, q.name]))
+  const nomeFila = new Map(listaFilas.map((q) => [q.id, q.name]))
   const nomeCategoria = new Map((categories ?? []).map((c) => [c.id, c.name]))
   const nomeFilial = new Map(branches.map((b) => [b.id, b.name]))
   const rotuloPrioridade = new Map((priorities ?? []).map((p) => [p.key, p.label]))
+
+  const endereco = (mudancas: Record<string, string | null>) =>
+    comParametros('/filas', params, mudancas)
+  const gavetaAberta = Boolean(params.aberto || params.regra || params.novo)
+  /** Fecha os três parâmetros de uma vez: nunca há dois abertos ao mesmo tempo. */
+  const fechar = endereco({ aberto: null, regra: null, novo: null })
 
   /** As condições em linguagem de gente, na ordem em que a função as avalia. */
   const descreve = (r: QueueRule) => {
@@ -126,10 +112,30 @@ export default async function FilasPage() {
   }
 
   return (
-    <>
+    <div className={gavetaAberta ? 'lg:pr-[35rem]' : undefined}>
+      {gavetaAberta && (
+        <GavetaDeFila
+          id={params.aberto}
+          regra={params.regra}
+          novo={params.novo}
+          fechar={fechar}
+        />
+      )}
+
       <PageHeader
         title="Filas"
         description="Cada fila ordena por score: criticidade, urgência de prazo e tempo de espera."
+        action={
+          podeCriarFila && (
+            <Link
+              href={endereco({ novo: 'fila', aberto: null, regra: null }) as Route}
+              data-testid="novo-registro"
+              className="rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)] hover:bg-[var(--color-brand-ink)]"
+            >
+              Nova fila
+            </Link>
+          )
+        }
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -184,9 +190,13 @@ export default async function FilasPage() {
 
               {abrePainelFila && (
                 <div className="mt-3">
-                  <EditPanel title={`Editar ${q.name}`}>
-                    <EditQueueForm queue={q} podeInativar={podeInativarFila} />
-                  </EditPanel>
+                  <Link
+                    href={endereco({ aberto: q.id, regra: null, novo: null }) as Route}
+                    data-testid="abrir-registro"
+                    className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-sm font-medium text-[var(--color-brand-ink)] hover:bg-[var(--color-surface-2)]"
+                  >
+                    Ajustar fila
+                  </Link>
                 </div>
               )}
             </Card>
@@ -194,22 +204,25 @@ export default async function FilasPage() {
         })}
       </div>
 
-      {podeCriarFila && (
-        <div className="mt-6 max-w-2xl">
-          <Card title="Nova fila">
-            <NewQueueForm />
-          </Card>
-        </div>
-      )}
-
       <section className="mt-8">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-lg font-semibold text-[var(--color-ink)]">
             Regras de roteamento
           </h2>
-          <span className="text-sm text-[var(--color-ink-3)]">
-            {listaRegras.filter((r) => r.is_active).length} ativa(s) de {listaRegras.length}
-          </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-[var(--color-ink-3)]">
+              {listaRegras.filter((r) => r.is_active).length} ativa(s) de {listaRegras.length}
+            </span>
+            {podeConfigurar && (
+              <Link
+                href={endereco({ novo: 'regra', aberto: null, regra: null }) as Route}
+                data-testid="nova-regra"
+                className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-sm font-medium text-[var(--color-brand-ink)] hover:bg-[var(--color-surface-2)]"
+              >
+                Nova regra
+              </Link>
+            )}
+          </div>
         </div>
 
         <p className="mb-3 max-w-[70ch] text-sm text-[var(--color-ink-2)]">
@@ -219,28 +232,38 @@ export default async function FilasPage() {
         </p>
 
         {listaRegras.length > 0 ? (
-          <Table head={['Ordem', 'Regra', 'Quando', 'Vai para', 'Situação']} label="Regras de roteamento">
+          <Table
+            head={[
+              'Ordem',
+              'Regra',
+              'Quando',
+              'Vai para',
+              'Situação',
+              podeConfigurar ? 'Ajustar' : '',
+            ]}
+            label="Regras de roteamento"
+          >
             {listaRegras.map((r) => (
-              <Fragment key={r.id}>
-                <tr>
-                  <Td className="tabular-nums text-[var(--color-ink-3)]">{r.sort_order}</Td>
-                  <Td className="font-medium text-[var(--color-ink)]">{r.name}</Td>
-                  <Td className="text-[var(--color-ink-2)]">{descreve(r)}</Td>
-                  <Td className="text-[var(--color-ink-2)]">{nomeFila.get(r.queue_id) ?? '—'}</Td>
-                  <Td>
-                    {r.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Desativada</Badge>}
-                  </Td>
-                </tr>
-                {podeConfigurar && (
-                  <tr>
-                    <Td className="bg-[var(--color-surface-2)]" colSpan={5}>
-                      <EditPanel title={`Editar ${r.name}`}>
-                        <EditRuleForm rule={r} {...lookups} />
-                      </EditPanel>
-                    </Td>
-                  </tr>
-                )}
-              </Fragment>
+              <tr key={r.id}>
+                <Td className="tabular-nums text-[var(--color-ink-3)]">{r.sort_order}</Td>
+                <Td className="font-medium text-[var(--color-ink)]">{r.name}</Td>
+                <Td className="text-[var(--color-ink-2)]">{descreve(r)}</Td>
+                <Td className="text-[var(--color-ink-2)]">{nomeFila.get(r.queue_id) ?? '—'}</Td>
+                <Td>
+                  {r.is_active ? <Badge tone="ok">Ativa</Badge> : <Badge>Desativada</Badge>}
+                </Td>
+                <Td>
+                  {podeConfigurar && (
+                    <Link
+                      href={endereco({ regra: r.id, aberto: null, novo: null }) as Route}
+                      data-testid="abrir-regra"
+                      className="font-medium text-[var(--color-brand-ink)] hover:underline"
+                    >
+                      Editar
+                    </Link>
+                  )}
+                </Td>
+              </tr>
             ))}
           </Table>
         ) : (
@@ -249,15 +272,7 @@ export default async function FilasPage() {
             description="Sem regra, todo ticket sem fila escolhida cai na fila padrão."
           />
         )}
-
-        {podeConfigurar && (
-          <div className="mt-4 max-w-2xl">
-            <Card title="Nova regra">
-              <NewRuleForm {...lookups} />
-            </Card>
-          </div>
-        )}
       </section>
-    </>
+    </div>
   )
 }

@@ -1,11 +1,13 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { comParametros } from '@/lib/data/endereco'
 import { createClient } from '@/lib/supabase/server'
 import { allowed, requireScreen } from '@/lib/session'
 import { integrationOutcomeLabel, integrationStatusLabel } from '@/lib/i18n'
 import { formatDateTime, formatNumber } from '@/lib/format'
 import type { Integration, IntegrationLog } from '@/lib/types'
 import { Badge, Card, EmptyState, PageHeader, Table, Td } from '@/components/ui'
+import { GavetaDaIntegracao } from './gaveta'
 import { InboundTokenForm } from './inbound-token-form'
 import { Mapeamento, type RegraNaTela } from './mapeamento'
 import { Simulacao } from './simulacao'
@@ -41,8 +43,14 @@ const eventTone: Record<string, 'ok' | 'breach' | 'warn' | 'neutral'> = {
   ignored: 'neutral',
 }
 
-export default async function IntegracaoPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export default async function IntegracaoPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ regra?: string; versao?: string }>
+}) {
+  const [{ id }, busca] = await Promise.all([params, searchParams])
   await requireScreen('integracoes.hub.ver')
   const podeMapear = await allowed('integracoes.hub.mapear')
   const supabase = await createClient()
@@ -100,13 +108,27 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
       >(),
   ])
 
+  const endereco = (mudancas: Record<string, string | null>) =>
+    comParametros(`/integracoes/${id}`, busca, mudancas)
+  const gavetaAberta = Boolean(busca.regra || busca.versao)
+
   const webhookPath =
     integration.source_system === 'bitrix24'
       ? `/functions/v1/bitrix24-webhook?integracao=${integration.slug}`
       : `/functions/v1/integration-webhook?integracao=${integration.slug}`
 
   return (
-    <>
+    <div className={gavetaAberta ? 'lg:pr-[35rem]' : undefined}>
+      {gavetaAberta && (
+        <GavetaDaIntegracao
+          integrationId={integration.id}
+          regra={busca.regra}
+          versao={busca.versao}
+          ehBitrix={integration.source_system === 'bitrix24'}
+          fechar={endereco({ regra: null, versao: null })}
+        />
+      )}
+
       <PageHeader
         title={integration.name}
         description={`${integration.source_system} · ${integration.direction}`}
@@ -115,7 +137,15 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
         </Badge>}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      {/* Com a gaveta aberta a grade vira uma coluna só: esta tela já tem uma
+          barra lateral de 23rem, e somada aos 34rem da gaveta sobrava menos de
+          um terço da largura para uma tabela de cinco colunas — o cartão do
+          mapeamento ficava com o próprio botão quebrado em três linhas. */}
+      <div
+        className={
+          gavetaAberta ? 'grid gap-6' : 'grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]'
+        }
+      >
         <div className="flex min-w-0 flex-col gap-6">
           <Card title="Endpoint de recebimento">
             <p className="text-sm text-[var(--color-ink-2)]">
@@ -132,10 +162,10 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
           </Card>
 
           <Mapeamento
-            integrationId={integration.id}
             regras={mappings ?? []}
             podeEditar={podeMapear}
             ehBitrix={integration.source_system === 'bitrix24'}
+            endereco={endereco}
           />
 
           {/* O ensaio vem logo depois do mapeamento, e antes dos eventos: a
@@ -144,7 +174,6 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
           <Simulacao integrationId={integration.id} />
 
           <Versoes
-            integrationId={integration.id}
             versoes={(versoes ?? []).map((v): VersaoNaTela => ({
               id: v.id,
               version: v.version,
@@ -154,6 +183,7 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
               regras: Array.isArray(v.snapshot) ? v.snapshot.length : 0,
             }))}
             podeRestaurar={podeMapear}
+            endereco={endereco}
           />
 
           <Card title="Eventos recentes">
@@ -225,6 +255,6 @@ export default async function IntegracaoPage({ params }: { params: Promise<{ id:
           </Card>
         </aside>
       </div>
-    </>
+    </div>
   )
 }

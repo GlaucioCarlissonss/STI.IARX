@@ -50,6 +50,18 @@ function publicar() {
 const SEGUNDOS = 5
 
 /**
+ * Quando o aviso traz "desfazer", ele fica três vezes mais.
+ *
+ * Medido: a atribuição em lote devolve o aviso com o desfazer e, nessa mesma
+ * ação, a revalidação da lista filtrada levou 4961ms para tirar os chamados da
+ * visão. Com cinco segundos, o desfazer sumia no instante em que a tela
+ * terminava de mudar — a janela para desfazer fechava antes de a pessoa ver o
+ * que foi feito. Um "desfazer" que exige reação em menos de um segundo não é
+ * desfazer: é enfeite.
+ */
+const SEGUNDOS_COM_DESFAZER = 15
+
+/**
  * Mostra um aviso.
  *
  * Confirmação some sozinha; **erro fica até alguém fechar**. Mensagem de erro
@@ -61,7 +73,8 @@ export function avisar(aviso: Omit<Aviso, 'id'>): number {
   lista = [...lista, { ...aviso, id }]
   publicar()
   if (aviso.tipo === 'ok') {
-    setTimeout(() => dispensar(id), SEGUNDOS * 1000)
+    const segundos = aviso.desfazer ? SEGUNDOS_COM_DESFAZER : SEGUNDOS
+    setTimeout(() => dispensar(id), segundos * 1000)
   }
   return id
 }

@@ -1,18 +1,12 @@
-import { ActionForm } from '@/components/action-form'
-import { SubmitButton } from '@/components/action-form'
-import { EditPanel } from '@/components/edit-panel'
-import { Card, EmptyState, Field, Table, Td, inputClass } from '@/components/ui'
+import Link from 'next/link'
+import type { Route } from 'next'
+import { Card, EmptyState, Table, Td } from '@/components/ui'
 import {
-  CAMPOS_DE_TICKET,
-  DESCRICAO_DA_TRANSFORMACAO,
   ROTULO_DO_CAMPO,
-  TRANSFORMACOES,
   TRANSFORMACOES_DE_BUSCA,
-  escreverMapaDeValores,
   type CampoDeTicket,
 } from '@/lib/integrations/regras'
 import type { TransformKind } from '@/lib/integrations/mapping'
-import { removerRegraDeMapeamento, salvarRegraDeMapeamento } from './mapeamento-actions'
 
 export interface RegraNaTela {
   id: string
@@ -25,38 +19,45 @@ export interface RegraNaTela {
 }
 
 /**
- * O editor do mapeamento de campos.
+ * A tabela do mapeamento de campos.
  *
- * ## Por que ele não é um JSON numa caixa de texto
+ * Só leitura: o editor mora na gaveta, aberto por `?regra=<id>`. Antes ele
+ * abria num `<details>` dentro da última célula desta tabela — nove campos na
+ * largura de uma coluna chamada "Ações" —, e era o pior lugar da aplicação para
+ * editar qualquer coisa.
  *
- * Seria metade do código. Mas o mapeamento é a peça em que **o erro não dá
- * erro**: caminho de origem digitado errado, campo de destino que não existe,
- * de-para pela metade — os três produzem a mesma coisa, um chamado com o campo
- * em branco a partir do próximo evento, sem nenhuma linha de log.
- *
- * Campo de destino como lista fechada e transformação como lista fechada
- * eliminam dois desses três erros antes de a regra ser salva. O terceiro, o
- * caminho de origem, é o que a simulação logo abaixo existe para pegar.
- *
- * ## Sem JavaScript
- *
- * `<details>` para abrir o formulário de edição na própria linha. Um modal daria
- * o mesmo resultado visual ao custo de armadilha de foco, restauração de foco e
- * `Esc` escritos à mão — três lugares onde acessibilidade quebra em silêncio.
+ * O que ficou aqui é o que se lê de relance: de onde vem, para onde vai, que
+ * transformação se aplica e com que valores. Inclusive o aviso de busca não
+ * resolvida, que é a única coluna desta tabela capaz de explicar um campo
+ * teimosamente em branco.
  */
 export function Mapeamento({
-  integrationId,
   regras,
   podeEditar,
   ehBitrix,
+  endereco,
 }: {
-  integrationId: string
   regras: RegraNaTela[]
   podeEditar: boolean
   ehBitrix: boolean
+  /** Monta o endereço desta mesma página com outros parâmetros. */
+  endereco: (mudancas: Record<string, string | null>) => Route
 }) {
   return (
-    <Card title={`Mapeamento de campos (${regras.length})`}>
+    <Card
+      title={`Mapeamento de campos (${regras.length})`}
+      action={
+        podeEditar && (
+          <Link
+            href={endereco({ regra: 'nova', versao: null })}
+            data-testid="nova-regra"
+            className="rounded-lg border border-[var(--color-border)] px-2.5 py-1 text-sm font-medium text-[var(--color-brand-ink)] hover:bg-[var(--color-surface-2)]"
+          >
+            + Acrescentar regra
+          </Link>
+        )
+      }
+    >
       {regras.length === 0 ? (
         <EmptyState
           title="Nenhum mapeamento cadastrado"
@@ -69,7 +70,7 @@ export function Mapeamento({
             'Campo do chamado',
             'Transformação',
             'Valores',
-            podeEditar ? 'Ações' : 'Obrigatório',
+            podeEditar ? 'Ajustar' : 'Obrigatório',
           ]}
           label="Mapeamento de campos"
         >
@@ -108,22 +109,13 @@ export function Mapeamento({
               </Td>
               <Td>
                 {podeEditar ? (
-                  <div className="flex flex-col gap-2">
-                    <EditPanel label="Editar" title={`Regra para ${r.target_field}`}>
-                      <FormularioDaRegra
-                        integrationId={integrationId}
-                        regra={r}
-                        ehBitrix={ehBitrix}
-                      />
-                    </EditPanel>
-                    <ActionForm action={removerRegraDeMapeamento}>
-                      <input type="hidden" name="regra_id" value={r.id} />
-                      <input type="hidden" name="integration_id" value={integrationId} />
-                      <SubmitButton variant="danger" pendingLabel="Removendo…">
-                        Remover
-                      </SubmitButton>
-                    </ActionForm>
-                  </div>
+                  <Link
+                    href={endereco({ regra: r.id, versao: null })}
+                    data-testid="abrir-regra"
+                    className="font-medium text-[var(--color-brand-ink)] hover:underline"
+                  >
+                    Editar
+                  </Link>
                 ) : (
                   <span className="text-[var(--color-ink-3)]">{r.is_required ? 'sim' : 'não'}</span>
                 )}
@@ -133,149 +125,12 @@ export function Mapeamento({
         </Table>
       )}
 
-      {podeEditar && (
-        <div className="mt-4">
-          <EditPanel label="Acrescentar regra" title="Nova regra de mapeamento">
-            <FormularioDaRegra integrationId={integrationId} regra={null} ehBitrix={ehBitrix} />
-          </EditPanel>
-          <p className="mt-3 text-xs text-[var(--color-ink-3)]">
-            Toda alteração grava uma versão do mapeamento inteiro — dá para voltar a qualquer uma
-            delas no histórico, logo abaixo.
-          </p>
-        </div>
+      {podeEditar && regras.length > 0 && (
+        <p className="mt-3 text-xs text-[var(--color-ink-3)]">
+          Toda alteração grava uma versão do mapeamento inteiro — dá para voltar a qualquer uma
+          delas no histórico, logo abaixo.
+        </p>
       )}
     </Card>
-  )
-}
-
-function FormularioDaRegra({
-  integrationId,
-  regra,
-  ehBitrix,
-}: {
-  integrationId: string
-  regra: RegraNaTela | null
-  ehBitrix: boolean
-}) {
-  return (
-    <ActionForm action={salvarRegraDeMapeamento} className="flex flex-col gap-4">
-      <input type="hidden" name="integration_id" value={integrationId} />
-      {regra && <input type="hidden" name="regra_id" value={regra.id} />}
-
-      <Field
-        label="Campo de origem"
-        htmlFor={`source_path_${regra?.id ?? 'novo'}`}
-        hint="Notação por ponto, como no payload: data.FIELDS_AFTER.TITLE. Índice de lista é um número: tags.0"
-        required
-      >
-        <input
-          id={`source_path_${regra?.id ?? 'novo'}`}
-          name="source_path"
-          defaultValue={regra?.source_path ?? ''}
-          required
-          maxLength={200}
-          className={`${inputClass} font-mono text-xs`}
-          placeholder="data.FIELDS_AFTER.TITLE"
-        />
-      </Field>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field
-          label="Campo do chamado"
-          htmlFor={`target_field_${regra?.id ?? 'novo'}`}
-          hint="Lista fechada: um campo inventado não daria erro, produziria chamados em branco."
-          required
-        >
-          <select
-            id={`target_field_${regra?.id ?? 'novo'}`}
-            name="target_field"
-            defaultValue={regra?.target_field ?? 'title'}
-            className={inputClass}
-          >
-            {CAMPOS_DE_TICKET.map((c) => (
-              <option key={c} value={c}>
-                {ROTULO_DO_CAMPO[c]}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field
-          label="Transformação"
-          htmlFor={`transform_${regra?.id ?? 'novo'}`}
-          hint={
-            ehBitrix
-              ? 'Esta integração resolve as três buscas (pessoa por e-mail, pessoa por ID e fila por grupo).'
-              : 'Atenção: o webhook genérico resolve apenas a busca de pessoa por e-mail. As outras duas deixam o campo em branco.'
-          }
-          required
-        >
-          <select
-            id={`transform_${regra?.id ?? 'novo'}`}
-            name="transform"
-            defaultValue={regra?.transform ?? 'direct'}
-            className={inputClass}
-          >
-            {TRANSFORMACOES.map((t) => (
-              <option key={t} value={t}>
-                {t} — {DESCRICAO_DA_TRANSFORMACAO[t]}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-
-      <Field
-        label="De-para de valores"
-        htmlFor={`value_map_${regra?.id ?? 'novo'}`}
-        hint='Um par por linha, no formato "valor de origem = valor aqui". Só é usado pela transformação de-para.'
-      >
-        <textarea
-          id={`value_map_${regra?.id ?? 'novo'}`}
-          name="value_map"
-          defaultValue={escreverMapaDeValores(regra?.value_map ?? null)}
-          rows={4}
-          className={`${inputClass} font-mono text-xs`}
-          placeholder={'em andamento = in_progress\nconcluído = resolved'}
-        />
-      </Field>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field
-          label="Valor padrão"
-          htmlFor={`default_value_${regra?.id ?? 'novo'}`}
-          hint="Usado quando o payload não traz o campo — e é o valor fixo da transformação 'constante'."
-        >
-          <input
-            id={`default_value_${regra?.id ?? 'novo'}`}
-            name="default_value"
-            defaultValue={regra?.default_value ?? ''}
-            maxLength={200}
-            className={inputClass}
-          />
-        </Field>
-
-        <Field
-          label="Obrigatório"
-          htmlFor={`is_required_${regra?.id ?? 'novo'}`}
-          hint="Sem valor e sem padrão, o evento é registrado com erro em vez de criar um chamado pela metade."
-        >
-          <label className="flex items-start gap-2.5 text-sm text-[var(--color-ink)]">
-            <input
-              id={`is_required_${regra?.id ?? 'novo'}`}
-              name="is_required"
-              type="checkbox"
-              defaultChecked={regra?.is_required ?? false}
-              className="mt-0.5"
-            />
-            Exigir este campo no payload
-          </label>
-        </Field>
-      </div>
-
-      <div>
-        <SubmitButton>{regra ? 'Salvar regra' : 'Acrescentar regra'}</SubmitButton>
-      </div>
-    </ActionForm>
   )
 }

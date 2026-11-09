@@ -784,6 +784,7 @@ function AcaoEmMassa({
   aoConcluir?: () => void
 }) {
   const [enviando, iniciar] = useTransition()
+  const roteador = useRouter()
   const motivoRef = useRef<HTMLInputElement>(null)
   const [valor, setValor] = useState('__')
 
@@ -827,6 +828,29 @@ function AcaoEmMassa({
       if (!r.success) return
 
       /*
+       * `router.refresh()` depois do lote, e não só o `revalidatePath` do
+       * servidor.
+       *
+       * Medido: atribuindo dois de cinco chamados na visão "sem atendente", a
+       * lista levou 14993ms para perder as duas linhas numa execução e 16ms
+       * nas quatro seguintes. A revalidação que vem junto da resposta da ação
+       * às vezes não é aplicada — o mesmo sumiço de transição que fazia o `Esc`
+       * não fechar a gaveta. O efeito é cruel: o aviso diz "2 chamados
+       * atribuídos" e as duas linhas continuam na tela sem atendente, o que
+       * parece erro de gravação e convida a refazer o lote.
+       *
+       * O `refresh` é um pedido explícito da rota atual: custa uma requisição e
+       * fecha a janela em que a tela contradiz o aviso.
+       *
+       * Ele sai da transição de propósito (`setTimeout(…, 0)`). Chamado aqui
+       * dentro, ainda sob a transição assíncrona desta ação, o refresh era
+       * descartado junto com ela quando `aoConcluir` limpava a seleção logo
+       * depois — e a medição mostrava a lista trocando só aos 15038ms, que é o
+       * `RealtimeRefresh` periódico passando, não o lote.
+       */
+      setTimeout(() => roteador.refresh(), 150)
+
+      /*
        * Desfazer só para atribuição, e só quando sabemos de onde cada chamado
        * veio. Voltar um atendente é sempre possível; voltar um status depende
        * da máquina de estados do banco, e um desfazer que pode ser recusado é
@@ -854,6 +878,7 @@ function AcaoEmMassa({
                   volta.set('valor', antes)
                   void acaoEmLote({}, volta).then((v) => {
                     if (v.error) avisar({ tipo: 'erro', texto: v.error })
+                    else setTimeout(() => roteador.refresh(), 150)
                   })
                 }
               },

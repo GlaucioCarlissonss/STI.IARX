@@ -51,11 +51,26 @@ const tituloDaGaveta = (p) => p.locator('[data-testid="gaveta"] h2').innerText()
  * Esperar um tempo fixo reprovava a tela de links por ela ser a mais pesada do
  * grupo: a gaveta fechava, mas depois do prazo do teste. Falha por corrida é
  * pior que falha por defeito — ensina a desconfiar da suíte.
+ *
+ * ## O que este prazo pegou
+ *
+ * Com oito segundos, /sla e /conectividade/links reprovavam uma execução em
+ * cada três, sempre nesta asserção. Subir para vinte não resolveu — e foi isso
+ * que entregou o defeito: quando falha, a gaveta não fecha em vinte segundos
+ * nem em um minuto, e o ENDEREÇO não muda. O `push` do roteador se perdia, e a
+ * tecla não fazia nada. A correção está em `components/gaveta.tsx` (fechar
+ * insiste três vezes); o que resta aqui é o prazo folgado, para que uma
+ * lentidão real não seja confundida com aquele defeito, e o tempo decorrido
+ * impresso quando passar de três segundos.
  */
-async function gavetaFecha(pagina, limite = 8000) {
+async function gavetaFecha(pagina, limite = 15000) {
   const t0 = Date.now()
   while (Date.now() - t0 < limite) {
-    if ((await pagina.locator('[data-testid="gaveta"]').count()) === 0) return true
+    if ((await pagina.locator('[data-testid="gaveta"]').count()) === 0) {
+      const ms = Date.now() - t0
+      if (ms > 3000) console.log(`         (a gaveta levou ${ms}ms para fechar)`)
+      return true
+    }
     await pagina.waitForTimeout(120)
   }
   return false
@@ -321,6 +336,9 @@ console.log('\n=== 8. O mesmo padrão nas telas migradas ===')
    * botão de criar abrindo a gaveta, Esc fechando, e nada rolando de lado no
    * celular.
    */
+  /* [rota, campo que só pode existir dentro da gaveta, testid do botão].
+     O terceiro item só muda em /sla, que tem QUATRO cadastros na mesma tela e
+     por isso um botão por cartão em vez de um no cabeçalho. */
   const telas = [
     ['/financeiro/titulos-a-pagar', 'input[name="description"]'],
     ['/financeiro/titulos-a-receber', 'input[name="description"]'],
@@ -330,15 +348,18 @@ console.log('\n=== 8. O mesmo padrão nas telas migradas ===')
     ['/fornecedores', 'input[name="name"]'],
     ['/telefonia', 'input[name="phone_number"]'],
     ['/conectividade/links', 'select[name="branch_id"]'],
+    ['/perfis', 'select[name="base_role"]'],
+    ['/filas', 'input[name="slug"]'],
+    ['/sla', 'input[name="weight"]', 'novo-prioridade'],
   ]
 
-  for (const [rota, campo] of telas) {
+  for (const [rota, campo, testid = 'novo-registro'] of telas) {
     await p.goto(BASE + rota, { waitUntil: 'networkidle' })
     /* Espera o botão em vez de um tempo fixo: numa execução logo depois do
        build, a primeira visita a cada rota ainda paga a compilação sob demanda
        e passava do prazo — falha de ambiente lida como falha de produto. */
     const temBotao = await p
-      .waitForSelector('[data-testid="novo-registro"]', { timeout: 20000 })
+      .waitForSelector(`[data-testid="${testid}"]`, { timeout: 20000 })
       .then(() => true)
       .catch(() => false)
 
@@ -348,7 +369,7 @@ console.log('\n=== 8. O mesmo padrão nas telas migradas ===')
     )
     ok(temBotao, `${rota}: o cadastro virou botão`)
 
-    await p.locator('[data-testid="novo-registro"]').click()
+    await p.locator(`[data-testid="${testid}"]`).first().click()
     await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
     ok(
       (await p.locator(`[data-testid="gaveta"] ${campo}`).count()) === 1,
@@ -357,6 +378,88 @@ console.log('\n=== 8. O mesmo padrão nas telas migradas ===')
 
     await p.keyboard.press('Escape')
     ok(await gavetaFecha(p), `${rota}: Esc fecha`)
+  }
+
+  /*
+   * /filas tem DOIS registros na mesma tela — a fila e a regra de roteamento —
+   * e foi por isso que a gaveta ganhou quatro modos. O que se confere aqui é
+   * que abrir um fecha o outro: dois painéis abertos ao mesmo tempo seria a
+   * volta do idioma que a Fase 5 tirou.
+   */
+  await p.goto(`${BASE}/filas`, { waitUntil: 'networkidle' })
+  await p.locator('[data-testid="abrir-registro"]').first().click()
+  await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+  const filaAberta = await tituloDaGaveta(p)
+  await p.locator('[data-testid="abrir-regra"]').first().click()
+  await p.waitForTimeout(600)
+  const regraAberta = await tituloDaGaveta(p)
+  ok(
+    (await p.locator('[data-testid="gaveta"]').count()) === 1 && filaAberta !== regraAberta,
+    `/filas: abrir a regra troca o conteúdo da gaveta da fila (${filaAberta} → ${regraAberta})`,
+  )
+  await p.keyboard.press('Escape')
+  ok(await gavetaFecha(p), '/filas: Esc fecha a gaveta da regra')
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 8.1 Integração: a regra e a versão saíram da célula ===')
+// ---------------------------------------------------------------------------
+{
+  /*
+   * O editor da regra de mapeamento abria dentro da ÚLTIMA CÉLULA da tabela —
+   * nove campos na largura de uma coluna chamada "Ações" — e o histórico
+   * oferecia "voltar a esta versão" mostrando só a contagem de regras. As duas
+   * asserções abaixo cobrem exatamente isso: o formulário saiu da célula, e a
+   * versão agora é lida antes de ser restaurada.
+   */
+  await p.goto(`${BASE}/integracoes`, { waitUntil: 'networkidle' })
+  const rota = await p
+    .locator('a[href^="/integracoes/"]')
+    .first()
+    .getAttribute('href')
+
+  if (!rota) {
+    ok(false, 'nenhuma integração cadastrada para conferir')
+  } else {
+    await p.goto(BASE + rota, { waitUntil: 'networkidle' })
+    ok(
+      (await p.locator('main input[name="source_path"]').count()) === 0,
+      'integração: nenhum editor de regra aberto na tabela',
+    )
+
+    await p.locator('[data-testid="abrir-regra"]').first().click()
+    await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+    ok(
+      (await p.locator('[data-testid="gaveta"] input[name="source_path"]').count()) === 1,
+      'integração: a regra abre na gaveta, com o caminho de origem dentro',
+    )
+    ok(
+      (await p.locator('[data-testid="gaveta"] button:has-text("Remover")').count()) === 1,
+      'integração: e a remoção mora junto da regra que ela apaga',
+    )
+    await p.keyboard.press('Escape')
+    ok(await gavetaFecha(p), 'integração: Esc fecha a gaveta da regra')
+
+    /* O histórico só oferece "voltar" nas versões que NÃO são a atual: com uma
+       versão só, não há o que restaurar, e a ausência do link é o acerto. */
+    const versoes = await p.locator('[data-testid="abrir-versao"]').count()
+    if (versoes > 0) {
+      await p.locator('[data-testid="abrir-versao"]').first().click()
+      await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+      const regrasListadas = await p.locator('[data-testid="gaveta"] ul li').count()
+      ok(
+        regrasListadas > 0,
+        `integração: a versão mostra as ${regrasListadas} regras antes do botão de restaurar`,
+      )
+      ok(
+        (await p.locator('[data-testid="gaveta"] button:has-text("Restaurar")').count()) === 1,
+        'integração: e o botão de restaurar está depois delas',
+      )
+      await p.keyboard.press('Escape')
+      ok(await gavetaFecha(p), 'integração: Esc fecha a gaveta da versão')
+    } else {
+      ok(true, 'integração: histórico com uma versão só não oferece restauração')
+    }
   }
 }
 
@@ -378,6 +481,9 @@ console.log('\n=== 9. Celular: as telas migradas também cabem ===')
     '/fornecedores',
     '/telefonia',
     '/conectividade/links',
+    '/perfis',
+    '/filas',
+    '/sla',
   ]) {
     await pc.goto(BASE + rota, { waitUntil: 'networkidle' })
     await pc.waitForTimeout(400)

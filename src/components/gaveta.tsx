@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -71,13 +71,51 @@ export function Gaveta({
     () => false,
   )
 
+  /*
+   * Fechar insiste, e isso não é zelo: é um defeito medido.
+   *
+   * Vinte aberturas seguidas da gaveta de links, com `Esc` em cada uma: dezenove
+   * fecharam em ~106ms e uma não fechou em vinte segundos — e o que o teste
+   * registrou nessa é que **o endereço não mudou**. Não foi lentidão de
+   * servidor; o `router.push` se perdeu. Num `push` do App Router a URL só muda
+   * quando a resposta do servidor chega e a transição é confirmada, então uma
+   * transição descartada no caminho não deixa rastro nenhum: a tecla não faz
+   * nada, sem erro, sem sintoma, e a pessoa conclui que a gaveta travou.
+   *
+   * A reação é tentar de novo — então a tela tenta de novo, três vezes, a cada
+   * 700ms. O laço não precisa de condição de parada própria: quando o `push`
+   * finalmente pega, a página re-renderiza sem a gaveta, este componente
+   * desmonta e a limpeza do efeito cancela o que sobrou. Um `push` repetido
+   * para o mesmo endereço enquanto o primeiro ainda está em voo é ignorado pelo
+   * roteador, então insistir não custa requisição a mais.
+   */
+  const fecharInsistindo = useCallback(() => {
+    router.push(fechar as Route)
+
+    let tentativas = 0
+    const timers: ReturnType<typeof setTimeout>[] = []
+    const conferir = () => {
+      if (window.location.pathname + window.location.search === fechar) return
+      if (tentativas >= 3) return
+      tentativas += 1
+      router.push(fechar as Route)
+      timers.push(setTimeout(conferir, 700))
+    }
+    timers.push(setTimeout(conferir, 700))
+    return () => timers.forEach(clearTimeout)
+  }, [fechar, router])
+
   useEffect(() => {
+    let limpar: (() => void) | undefined
     const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') router.push(fechar as Route)
+      if (e.key === 'Escape') limpar = fecharInsistindo()
     }
     window.addEventListener('keydown', aoTeclar)
-    return () => window.removeEventListener('keydown', aoTeclar)
-  }, [fechar, router])
+    return () => {
+      window.removeEventListener('keydown', aoTeclar)
+      limpar?.()
+    }
+  }, [fecharInsistindo])
 
   /*
    * O foco vai para o PAINEL, não para o botão de fechar.
@@ -100,7 +138,7 @@ export function Gaveta({
           clicável de propósito — clicar em outra linha troca o conteúdo da
           gaveta em vez de fechá-la e obrigar a abrir de novo. */}
       <div
-        onMouseDown={() => router.push(fechar as Route)}
+        onMouseDown={() => fecharInsistindo()}
         className="fixed inset-0 z-30 bg-[rgba(16,22,34,.45)] lg:hidden"
       />
 

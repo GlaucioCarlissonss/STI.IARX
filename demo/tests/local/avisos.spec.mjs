@@ -160,10 +160,33 @@ console.log('\n=== 3. Desfazer uma atribuição em lote ===')
   /* A confirmação sobrevive mesmo quando o lote ESVAZIA a lista filtrada e o
      componente que disparou a ação deixa de existir. Foi o caso que fez esta
      parte ser reescrita. */
+  /*
+   * Vinte segundos, e o tempo vai impresso — porque ele é o sintoma de um
+   * defeito que ainda não está fechado. Medido de dentro da página, com um
+   * MutationObserver: depois do lote, a contagem de linhas às vezes troca em
+   * ~100ms e às vezes só aos ~15040ms, que é quando o `RealtimeRefresh`
+   * periódico passa. Ou seja: nesses casos quem conserta a tela é o relógio, e
+   * não a ação. O `router.refresh()` acrescentado em `lista-de-tickets.tsx`
+   * aumentou muito a fatia dos ~100ms, mas não eliminou a outra — ver
+   * `docs/18`. Um prazo curto aqui reprovaria por um defeito conhecido, e um
+   * prazo sem medição esconderia que ele existe.
+   */
   const sairam = await ate(
     async () => (await p.locator('tr[data-indice]:visible').count()) === semAtendente - 2,
+    20000,
   )
   ok(sairam !== null, `os dois saíram da visão "sem atendente" (${sairam}ms)`)
+
+  /*
+   * E o desfazer AINDA está lá. Esta asserção nasceu de uma reprovação: a
+   * revalidação da lista filtrada levou 4961ms, e o aviso de sucesso saía de
+   * cena aos 5000ms — a janela para desfazer fechava no instante em que a tela
+   * terminava de mudar. Por isso um aviso com desfazer agora fica 15 segundos.
+   */
+  ok(
+    (await p.locator('[data-testid="desfazer"]').count()) === 1,
+    `o "desfazer" continua na tela depois de a lista terminar de mudar (${sairam}ms)`,
+  )
 
   await p.locator('[data-testid="desfazer"]').click()
   const voltaram = await ate(async () => {
