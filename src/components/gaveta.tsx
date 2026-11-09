@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { Route } from 'next'
 
@@ -123,8 +124,55 @@ export function Gaveta({
       >
         <div aria-hidden="true" className="mx-auto mt-2 h-1 w-10 rounded-full bg-[var(--color-border-strong)] lg:hidden" />
         {children}
+
       </aside>
     </>,
     document.body,
   )
+}
+
+/**
+ * O cabeçalho de uma gaveta.
+ *
+ * Existe para que as gavetas de chamado, ativo e título não cheguem cada uma
+ * com o seu próprio cabeçalho — foi exatamente assim que a aplicação ganhou
+ * quatro larguras diferentes para a mesma coluna de formulário. A linha de
+ * cima é o contexto (número, categoria, quando), o título é o registro, e o
+ * selo é o estado dele.
+ */
+export function CabecalhoDaGaveta({
+  titulo,
+  linha,
+  fechar,
+  selo,
+}: {
+  titulo: string
+  linha: string
+  fechar: string
+  selo?: ReactNode
+}) {
+  return (
+    <header className="border-b border-[var(--color-border)] px-4 py-3">
+      <div className="flex items-start gap-3">
+        <p className="min-w-0 flex-1 text-xs text-[var(--color-ink-3)]">{linha}</p>
+        <Link
+          href={fechar as Route}
+          aria-label="Fechar a gaveta"
+          data-testid="fechar-gaveta"
+          className="rounded-lg border border-[var(--color-border)] px-2 py-0.5 text-sm text-[var(--color-ink-2)] hover:bg-[var(--color-surface-2)]"
+        >
+          ✕
+        </Link>
+      </div>
+      <h2 className="mt-1 flex flex-wrap items-center gap-2 text-lg font-bold leading-snug text-[var(--color-ink)]">
+        {titulo}
+        {selo}
+      </h2>
+    </header>
+  )
+}
+
+/** O corpo rolável da gaveta — o mesmo respiro em todas elas. */
+export function CorpoDaGaveta({ children }: { children: ReactNode }) {
+  return <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-6 pt-3">{children}</div>
 }

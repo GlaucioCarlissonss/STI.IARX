@@ -136,6 +136,40 @@ export function StatTile({
   )
 }
 
+/**
+ * A faixa de indicadores no alto da tela.
+ *
+ * ## Por que ela virou componente
+ *
+ * Porque havia **cinco grades diferentes** para a mesma coisa —
+ * `sm:2 xl:4` em dezesseis telas, `xl:3` em três, mais `lg:2`, `sm:3` e
+ * `xl:5` avulsos. Nenhuma dessas variações foi decidida: é o que acontece
+ * quando cada tela escreve a própria classe. O resultado é que a mesma faixa
+ * quebra em pontos diferentes conforme a tela, e quem usa percebe sem saber
+ * dizer o quê.
+ *
+ * Agora a quantidade de colunas sai do NÚMERO de indicadores, e a regra de
+ * quebra é uma só. No celular, todas viram uma coluna.
+ */
+export function FaixaDeIndicadores({ children }: { children: ReactNode }) {
+  const quantos = Children.count(children)
+  /* Classes escritas por extenso, não montadas por interpolação: o Tailwind
+     varre o código em busca de nomes literais, e `xl:grid-cols-${n}` não
+     existiria no CSS final. */
+  const colunas =
+    quantos <= 2
+      ? 'sm:grid-cols-2'
+      : quantos === 3
+        ? 'sm:grid-cols-2 xl:grid-cols-3'
+        : quantos === 5
+          ? 'sm:grid-cols-2 xl:grid-cols-5'
+          : quantos >= 6
+            ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
+            : 'sm:grid-cols-2 xl:grid-cols-4'
+
+  return <div className={`mb-6 grid gap-3 ${colunas}`}>{children}</div>
+}
+
 export function PageHeader({
   title,
   description,

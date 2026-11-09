@@ -29,6 +29,22 @@ import { z } from 'zod'
  */
 export const emptyToNull = z
   .union([z.string(), z.null(), z.undefined()])
+  /*
+   * `.optional()` não é redundante com o `z.undefined()` da união: no Zod 4,
+   * "a chave veio com undefined" e "a chave não veio" são coisas diferentes, e
+   * só a segunda precisa disto. Sem ele, um formulário que simplesmente não
+   * renderiza um campo opcional — porque a tela não tem aquele dado, ou porque
+   * a permissão esconde — era recusado com "expected nonoptional, received
+   * undefined", uma mensagem que não diz qual campo faltou.
+   *
+   * Foi assim que o lançamento de despesa ficou impossível sem ninguém notar:
+   * o formulário nunca mandou `supplier_contract_id`, e o banco de exemplo
+   * tinha zero títulos lançados. Ver `payable.test.ts`.
+   *
+   * Tolerar a ausência só AMPLIA o que é aceito; nada que era válido deixou de
+   * ser. E o campo continua virando `null`, que é o que o banco guarda.
+   */
+  .optional()
   .transform((v) => {
     const texto = (v ?? '').trim()
     return texto === '' ? null : texto
