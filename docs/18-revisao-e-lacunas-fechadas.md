@@ -210,6 +210,60 @@ bash scripts/validate-migrations.sh && python3 scripts/conferir-colunas.py
 
 ---
 
+## 4.1 Três defeitos de interface, achados por medição
+
+A Fase 5 (formulário de tela inteira vira gaveta) terminou nas treze telas, e no
+caminho a suíte entregou três defeitos que nenhuma inspeção visual pegaria. Os
+três têm a mesma assinatura: **a tela não acusa erro, ela só deixa de obedecer**.
+
+### `Esc` nem sempre fechava a gaveta — corrigido
+
+Vinte aberturas seguidas da gaveta de `/conectividade/links`, com `Esc` em cada
+uma: dezenove fecharam em ~106ms e **uma não fechou em vinte segundos**. O que a
+medição registrou nessa é o que resolve o caso: o ENDEREÇO não mudou. Não foi
+servidor lento — num `push` do App Router a URL só muda quando a resposta chega e
+a transição é confirmada, então uma transição descartada no caminho não deixa
+rastro nenhum.
+
+Fechar agora insiste: três tentativas, a cada 700ms, em `components/gaveta.tsx`.
+O laço não precisa de condição de parada própria — quando o `push` pega, a página
+re-renderiza sem a gaveta, o componente desmonta e a limpeza do efeito cancela o
+resto. Quarenta fechamentos seguidos depois disso: nenhuma falha, pior caso
+764ms (um retry pegando).
+
+### O "desfazer" sumia antes de a tela terminar de mudar — corrigido
+
+A atribuição em lote devolve o aviso com "desfazer". Medido: a revalidação da
+lista filtrada levou **4961ms** para tirar as duas linhas da visão, e o aviso de
+sucesso saía de cena aos **5000ms**. A janela para desfazer fechava no instante
+em que a tela terminava de mudar. Um desfazer que exige reação em menos de um
+segundo é enfeite. Aviso com desfazer agora fica 15 segundos; a suíte confere que
+ele continua na tela depois de a lista parar de mexer.
+
+### Depois de um lote, a lista às vezes só troca aos 15 segundos — mitigado
+
+Medido de dentro da página, com um `MutationObserver` e o relógio do navegador
+(medir de fora mistura o tempo da tela com o tempo em que o CDP fica bloqueado
+durante a transição): depois de atribuir dois chamados em lote, a contagem de
+linhas trocava às vezes em ~100ms e às vezes aos **~15040ms**. Quinze segundos é
+o período do `RealtimeRefresh` em modo local — ou seja, nesses casos **quem
+conserta a tela é o relógio, não a ação**. O efeito é cruel: o aviso diz "2
+chamados atribuídos" e as duas linhas continuam ali sem atendente, o que parece
+erro de gravação e convida a refazer o lote.
+
+Um `router.refresh()` explícito depois do lote levou a maior parte dos casos para
+~100-300ms. Ele precisa sair da transição (`setTimeout(…, 0)`): chamado dentro
+dela, era descartado junto com ela quando a seleção era limpa logo depois — o
+mesmo sumiço de transição do `Esc`.
+
+**O que continua aberto:** por que a revalidação que vem junto da resposta da
+ação é descartada em alguns encadeamentos. A mitigação reduziu a frequência, não
+a causa. A suíte de `avisos` mede e imprime esse tempo em vez de fingir que ele
+não existe, com prazo acima dos 15s para que a asserção reprove só quando a lista
+NUNCA atualiza.
+
+---
+
 ## 5. O que continua aberto, e por que
 
 > **M7 e M8 fecharam na migração 0041.** Eram descritos aqui como "a pendência
