@@ -138,7 +138,14 @@ export default async function FilasPage({
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {/* Com a gaveta aberta sobram ~820px para os cartões: em três colunas o
+          nome da fila padrão quebrava atrás do selo "Padrão". Duas colunas
+          enquanto a gaveta estiver aberta. */}
+      <div
+        className={
+          gavetaAberta ? 'grid gap-4 md:grid-cols-2' : 'grid gap-4 md:grid-cols-2 xl:grid-cols-3'
+        }
+      >
         {listaFilas.map((q) => {
           const inQueue = tickets.filter((t) => t.queue_slug === q.slug)
           const breached = inQueue.filter((t) => t.resolution_state === 'breached').length
