@@ -132,10 +132,23 @@
   .skip-link:focus { left:0; }
 
   .layout { display:grid; grid-template-columns:13.5rem minmax(0,1fr); gap:1.75rem; padding-top:1.5rem; }
-  @media (max-width:980px) { .layout { grid-template-columns:1fr; gap:1rem; } }
+  /* `minmax(0,1fr)`, e NÃO `1fr`.
+     `1fr` é atalho de `minmax(auto,1fr)`, e `auto` no mínimo significa
+     "não encolha abaixo do conteúdo". Como as tabelas têm `min-width:46rem`
+     para continuarem legíveis, a coluna inteira era empurrada para 736px+ e a
+     PÁGINA virava uma lousa de puxar para os lados — 18 das 25 telas, num
+     aparelho de 390px. O `.table-wrap` já tem `overflow-x:auto`: com o mínimo
+     zerado, quem rola de lado é a tabela, dentro da moldura dela, e não a tela. */
+  @media (max-width:980px) { .layout { grid-template-columns:minmax(0,1fr); gap:1rem; } }
+  #view { min-width:0; }
   .side { position:sticky; top:4.4rem; align-self:start; display:flex; flex-direction:column; gap:1px; }
   @media (max-width:980px) {
     .side {
+      /* `min-width:0` pelo mesmo motivo do `#view`: a barra tem 25 botões em
+         linha e `overflow-x:auto`, mas um item de grade não encolhe abaixo do
+         próprio conteúdo sem isto — e aí quem rolava de lado era a página
+         inteira, com os 980px da barra, em vez da barra. */
+      min-width:0;
       position:static; flex-direction:row; overflow-x:auto; gap:.3rem; padding-bottom:.3rem;
       /* Sem esconder nenhum item: a barra vira rolável, mas "Fornecedores",
          "Mapas" etc. saíam da tela sem nenhuma pista visual de que dava para
