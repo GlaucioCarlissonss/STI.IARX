@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { Profile, Tenant, UserRole } from '@/lib/types'
 import { PERMISSION_CATALOG, ROLE_RANK, can } from '@/lib/permissions'
 import { landingHref } from '@/lib/navigation'
+import { ESFERAS, lerEsferas, type Esfera } from '@/lib/esferas'
 
 export interface SessionContext {
   userId: string
@@ -16,6 +17,14 @@ export interface SessionContext {
    * vez por requisição, não uma vez por botão.
    */
   permissions: ReadonlySet<string>
+  /**
+   * Esferas de negócio desta empresa.
+   *
+   * Sessão sem tenant é a da operação da plataforma (`super_admin`), e para ela
+   * valem as duas: quem opera o SaaS precisa enxergar os dois negócios que o
+   * SaaS atende.
+   */
+  esferas: Esfera[]
 }
 
 /**
@@ -48,7 +57,9 @@ export const getSessionContext = cache(async (): Promise<SessionContext | null> 
     profile.tenant_id
       ? supabase
           .from('tenants')
-          .select('id, name, slug, sla_warning_pct, sla_critical_pct, auto_close_after_days')
+          .select(
+            'id, name, slug, sla_warning_pct, sla_critical_pct, auto_close_after_days, spheres',
+          )
           .eq('id', profile.tenant_id)
           .maybeSingle<Tenant>()
       : Promise.resolve({ data: null }),
@@ -64,6 +75,7 @@ export const getSessionContext = cache(async (): Promise<SessionContext | null> 
     userId: user.id,
     profile,
     tenant,
+    esferas: tenant ? lerEsferas(tenant.spheres) : [...ESFERAS],
     permissions: grants
       ? new Set(grants.map((g) => g.permission_key))
       : permissionsFromRole(profile.role),

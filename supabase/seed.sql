@@ -11,8 +11,13 @@ begin;
 -- -----------------------------------------------------------------------------
 -- Tenant
 -- -----------------------------------------------------------------------------
-insert into public.tenants (id, name, slug, cnpj) values
-  ('a0000000-0000-4000-8000-000000000001', 'IAR Office Soluções', 'iaroffice', '12.345.678/0001-90');
+-- As DUAS esferas (0047): a IAR Office faz gestão de TI para clientes e também
+-- loca equipamento próprio. É o caso que exercita o seletor de foco no
+-- cabeçalho — com uma esfera só ele não aparece, e o exemplo não mostraria o
+-- controle que a unificação introduziu.
+insert into public.tenants (id, name, slug, cnpj, spheres) values
+  ('a0000000-0000-4000-8000-000000000001', 'IAR Office Soluções', 'iaroffice', '12.345.678/0001-90',
+   array['management', 'rental']);
 
 -- -----------------------------------------------------------------------------
 -- Calendário de atendimento: comercial 08–12 / 13–18, seg a sex

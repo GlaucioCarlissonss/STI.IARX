@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { permitirEscrita } from '@/lib/actions/guarda'
 import { mensagemDeErro, NAO_AFETADO } from '@/lib/actions/erros'
 import type { ActionState } from '@/lib/actions/estado'
+import { ESFERAS, ROTULO_DA_ESFERA } from '@/lib/esferas'
 
 /*
  * Os limites são os MESMOS do banco, e isso é duplicação de propósito.
@@ -99,5 +100,70 @@ export async function salvarPreferencias(
   return {
     success:
       'Preferências salvas. Elas passam a valer na próxima execução dos trabalhos agendados.',
+  }
+}
+
+/**
+ * Liga e desliga as esferas de negócio da empresa (migração 0047).
+ *
+ * ## Por que mora aqui, e não numa tela própria
+ *
+ * Porque é parâmetro do tenant, como os outros onze — e porque uma tela só para
+ * dois interruptores daria a eles mais peso do que têm. O que muda é o peso do
+ * EFEITO, não o da tela: ligar a locação faz aparecer um módulo inteiro.
+ *
+ * ## Desligar esconde, não apaga
+ *
+ * Nenhuma linha é tocada: a esfera desligada tira as telas do menu e as chaves
+ * da matriz de permissão, e o dado continua no banco esperando. É deliberado —
+ * desligar por engano custa um clique para desfazer, e não um restore.
+ *
+ * ## Desligar as duas é recusado em dois lugares
+ *
+ * Aqui, com mensagem; e no CHECK `tenants_spheres_not_empty`, sem mensagem. A
+ * duplicação é a mesma dos percentuais acima: o banco é a garantia, isto é a
+ * explicação. Empresa sem esfera nenhuma não teria tela nenhuma — nem esta, que
+ * é onde se desfaria o engano.
+ */
+export async function salvarEsferas(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const gate = await permitirEscrita('ambiente.preferencias.editar', {
+    papel: 'config',
+    mensagem: 'Sem permissão para alterar as esferas da empresa.',
+  })
+  if ('error' in gate) return gate
+  const { profile } = gate
+
+  /* `getAll` porque são caixas de seleção com o mesmo nome: o navegador manda
+     uma entrada por caixa marcada, e nenhuma quando todas estão vazias. */
+  const escolhidas = ESFERAS.filter((e) => formData.getAll('esferas').includes(e))
+
+  if (escolhidas.length === 0) {
+    return {
+      error:
+        'A empresa precisa de ao menos uma esfera. Sem nenhuma, não sobraria tela alguma — nem esta, que é onde se desfaz a escolha.',
+    }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('tenants')
+    .update({ spheres: escolhidas, updated_at: new Date().toISOString() })
+    .eq('id', profile.tenant_id)
+    .select('id')
+
+  if (error) return { error: mensagemDeErro(error) }
+  if (!data || data.length === 0) return { error: NAO_AFETADO }
+
+  /* O menu vive no layout: sem o `'layout'`, a pessoa salvaria e continuaria
+     vendo o menu antigo até trocar de tela — e concluiria que não funcionou. */
+  revalidatePath('/', 'layout')
+  return {
+    success:
+      escolhidas.length === 2
+        ? 'As duas esferas estão ligadas. O seletor de foco aparece no cabeçalho.'
+        : `Esfera de ${ROTULO_DA_ESFERA[escolhidas[0]!]} ligada. O menu já reflete a mudança.`,
   }
 }

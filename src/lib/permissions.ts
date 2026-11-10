@@ -1,4 +1,5 @@
 import type { UserRole } from './types'
+import { ESFERAS, type Esfera } from './esferas'
 
 /**
  * Catálogo de permissões e a regra de herança.
@@ -564,9 +565,37 @@ export interface CatalogModule {
  * Construído a partir da lista plana em vez de declarado duas vezes: uma árvore
  * escrita à mão sairia de sincronia com as chaves na primeira permissão nova.
  */
-export function catalogTree(): CatalogModule[] {
+/**
+ * Em que esfera de negócio cada módulo existe. Ausente = nas duas.
+ *
+ * A matriz de permissão obedece à mesma regra do menu (`lib/esferas.ts`):
+ * conceder "Consultar agentes nas máquinas" numa empresa que só aluga
+ * equipamento criaria uma chave que não governa tela nenhuma — e configuração
+ * morta é pior que ausência de configuração, porque parece ter surtido efeito.
+ *
+ * O módulo de locação ainda não está aqui porque as telas dele ainda não
+ * existem: o catálogo cobre apenas tela que existe, e as chaves chegam junto
+ * com a tela de cada fase.
+ */
+export const MODULE_SPHERE: Readonly<Record<string, readonly Esfera[]>> = {
+  inventario: ['management'],
+  telefonia: ['management'],
+  conectividade: ['management'],
+  mapas: ['management'],
+  projetos: ['management'],
+  gestao: ['management'],
+}
+
+export function moduloNaEsfera(modulo: string, esferas: readonly Esfera[]): boolean {
+  const doModulo = MODULE_SPHERE[modulo]
+  if (!doModulo) return true
+  return doModulo.some((e) => esferas.includes(e))
+}
+
+export function catalogTree(esferas: readonly Esfera[] = ESFERAS): CatalogModule[] {
   const modules: CatalogModule[] = []
   for (const entry of PERMISSION_CATALOG) {
+    if (!moduloNaEsfera(entry.module, esferas)) continue
     if (entry.screen === null) {
       modules.push({ key: entry.key, label: entry.label, screens: [] })
       continue

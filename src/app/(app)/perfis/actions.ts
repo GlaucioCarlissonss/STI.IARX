@@ -8,7 +8,12 @@ import { requireSession, requirePermission } from '@/lib/session'
 import type { ActionState } from '@/lib/actions/estado'
 import { recordId } from '@/lib/schemas/cadastros'
 import { emptyToNull } from '@/lib/schemas/campos'
-import { PERMISSION_KEYS, unreachableForRole, withAncestors } from '@/lib/permissions'
+import {
+  moduloNaEsfera,
+  PERMISSION_KEYS,
+  unreachableForRole,
+  withAncestors,
+} from '@/lib/permissions'
 import type { UserRole } from '@/lib/types'
 
 
@@ -129,7 +134,7 @@ export async function saveProfileGrants(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const { profile } = await requireSession()
+  const { profile, esferas } = await requireSession()
   const gate = await requirePermission('usuarios.perfis.editar')
   if ('error' in gate) return gate
 
@@ -150,6 +155,26 @@ export async function saveProfileGrants(
   if (!alvo) return { error: NAO_AFETADO }
 
   const chaves = withAncestors(marcadas)
+
+  /*
+   * A esfera é conferida no SERVIDOR, e não só escondida na matriz.
+   *
+   * A tela já não desenha o módulo que não existe neste negócio — mas tela que
+   * esconde não é controle: um `fetch` à mão mandaria a chave do mesmo jeito, e
+   * o perfil ficaria com uma concessão que nenhuma tela mostra e ninguém sabe
+   * que existe. Aqui ela é recusada com o motivo.
+   */
+  const foraDaEsfera = chaves.filter(
+    (k) => !moduloNaEsfera(k.split('.')[0] ?? '', esferas),
+  )
+  if (foraDaEsfera.length > 0) {
+    return {
+      error:
+        'Estas permissões pertencem a um módulo que não existe nesta empresa: ' +
+        `${foraDaEsfera.join(', ')}. Ligue a esfera correspondente em Preferências do ambiente antes de concedê-las.`,
+    }
+  }
+
   const foraDoTeto = unreachableForRole(chaves, alvo.base_role)
   if (foraDoTeto.length > 0) {
     return {

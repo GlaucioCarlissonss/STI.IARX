@@ -237,9 +237,19 @@ console.log('\n=== 5. Celular: gaveta no lugar da tira ===')
   await pc.locator('[data-testid="abrir-menu-celular"]').click()
   await pc.waitForTimeout(400)
   ok(await pc.locator('[data-testid="gaveta-menu"]').isVisible(), 'a gaveta abre')
+  /* O número não é fixo desde as esferas (0047): uma empresa com os dois
+     negócios tem um grupo a mais que uma com um só. O que o teste cobra é o que
+     ele sempre quis dizer — que o celular mostra os MESMOS grupos do desktop,
+     porque é o mesmo componente e não uma cópia. */
+  const noCelular = await pc.$$eval('[data-testid="gaveta-menu"] summary', (ns) =>
+    ns.map((n) => n.innerText.trim()),
+  )
+  const noDesktop = await p.$$eval('nav[aria-label="Navegação principal"] summary', (ns) =>
+    ns.map((n) => n.innerText.trim()),
+  )
   ok(
-    (await pc.locator('[data-testid="gaveta-menu"] details').count()) === 8,
-    'com os MESMOS oito grupos do desktop — um componente, não uma cópia',
+    noCelular.length > 0 && noCelular.join('|') === noDesktop.join('|'),
+    `com os MESMOS ${noDesktop.length} grupos do desktop — um componente, não uma cópia`,
   )
 
   /* Navegar é a tarefa: a gaveta sai da frente sozinha. */

@@ -131,6 +131,9 @@ function SoonItem({ item }: { item: NavItem }) {
   return (
     <span
       title={item.hint}
+      /* Marca para a suíte: "o módulo foi ligado" e "o módulo está pronto" se
+         parecem demais no menu para serem distinguidos por texto no teste. */
+      data-previsto="1"
       className="flex cursor-default items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm text-[var(--color-ink-3)]"
     >
       <span>{item.label}</span>

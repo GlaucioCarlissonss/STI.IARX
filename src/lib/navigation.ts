@@ -1,5 +1,6 @@
 import type { Route } from 'next'
 import { can } from './permissions'
+import { ESFERAS, type Esfera } from './esferas'
 
 /**
  * A arquitetura de informação do menu, em um lugar só.
@@ -89,6 +90,15 @@ export interface NavGroup {
   /** `null` = itens soltos no topo, sem cabeçalho de grupo. */
   label: string | null
   items: readonly NavItem[]
+  /**
+   * Esferas de negócio em que este grupo existe. Ausente = nas duas.
+   *
+   * Isto NÃO é permissão (ver `lib/esferas.ts`): um grupo fora da esfera da
+   * empresa não aparece cinzento nem com cadeado — ele não existe ali. A
+   * diferença importa porque cadeado convida a pedir acesso, e não há acesso a
+   * pedir: a tela não faz parte daquele negócio.
+   */
+  spheres?: readonly Esfera[]
 }
 
 export const NAV_GROUPS: readonly NavGroup[] = [
@@ -149,6 +159,63 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: '/catalogo', label: 'Catálogo de serviços', permission: 'autoatendimento.catalogo.ver' },
     ],
   },
+  /*
+   * LOCAÇÃO — o módulo que a unificação com o LTI traz (docs/23).
+   *
+   * Entra acima de Inventário porque numa empresa de locação é o trabalho do
+   * dia; e abaixo de Atendimento porque o chamado continua sendo o que
+   * interrompe. As seis telas chegam uma por fase: nesta rodada todas são
+   * PREVISTAS, com selo, e é daí que vem a exceção explicada em
+   * `visibleNavGroups`.
+   */
+  {
+    label: 'Locação',
+    spheres: ['rental'],
+    items: [
+      {
+        href: null,
+        label: 'Frota',
+        permission: null,
+        soon: true,
+        hint: 'Equipamento próprio destinado a locar: ciclo de vida, modelo, local de operação e movimentação.',
+      },
+      {
+        href: null,
+        label: 'Contratos',
+        permission: null,
+        soon: true,
+        hint: 'Contrato de locação com itens alocados, tabela de preço, franquia e reajuste.',
+      },
+      {
+        href: null,
+        label: 'Medições e consumo',
+        permission: null,
+        soon: true,
+        hint: 'Medidor, leitura, importação de leitura e consumo por competência.',
+      },
+      {
+        href: null,
+        label: 'Faturamento',
+        permission: null,
+        soon: true,
+        hint: 'A fatura de locação — calculada do contrato mais as medições — e o título a receber que ela gera.',
+      },
+      {
+        href: null,
+        label: 'Manutenção',
+        permission: null,
+        soon: true,
+        hint: 'Chamado de campo: apontamento de horas, peça consumida e alçada de custo.',
+      },
+      {
+        href: null,
+        label: 'Peças e estoque',
+        permission: null,
+        soon: true,
+        hint: 'Peça, depósito, saldo, política de reposição, inventário e ordem de compra.',
+      },
+    ],
+  },
   {
     /* Não tem correspondente no Milvus, e é de propósito: a visão de resultado
        compila financeiro, SLA e projetos sob um recorte só, e o cronograma veio
@@ -156,6 +223,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
        perder" — ficam juntos porque respondem à mesma pergunta, que é como a
        TI está indo, e não o que está acontecendo agora. */
     label: 'Gestão',
+    /* Resultado e projetos respondem pela TI de um cliente — custo, prazo e
+       entrega do parque. É governança; a locação mede rentabilidade por
+       equipamento, que é outra pergunta e vem no módulo dela. */
+    spheres: ['management'],
     items: [
       { href: '/resultado', label: 'Visão de resultado', permission: 'gestao.resultado.ver' },
       { href: '/projetos', label: 'Projetos', permission: 'projetos.projetos.ver' },
@@ -190,6 +261,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
        se está de pé. Telefonia, links e mapa entram porque são parque também:
        a pergunta "a filial está no ar?" não separa computador de link. */
     label: 'Inventário e monitoramento',
+    /* Parque do cliente: é o que a governança de TI acompanha. Uma locadora tem
+       o próprio parque na Frota, com contrato e medidor — e não aqui. */
+    spheres: ['management'],
     items: [
       { href: '/inventario', label: 'Inventário de TI', permission: 'inventario.ativos.ver' },
       /* Logo abaixo do inventário e não dentro dele: são duas perguntas. O
@@ -326,23 +400,60 @@ function itemVisivel(item: NavItem, granted: ReadonlySet<string>): boolean {
  * próprio: eles informam o roteiro a quem usa o módulo, e não viram menu para
  * quem não usa.
  */
-export function visibleNavGroups(granted: ReadonlySet<string>): NavGroup[] {
+export function grupoNaEsfera(grupo: NavGroup, esferas: readonly Esfera[]): boolean {
+  // Sem marcação, o grupo é dos dois negócios — é o caso da maioria.
+  if (!grupo.spheres) return true
+  return grupo.spheres.some((e) => esferas.includes(e))
+}
+
+export function visibleNavGroups(
+  granted: ReadonlySet<string>,
+  esferas: readonly Esfera[] = ESFERAS,
+): NavGroup[] {
   const out: NavGroup[] = []
   for (const grupo of NAV_GROUPS) {
+    if (!grupoNaEsfera(grupo, esferas)) continue
+
     const reais = grupo.items.filter((i) => itemVisivel(i, granted))
-    if (reais.length === 0) continue
     const previstos = grupo.items.filter((i) => i.soon)
+
+    /*
+     * A exceção do grupo só de previstos — e por que ela é estreita.
+     *
+     * A regra geral existe para que um menu de promessas não apareça a quem não
+     * tem acesso a nada daquele módulo, e ela continua valendo. A exceção é para
+     * **quem ligou a esfera**: essa pessoa acabou de marcar uma caixa em
+     * Preferências do ambiente e precisa ver que a marcação surtiu efeito —
+     * senão a conclusão natural é que não funcionou.
+     *
+     * Um teste cobra as duas metades: o solicitante de uma empresa de locação
+     * NÃO recebe seis promessas, e quem administra o ambiente recebe o roteiro
+     * do módulo que acabou de ligar. A exceção se desfaz sozinha: na fase em que
+     * a primeira tela do módulo nascer, o grupo passa a aparecer por mérito
+     * próprio, como qualquer outro.
+     */
+    const roteiroDeModuloLigado =
+      grupo.spheres !== undefined &&
+      previstos.length > 0 &&
+      can(granted, 'ambiente.preferencias.ver')
+    if (reais.length === 0 && !roteiroDeModuloLigado) continue
+
     // Preserva a ordem declarada em vez de jogar os previstos para o fim: a
     // posição diz onde a tela vai nascer, e mover atrapalha quem já se orientou.
     const itens = grupo.items.filter((i) => reais.includes(i) || previstos.includes(i))
-    out.push({ label: grupo.label, items: itens })
+    out.push({ label: grupo.label, items: itens, spheres: grupo.spheres })
   }
   return out
 }
 
 /** Lista plana do que a sessão alcança. Usada pelo `landingHref`. */
-export function visibleNav(granted: ReadonlySet<string>): NavItem[] {
-  return NAV_ITEMS.filter((i) => itemVisivel(i, granted))
+export function visibleNav(
+  granted: ReadonlySet<string>,
+  esferas: readonly Esfera[] = ESFERAS,
+): NavItem[] {
+  return NAV_GROUPS.filter((g) => grupoNaEsfera(g, esferas))
+    .flatMap((g) => g.items)
+    .filter((i) => itemVisivel(i, granted))
 }
 
 /**
@@ -352,8 +463,14 @@ export function visibleNav(granted: ReadonlySet<string>): NavItem[] {
  * de negar o acesso — é o que quebra o laço de redirect. Item previsto não conta:
  * não tem para onde ir.
  */
-export function landingHref(granted: ReadonlySet<string>): Route {
-  for (const item of NAV_ITEMS) {
+export function landingHref(
+  granted: ReadonlySet<string>,
+  esferas: readonly Esfera[] = ESFERAS,
+): Route {
+  /* Pela esfera também: mandar alguém para uma tela que o menu daquela empresa
+     não mostra é o mesmo laço de redirect que esta função foi escrita para
+     quebrar, só que com outra causa. */
+  for (const item of visibleNav(granted, esferas)) {
     if (item.soon || item.href === null) continue
     // `/conta` é último recurso, não primeira escolha: mandar quem tem acesso a
     // módulos para a tela de trocar senha seria pior que não redirecionar.
@@ -365,7 +482,7 @@ export function landingHref(granted: ReadonlySet<string>): Route {
      * cai nela pela regra do fim.
      */
     if (item.href === PORTAL) continue
-    if (item.permission === null || can(granted, item.permission)) return item.href
+    return item.href
   }
 
   /*

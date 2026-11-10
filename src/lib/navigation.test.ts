@@ -10,6 +10,7 @@ import {
   visibleNavGroups,
 } from './navigation'
 import { PERMISSION_KEYS, withAncestors } from './permissions'
+import type { Esfera } from './esferas'
 
 /** Concede as chaves pedidas mais os ancestrais — como o banco faz. */
 const conceder = (...keys: string[]) => new Set(withAncestors(keys))
@@ -108,14 +109,25 @@ describe('visibleNavGroups', () => {
 })
 
 describe('NAV_GROUPS', () => {
-  it('no máximo 8 grupos com rótulo — o teto subiu quando eles passaram a fechar', () => {
+  it('o teto de grupos é por esfera: 8 com uma, 9 com as duas', () => {
     /*
-     * Eram 7 enquanto a barra era sempre expandida: além disso ela rolava, e um
-     * menu que rola esconde sem avisar. Com os grupos recolhíveis, o custo de
-     * um grupo a mais é UMA linha, não N — e o teto passou a ser de leitura, não
-     * de altura: oito cabeçalhos ainda se leem de relance; quinze, não.
+     * O teto não é sobre a declaração, é sobre o que uma pessoa vê de uma vez.
+     * Sete era o limite enquanto a barra vivia expandida; com os grupos
+     * recolhíveis subiu para oito.
+     *
+     * A empresa com AS DUAS esferas é o caso excepcional — ela faz dois
+     * negócios — e chega a nove. É exatamente para ela que existe o seletor de
+     * foco no cabeçalho, que devolve o menu para seis ou sete. Contar a
+     * declaração, e não o menu de cada esfera, passaria a reprovar a cada módulo
+     * novo mesmo que nenhum menu real tivesse crescido.
      */
-    expect(NAV_GROUPS.filter((g) => g.label !== null).length).toBeLessThanOrEqual(8)
+    const tudo = conceder(...PERMISSION_KEYS)
+    const quantos = (esferas: Esfera[]) =>
+      visibleNavGroups(tudo, esferas).filter((g) => g.label !== null).length
+
+    expect(quantos(['management'])).toBeLessThanOrEqual(8)
+    expect(quantos(['rental'])).toBeLessThanOrEqual(8)
+    expect(quantos(['management', 'rental'])).toBeLessThanOrEqual(9)
   })
 
   it('todo grupo com rótulo tem pelo menos dois itens', () => {
@@ -204,5 +216,70 @@ describe('NAV_GROUPS', () => {
     const conversas = NAV_ITEMS.find((i) => i.href === '/conversas')
     expect(conversas, 'N8N, WhatsApp e Telegram foram entregues como Conversas').toBeDefined()
     expect(conversas!.permission).toBe('canais.conversas.ver')
+  })
+})
+
+describe('a esfera decide o que existe no menu', () => {
+  const tudo = conceder(...PERMISSION_KEYS)
+  const rotulos = (esferas: Esfera[]) =>
+    visibleNavGroups(tudo, esferas)
+      .map((g) => g.label)
+      .filter((l): l is string => l !== null)
+
+  it('gestão não vê o grupo de locação', () => {
+    expect(rotulos(['management'])).not.toContain('Locação')
+  })
+
+  it('locação não vê inventário nem gestão — são telas de governança', () => {
+    const vistos = rotulos(['rental'])
+    expect(vistos).toContain('Locação')
+    expect(vistos).not.toContain('Inventário e monitoramento')
+    expect(vistos).not.toContain('Gestão')
+  })
+
+  it('quem tem as duas vê a união, sem repetir grupo', () => {
+    const duas = rotulos(['management', 'rental'])
+    expect(duas).toEqual([...new Set(duas)])
+    for (const g of [...rotulos(['management']), ...rotulos(['rental'])]) {
+      expect(duas).toContain(g)
+    }
+  })
+
+  it('os grupos comuns aparecem nas duas — financeiro não é de um negócio só', () => {
+    for (const esfera of ['management', 'rental'] as Esfera[]) {
+      expect(rotulos([esfera])).toContain('Financeiro')
+      expect(rotulos([esfera])).toContain('Atendimento')
+    }
+  })
+
+  it('quem NÃO administra o ambiente não recebe seis promessas', () => {
+    // O solicitante de uma empresa de locação ainda não tem nada para abrir no
+    // módulo. Mostrar o roteiro dele seria o "menu de promessas" que a regra
+    // geral evita.
+    const solicitante = conceder('helpdesk.tickets.criar')
+    const rotulosDele = visibleNavGroups(solicitante, ['rental']).map((g) => g.label)
+    expect(rotulosDele).not.toContain('Locação')
+  })
+
+  it('o grupo de locação aparece só com telas previstas, porque a esfera foi LIGADA', () => {
+    /*
+     * A regra geral manda sumir o grupo sem item alcançável — ela existe para
+     * não anunciar módulo a quem não tem acesso. Um grupo de esfera é outro
+     * caso: ele só chega aqui porque alguém ligou aquela esfera de propósito, e
+     * esconder tudo faria parecer que ligar não surtiu efeito.
+     */
+    const locacao = visibleNavGroups(tudo, ['rental']).find((g) => g.label === 'Locação')
+    expect(locacao).toBeDefined()
+    expect(locacao!.items.length).toBeGreaterThan(0)
+    expect(locacao!.items.every((i) => i.soon)).toBe(true)
+  })
+
+  it('o destino pós-login respeita a esfera', () => {
+    // Mandar para uma tela que o menu daquela empresa não mostra é o mesmo laço
+    // de redirect que `landingHref` existe para quebrar.
+    const soLocacao = conceder('inventario.ativos.ver', 'helpdesk.tickets.ver')
+    const destino = landingHref(soLocacao, ['rental'])
+    expect(visibleNav(soLocacao, ['rental']).map((i) => i.href)).toContain(destino)
+    expect(destino).not.toBe('/inventario')
   })
 })

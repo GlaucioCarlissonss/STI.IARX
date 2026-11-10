@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/server'
 import { requireScreen, allowed } from '@/lib/session'
 import { Card, EmptyState, PageHeader } from '@/components/ui'
 import { PreferenciasForm, type Preferencias } from './preferencias-form'
+import { EsferasForm } from './esferas-form'
+import { lerEsferas, type Esfera } from '@/lib/esferas'
 
 export const metadata: Metadata = { title: 'Preferências do ambiente' }
 
@@ -40,9 +42,9 @@ export default async function AmbientePage() {
   const { data: tenant } = await supabase
     .from('tenants')
     .select(
-      'id, name, sla_warning_pct, sla_critical_pct, auto_close_after_days, attachment_quota_mb, payable_approval_required, agent_disk_alert_pct, agent_mute_hours, agent_metrics_retention_days, contract_alert_days, link_alert_minutes',
+      'id, name, spheres, sla_warning_pct, sla_critical_pct, auto_close_after_days, attachment_quota_mb, payable_approval_required, agent_disk_alert_pct, agent_mute_hours, agent_metrics_retention_days, contract_alert_days, link_alert_minutes',
     )
-    .maybeSingle<Preferencias & { id: string; name: string }>()
+    .maybeSingle<Preferencias & { id: string; name: string; spheres: Esfera[] }>()
 
   if (!tenant) {
     return (
@@ -81,6 +83,8 @@ export default async function AmbientePage() {
           é onde se vê se pararam.
         </p>
       </Card>
+
+      <EsferasForm atuais={lerEsferas(tenant.spheres)} podeEditar={podeEditar} />
 
       <PreferenciasForm atual={tenant} podeEditar={podeEditar} />
     </>

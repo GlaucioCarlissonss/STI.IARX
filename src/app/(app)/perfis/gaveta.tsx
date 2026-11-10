@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
-import { allowed } from '@/lib/session'
+import { allowed, getSessionContext } from '@/lib/session'
 import { roleLabel } from '@/lib/i18n'
 import type { AccessProfile } from '@/lib/types'
 import { Badge } from '@/components/ui'
+import { ESFERAS } from '@/lib/esferas'
 import { Gaveta, CabecalhoDaGaveta, CorpoDaGaveta } from '@/components/gaveta'
 import { EditProfileForm, NewProfileForm, PermissionMatrix } from './profile-forms'
 
@@ -33,9 +34,10 @@ export async function GavetaDePerfil({
   novo?: boolean
   fechar: string
 }) {
-  const [podeEditar, podeCriar] = await Promise.all([
+  const [podeEditar, podeCriar, sessao] = await Promise.all([
     allowed('usuarios.perfis.editar'),
     allowed('usuarios.perfis.criar'),
+    getSessionContext(),
   ])
 
   if (novo) {
@@ -104,7 +106,11 @@ export async function GavetaDePerfil({
 
         {podeEditar ? (
           <>
-            <PermissionMatrix profile={perfil} granted={concedidas} />
+            <PermissionMatrix
+              profile={perfil}
+              granted={concedidas}
+              esferas={sessao?.esferas ?? ESFERAS}
+            />
 
             <section className="border-t border-[var(--color-border)] pt-4">
               <h3 className="mb-2 text-sm font-semibold text-[var(--color-ink)]">

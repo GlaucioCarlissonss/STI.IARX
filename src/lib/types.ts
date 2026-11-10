@@ -1,3 +1,4 @@
+import type { Esfera } from './esferas'
 /**
  * Tipos do domínio, espelhando o schema em supabase/migrations.
  *
@@ -67,6 +68,8 @@ export interface Tenant {
   sla_warning_pct: number
   sla_critical_pct: number
   auto_close_after_days: number
+  /** Esferas de negócio da empresa (migração 0047). Ver `lib/esferas.ts`. */
+  spheres: Esfera[]
 }
 
 /** Linha de `vw_tickets_enriched` — ticket já com SLA, rótulos e score. */

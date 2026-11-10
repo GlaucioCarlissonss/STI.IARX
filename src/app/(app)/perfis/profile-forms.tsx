@@ -2,6 +2,7 @@
 
 import type { AccessProfile, UserRole } from '@/lib/types'
 import { ROLE_RANK, catalogTree } from '@/lib/permissions'
+import type { Esfera } from '@/lib/esferas'
 import { roleLabel } from '@/lib/i18n'
 import { ActionForm, SubmitButton } from '@/components/action-form'
 import { Field, inputClass } from '@/components/ui'
@@ -128,9 +129,14 @@ export function EditProfileForm({ profile }: { profile: AccessProfile }) {
 export function PermissionMatrix({
   profile,
   granted,
+  esferas,
 }: {
   profile: AccessProfile
   granted: string[]
+  /* As esferas da EMPRESA, não o foco do menu: conceder permissão é decisão
+     duradoura, e esconder um módulo porque alguém está focado em outro negócio
+     faria a matriz mudar de tamanho conforme um cookie. */
+  esferas: readonly Esfera[]
 }) {
   const marcado = new Set(granted)
   const teto = ROLE_RANK[profile.base_role]
@@ -140,7 +146,7 @@ export function PermissionMatrix({
       <input type="hidden" name="profile_id" value={profile.id} />
 
       <div className="flex flex-col gap-3">
-        {catalogTree().map((mod) => {
+        {catalogTree(esferas).map((mod) => {
           const moduloForaDoTeto = ROLE_RANK[
             (mod.screens[0]?.actions[0]?.minBaseRole ?? 'visualizador') as UserRole
           ]

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { requireSession, touchPresence } from '@/lib/session'
 import { visibleNavGroups } from '@/lib/navigation'
 import { SidebarNav } from '@/components/sidebar-nav'
@@ -12,9 +13,11 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { RegiaoDeAvisos } from '@/components/avisos'
 import { BarraDeNavegacao } from '@/components/progresso'
 import { getClients } from '@/lib/data/lookups'
+import { SeletorDeEsfera } from '@/components/seletor-de-esfera'
+import { COOKIE_DO_FOCO, esferasEmUso, lerFoco } from '@/lib/esferas'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { profile, tenant, permissions } = await requireSession()
+  const { profile, tenant, permissions, esferas } = await requireSession()
 
   // Presença para o contador do painel de TV (RF-DSH-02).
   await touchPresence(profile.id)
@@ -25,7 +28,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * escondia `/painel` de quem não podia vê-lo e o `requireScreen` mandava para
    * lá de todo jeito.
    */
-  const grupos = visibleNavGroups(permissions)
+  /*
+   * A esfera entra ANTES da permissão: ela decide o que existe neste negócio, e
+   * a permissão decide o que esta pessoa alcança do que existe. Trocar a ordem
+   * daria um menu com cadeado em módulo que a empresa não contratou.
+   */
+  const focoDaEsfera = lerFoco((await cookies()).get(COOKIE_DO_FOCO)?.value, esferas)
+  const grupos = visibleNavGroups(permissions, esferasEmUso(esferas, focoDaEsfera))
+  /* A paleta usa as esferas da EMPRESA, não o foco. O foco encurta o menu de
+     quem escolheu encurtá-lo; esconder a tela também da busca transformaria uma
+     preferência de atalho em barreira — e aí quem focasse "Locação" teria que
+     desfocar para achar um projeto pelo nome. */
+  const gruposDaEmpresa = focoDaEsfera ? visibleNavGroups(permissions, esferas) : grupos
   /*
    * A paleta recebe as telas JÁ FILTRADAS por permissão, com o grupo de cada
    * uma. O grupo não é enfeite: é o que distingue "Contas bancárias" de
@@ -34,7 +48,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    * Vem de `visibleNavGroups`, a mesma fonte do menu — a paleta não pode
    * oferecer uma tela que o menu esconde.
    */
-  const telasDaPaleta = grupos.flatMap((g) =>
+  const telasDaPaleta = gruposDaEmpresa.flatMap((g) =>
     g.items
       .filter((i) => i.href !== null)
       .map((i) => ({ label: i.label, href: i.href as string, grupo: g.label })),
@@ -75,6 +89,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
           <div className="ml-auto flex items-center gap-3">
             <PaletaDeComandos telas={telasDaPaleta} />
+            {esferas.length > 1 && <SeletorDeEsfera atual={focoDaEsfera} />}
             <MenuCelular>
               <SidebarNav groups={grupos} />
             </MenuCelular>
