@@ -2,6 +2,7 @@ import type {
   EquipmentStatus,
   MeterKind,
   RentalContractStatus,
+  RentalInvoiceStatus,
   RentalItemStatus,
 } from '@/lib/types'
 
@@ -147,4 +148,27 @@ export function diasEmOperacao(
   const fim = ate < fimDoMes ? ate : fimDoMes
   if (fim < comeco) return 0
   return Math.round((fim.getTime() - comeco.getTime()) / dia) + 1
+}
+
+export const ESTADO_DA_FATURA: Record<
+  RentalInvoiceStatus,
+  { label: string; tone: 'ok' | 'warn' | 'breach' | 'info' | 'neutral' }
+> = {
+  draft: { label: 'Rascunho', tone: 'info' },
+  issued: { label: 'Emitida', tone: 'ok' },
+  cancelled: { label: 'Cancelada', tone: 'breach' },
+}
+
+export const TIPO_DA_LINHA: Record<string, string> = {
+  rent: 'Locação',
+  excess: 'Excedente',
+  service: 'Serviço',
+  part: 'Peça',
+  discount: 'Desconto',
+}
+
+/** "2026-11-01" → "11/2026". A competência é mês, e lê-se como mês. */
+export function competenciaParaExibicao(competencia: string): string {
+  const [ano, mes] = competencia.split('-')
+  return `${mes}/${ano}`
 }

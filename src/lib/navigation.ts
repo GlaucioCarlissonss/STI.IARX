@@ -180,20 +180,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         permission: 'locacao.cadastros.ver',
       },
       { href: '/locacao/contratos', label: 'Contratos', permission: 'locacao.contratos.ver' },
-      {
-        href: null,
-        label: 'Medições e consumo',
-        permission: null,
-        soon: true,
-        hint: 'Medidor, leitura, importação de leitura e consumo por competência.',
-      },
-      {
-        href: null,
-        label: 'Faturamento',
-        permission: null,
-        soon: true,
-        hint: 'A fatura de locação — calculada do contrato mais as medições — e o título a receber que ela gera.',
-      },
+      { href: '/locacao/medicoes', label: 'Medições e consumo', permission: 'locacao.medicoes.ver' },
+      { href: '/locacao/faturamento', label: 'Faturamento', permission: 'locacao.faturamento.ver' },
       {
         href: null,
         label: 'Manutenção',

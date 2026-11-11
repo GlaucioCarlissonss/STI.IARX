@@ -263,11 +263,28 @@ export async function moverAlocacao(
     if (!data || data.length === 0) return { error: NAO_AFETADO }
   }
 
-  const { error: erroEstado } = await supabase
+  const { data: equip, error: erroEstado } = await supabase
     .from('rental_equipment')
     .update({ status: porAcao.equip })
     .eq('id', parsed.data.equipment_id)
+    .select('id, tenant_id')
   if (erroEstado) return { error: mensagemDeErro(erroEstado) }
+
+  /*
+   * A leitura da entrega e do recolhimento entra na SÉRIE (0050), com a origem
+   * dizendo de onde veio. É o que permite, meses depois, responder "quanto esta
+   * peça rodou neste contrato" sem depender de alguém ter digitado uma leitura
+   * avulsa no dia certo.
+   */
+  if (parsed.data.meter !== null && equip && equip.length > 0) {
+    await supabase.from('meter_readings').insert({
+      tenant_id: equip[0]!.tenant_id,
+      equipment_id: parsed.data.equipment_id,
+      contract_item_id: parsed.data.id,
+      reading: parsed.data.meter,
+      source: parsed.data.acao === 'entregar' ? 'delivery' : 'return',
+    })
+  }
 
   revalida()
   const frase = {

@@ -117,12 +117,23 @@ console.log('\n=== 1. Com as duas esferas, o seletor existe e o menu é a união
     'o seletor de foco aparece, porque há escolha a fazer',
   )
 
-  /* As seis telas de locação ainda não existem: elas aparecem com selo, e é isso
-     que distingue "o módulo foi ligado" de "o módulo está pronto". */
+  /*
+   * O módulo de locação nasceu só com promessas (Fase 1) e foi ganhando telas
+   * de verdade a cada fase. O que continua valendo — e é o que este teste
+   * guarda — é a distinção entre as duas coisas no mesmo menu: tela que existe
+   * é link, tela que virá tem selo. Contar um número fixo reprovaria a cada
+   * fase entregue, que é falha por progresso.
+   */
+  await p.locator('nav[aria-label="Navegação principal"] summary:has-text("LOCAÇÃO")').click()
+  await p.waitForTimeout(300)
+  const comLink = await p
+    .locator('nav[aria-label="Navegação principal"] a[href^="/locacao/"]')
+    .count()
   const previstas = await p
     .locator('nav[aria-label="Navegação principal"] [data-previsto="1"]')
     .count()
-  ok(previstas >= 6, `as telas de locação aparecem como previstas (${previstas} com selo)`)
+  ok(comLink > 0, `o grupo de locação tem ${comLink} tela(s) de verdade`)
+  ok(previstas > 0, `e ${previstas} ainda marcada(s) como previstas, com selo`)
 }
 
 // ---------------------------------------------------------------------------

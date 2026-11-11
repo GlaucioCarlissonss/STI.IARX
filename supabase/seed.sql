@@ -736,4 +736,32 @@ update public.rental_equipment
    set status = 'reserved'
  where tenant_id = 'a0000000-0000-4000-8000-000000000001' and asset_tag = 'EQP-0620';
 
+-- -----------------------------------------------------------------------------
+-- Medições (0050)
+-- -----------------------------------------------------------------------------
+-- Duas leituras por peça entregue: uma na entrega e uma recente. É o mínimo
+-- para o cálculo da fatura ter o que subtrair — com uma só, o excedente do
+-- período não existe, e a fatura sai (corretamente) sem linha de excedente.
+insert into public.meter_readings (tenant_id, equipment_id, contract_item_id, reading, read_on, source)
+select
+  i.tenant_id, i.equipment_id, i.id, i.meter_at_delivery, i.delivered_on, 'delivery'
+from public.rental_contract_items i
+where i.status = 'delivered' and i.meter_at_delivery is not null;
+
+insert into public.meter_readings (tenant_id, equipment_id, contract_item_id, reading, read_on, source)
+select
+  i.tenant_id, i.equipment_id, i.id, e.meter_reading + 180, current_date - 2, 'manual'
+from public.rental_contract_items i
+join public.rental_equipment e on e.id = i.equipment_id
+where i.status = 'delivered';
+
+-- E o equipamento acompanha: a frota mostra a ÚLTIMA leitura.
+update public.rental_equipment e
+   set meter_reading = e.meter_reading + 180,
+       meter_read_at = now() - interval '2 days'
+ where exists (
+   select 1 from public.rental_contract_items i
+    where i.equipment_id = e.id and i.status = 'delivered'
+ );
+
 commit;

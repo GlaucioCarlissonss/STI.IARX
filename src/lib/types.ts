@@ -796,3 +796,49 @@ export interface RentalAllocation {
   meter_at_delivery: number | null
   meter_at_return: number | null
 }
+
+/* --------------------------------------------------------------------------
+ * Locação — medição e faturamento (migração 0050)
+ * ------------------------------------------------------------------------ */
+
+export type RentalInvoiceStatus = 'draft' | 'issued' | 'cancelled'
+
+export interface MeterReading {
+  id: string
+  equipment_id: string
+  contract_item_id: string | null
+  reading: number
+  read_on: string
+  source: 'manual' | 'import' | 'delivery' | 'return' | 'agent'
+  notes: string | null
+  created_at: string
+}
+
+export interface RentalInvoice {
+  id: string
+  contract_id: string
+  client_id: string
+  number: string
+  competence: string
+  status: RentalInvoiceStatus
+  issued_on: string | null
+  due_on: string | null
+  total: number
+  receivable_id: string | null
+  notes: string | null
+}
+
+export interface RentalInvoiceItem {
+  id: string
+  invoice_id: string
+  contract_item_id: string | null
+  equipment_id: string | null
+  kind: 'rent' | 'excess' | 'service' | 'part' | 'discount'
+  description: string
+  quantity: number
+  unit_price: number
+  amount: number
+  meter_from: number | null
+  meter_to: number | null
+  days: number | null
+}

@@ -44,6 +44,8 @@ const ROTAS = [
   '/locacao/frota',
   '/locacao/cadastros',
   '/locacao/contratos',
+  '/locacao/medicoes',
+  '/locacao/faturamento',
   '/filas',
   '/sla',
   '/sla/horarios',

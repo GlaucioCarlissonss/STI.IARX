@@ -226,9 +226,12 @@ export async function bloquearEquipamento(
  *
  * O banco recusa leitura menor que a anterior, e a mensagem explica por quê:
  * horímetro que anda para trás é troca de aparelho ou erro de digitação, e os
- * dois precisam de registro, não de um `update` que apaga o passado. Em Fase 4
- * a leitura passa a ter série própria e a virar consumo faturável; aqui ela é
- * só o número que a frota mostra.
+ * dois precisam de registro, não de um `update` que apaga o passado.
+ *
+ * Desde a 0050 a leitura vai para DOIS lugares: o equipamento guarda a última
+ * (é o que a frota mostra) e `meter_readings` guarda a série (é o que a fatura
+ * lê). Sem a série, o consumo de um período não existe — só existiria "quanto
+ * marca agora", que não fatura nada.
  */
 export async function registrarLeitura(
   _prev: ActionState,
@@ -253,11 +256,22 @@ export async function registrarLeitura(
       meter_read_at: new Date().toISOString(),
     })
     .eq('id', parsed.data.id)
-    .select('id')
+    .select('id, tenant_id')
 
   if (error) return { error: mensagemDeErro(error) }
   if (!data || data.length === 0) return { error: NAO_AFETADO }
 
+  /* A série. Duas leituras no mesmo dia e pela mesma origem são a mesma
+     leitura corrigida: o índice único trata isso, e um erro aqui não deve
+     desfazer o número que a frota já mostra. */
+  await supabase.from('meter_readings').insert({
+    tenant_id: data[0]!.tenant_id,
+    equipment_id: parsed.data.id,
+    reading: parsed.data.meter_reading,
+    source: 'manual',
+  })
+
   revalidatePath('/locacao/frota')
+  revalidatePath('/locacao/medicoes')
   return { success: 'Leitura registrada.' }
 }
