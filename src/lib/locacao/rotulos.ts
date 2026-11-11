@@ -1,6 +1,11 @@
 import type {
   EquipmentStatus,
   FieldServiceKind,
+  InventoryCountStatus,
+  PartMovementKind,
+  PartUnit,
+  PurchaseOrderStatus,
+  StockLevel,
   MeterKind,
   RentalContractStatus,
   RentalInvoiceStatus,
@@ -218,4 +223,104 @@ export function situacaoDaAlcada(
 export function competenciaParaExibicao(competencia: string): string {
   const [ano, mes] = competencia.split('-')
   return `${mes}/${ano}`
+}
+
+/* --------------------------------------------------------------------------
+ * Peças, estoque e compras (0053)
+ * ------------------------------------------------------------------------ */
+
+export const UNIDADE: Record<PartUnit, string> = {
+  un: 'un',
+  m: 'm',
+  kg: 'kg',
+  l: 'L',
+  cx: 'cx',
+  par: 'par',
+}
+
+/**
+ * O nível do estoque, em palavra e em cor.
+ *
+ * `sem_politica` existe e é neutro de propósito: peça sem mínimo definido não
+ * está "em nível" nem "faltando" — ninguém disse quanto deveria haver. Pintá-la
+ * de verde seria afirmar algo que o cadastro não contém.
+ */
+export const NIVEL_DO_ESTOQUE: Record<
+  StockLevel,
+  { label: string; tone: 'ok' | 'warn' | 'crit' | 'breach' | 'info' | 'neutral' }
+> = {
+  em_nivel: { label: 'Em nível', tone: 'ok' },
+  no_limite: { label: 'No limite', tone: 'warn' },
+  abaixo: { label: 'Abaixo do mínimo', tone: 'crit' },
+  zerado: { label: 'Zerado', tone: 'breach' },
+  sem_politica: { label: 'Sem política', tone: 'neutral' },
+}
+
+export const MOVIMENTO_DE_PECA: Record<PartMovementKind, { label: string; entrada: boolean }> = {
+  purchase: { label: 'Entrada por compra', entrada: true },
+  consumption: { label: 'Consumo em atendimento', entrada: false },
+  return: { label: 'Devolução ao estoque', entrada: true },
+  adjustment: { label: 'Ajuste de inventário', entrada: true },
+  transfer_in: { label: 'Chegada de transferência', entrada: true },
+  transfer_out: { label: 'Saída para transferência', entrada: false },
+}
+
+export const ESTADO_DA_ORDEM: Record<
+  PurchaseOrderStatus,
+  { label: string; tone: 'ok' | 'warn' | 'breach' | 'info' | 'neutral' }
+> = {
+  draft: { label: 'Rascunho', tone: 'info' },
+  sent: { label: 'Enviada', tone: 'info' },
+  partial: { label: 'Recebida em parte', tone: 'warn' },
+  received: { label: 'Recebida', tone: 'ok' },
+  cancelled: { label: 'Cancelada', tone: 'breach' },
+}
+
+export const ESTADO_DA_CONTAGEM: Record<
+  InventoryCountStatus,
+  { label: string; tone: 'ok' | 'warn' | 'breach' | 'info' | 'neutral' }
+> = {
+  open: { label: 'Em contagem', tone: 'warn' },
+  closed: { label: 'Fechada', tone: 'ok' },
+  cancelled: { label: 'Cancelada', tone: 'breach' },
+}
+
+/** Quantidade com a unidade — e sem casas decimais sobrando em peça inteira. */
+export function formatarQuantidade(quantidade: number, unidade: PartUnit): string {
+  const n = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(quantidade)
+  return `${n} ${UNIDADE[unidade]}`
+}
+
+/**
+ * O movimento em uma frase, com o sinal explícito.
+ *
+ * O sinal é parte do rótulo, e não só da cor: quem lê em preto e branco, com
+ * daltonismo ou numa exportação continua sabendo se entrou ou saiu.
+ */
+export function descreverMovimentoDePeca(m: {
+  kind: PartMovementKind
+  quantity: number
+  unidade: PartUnit
+}): string {
+  const sinal = m.quantity > 0 ? '+' : '−'
+  const n = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(
+    Math.abs(m.quantity),
+  )
+  return `${sinal}${n} ${UNIDADE[m.unidade]}`
+}
+
+/**
+ * Quanto da ordem já chegou, de 0 a 1.
+ *
+ * Em quantidade, e não em número de linhas: uma ordem com uma linha de 100
+ * unidades e outra de 1 estaria "metade recebida" pela contagem de linhas
+ * mesmo faltando quase tudo.
+ */
+export function progressoDaOrdem(
+  itens: { quantity: number; received_quantity: number }[],
+): number {
+  const pedido = itens.reduce((s, i) => s + Number(i.quantity), 0)
+  if (pedido === 0) return 0
+  const recebido = itens.reduce((s, i) => s + Number(i.received_quantity), 0)
+  return Math.min(recebido / pedido, 1)
 }

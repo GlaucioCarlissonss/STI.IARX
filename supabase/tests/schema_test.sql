@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 237,
-    'catálogo de permissões tem as 237 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 250,
+    'catálogo de permissões tem as 250 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 237,
+  perform app.assert((select count(*) from public.permission_catalog) = 250,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -9190,6 +9190,234 @@ begin
   perform app.assert(
     (select count(*) from public.vw_rental_consumption) = 0,
     'nem a de consumo — idem para a 0050');
+end
+$$;
+reset role;
+reset request.jwt.claims;
+
+-- =============================================================================
+\echo '=== 51. Peças e estoque: o saldo é a soma dos movimentos (0053) ==='
+-- =============================================================================
+reset role;
+
+-- O que estas asserções protegem é a propriedade que torna o estoque auditável:
+-- o saldo NÃO é um campo, é o acumulado do razão. Um campo de saldo editável é
+-- a forma mais rápida de o estoque e a realidade se separarem sem deixar rastro.
+
+do $$
+declare
+  v_tenant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_kit    uuid := 'ef200000-0000-4000-8000-000000000001';  -- PC-0031, 2 em estoque
+  v_base   uuid := 'e1110000-0000-4000-8000-000000000001';  -- Base Matriz
+  v_saldo  numeric(14,3);
+  v_soma   numeric(14,3);
+  v_custo  numeric(14,4);
+  v_erro   text;
+  v_ticket uuid := 'ef100000-0000-4000-8000-000000000001';
+  v_item   uuid;
+begin
+  -- 1. O saldo acumulado bate com a soma do razão, peça a peça.
+  select b.quantity into v_saldo
+    from public.part_balances b where b.part_id = v_kit and b.depot_id = v_base;
+  select sum(m.quantity) into v_soma
+    from public.part_movements m where m.part_id = v_kit and m.depot_id = v_base;
+
+  perform app.assert(v_saldo = v_soma,
+    format('o saldo (%s) é exatamente a soma dos movimentos (%s)', v_saldo, v_soma));
+  perform app.assert(v_saldo = 2,
+    format('e o exemplo deixa o kit em 2: 5 comprados, 2 de ajuste, 1 consumido — veio %s', v_saldo));
+
+  /* A varredura vale mais que o caso único: ela pega a peça que alguém
+     acrescentar amanhã sem passar pelo gatilho. E NOMEIA a divergente — uma
+     asserção que só diz "falhou" obriga quem a encontra a refazer a consulta. */
+  perform app.assert(
+    not exists (
+      select 1
+        from public.part_balances b
+        left join public.part_movements m
+          on m.part_id = b.part_id and m.depot_id = b.depot_id
+       group by b.part_id, b.depot_id, b.quantity
+      having b.quantity is distinct from coalesce(sum(m.quantity), 0)
+    ),
+    'nenhuma peça tem saldo divergente do seu razão — divergentes: ' ||
+    coalesce((
+      select string_agg(p.sku, ', ')
+        from (
+          select b.part_id
+            from public.part_balances b
+            left join public.part_movements m
+              on m.part_id = b.part_id and m.depot_id = b.depot_id
+           group by b.part_id, b.depot_id, b.quantity
+          having b.quantity is distinct from coalesce(sum(m.quantity), 0)
+        ) d
+        join public.parts p on p.id = d.part_id
+    ), 'nenhuma'));
+
+  -- 2. Saldo negativo é RECUSADO, e o erro diz quanto há.
+  begin
+    insert into public.part_movements (tenant_id, part_id, depot_id, kind, quantity)
+    values (v_tenant, v_kit, v_base, 'consumption', -99);
+    perform app.assert(false, 'movimento que zeraria abaixo de zero deveria ser recusado');
+  exception when check_violation then
+    get stacked diagnostics v_erro = message_text;
+    perform app.assert(v_erro like '%PC-0031%' and v_erro like '%negativo%',
+      'a recusa nomeia a peça e o motivo — disse: ' || v_erro);
+  end;
+
+  perform app.assert(
+    (select quantity from public.part_balances where part_id = v_kit and depot_id = v_base) = 2,
+    'e o saldo não se mexeu: a recusa não deixou estado pela metade');
+
+  -- 3. O movimento é IMUTÁVEL — um razão corrigível por baixo não prova nada.
+  begin
+    update public.part_movements set quantity = 999
+     where part_id = v_kit and depot_id = v_base;
+    perform app.assert(false, 'alterar movimento deveria ser recusado');
+  exception when check_violation then
+    perform app.assert(true, 'alterar um movimento do razão é recusado');
+  end;
+
+  begin
+    delete from public.part_movements where part_id = v_kit and depot_id = v_base;
+    perform app.assert(false, 'excluir movimento deveria ser recusado');
+  exception when check_violation then
+    perform app.assert(true, 'e excluir também — errou, lança o contrário');
+  end;
+
+  -- 4. Apontar peça do catálogo dá BAIXA; remover o apontamento DEVOLVE.
+  insert into public.ticket_parts_used
+    (tenant_id, ticket_id, part_id, depot_id, description, quantity, unit_cost, amount)
+  values (v_tenant, v_ticket, v_kit, v_base, 'Kit da asserção', 1, 214.80, 214.80)
+  returning id into v_item;
+
+  perform app.assert(
+    (select quantity from public.part_balances where part_id = v_kit and depot_id = v_base) = 1,
+    'apontar a peça no atendimento dá baixa sozinha: 2 → 1');
+
+  delete from public.ticket_parts_used where id = v_item;
+  perform app.assert(
+    (select quantity from public.part_balances where part_id = v_kit and depot_id = v_base) = 2,
+    'remover o apontamento devolve ao estoque: 1 → 2');
+  perform app.assert(
+    (select count(*) from public.part_movements
+      where part_id = v_kit and kind = 'return' and ticket_id = v_ticket) = 1,
+    'e a devolução é um MOVIMENTO, não o sumiço do consumo — os dois ficam à vista');
+
+  -- 5. Custo médio móvel: entrada mistura, saída não mexe.
+  select average_cost into v_custo from public.parts where id = v_kit;
+  insert into public.part_movements (tenant_id, part_id, depot_id, kind, quantity, unit_cost)
+  values (v_tenant, v_kit, v_base, 'purchase', 2, 314.80);
+  -- (2 × 214,80 + 2 × 314,80) / 4 = 264,80
+  perform app.assert(
+    (select average_cost from public.parts where id = v_kit) = 264.80,
+    format('a entrada move o custo médio de %s para 264,80', v_custo));
+
+  insert into public.part_movements (tenant_id, part_id, depot_id, kind, quantity)
+  values (v_tenant, v_kit, v_base, 'consumption', -1);
+  perform app.assert(
+    (select average_cost from public.parts where id = v_kit) = 264.80,
+    'e a saída NÃO mexe nele: consumir barato não pode encarecer o que sobrou');
+
+  -- 6. A sugestão de compra é MÁXIMO − saldo, e só para quem furou o mínimo.
+  perform app.assert(
+    (select suggested_purchase from public.vw_part_stock
+      where part_id = v_kit and depot_id = v_base) = 21,
+    'a sugestão é máximo − saldo (24 − 3), e não mínimo − saldo');
+  perform app.assert(
+    (select suggested_purchase from public.vw_part_stock
+      where sku = 'PC-0014' and depot_name = 'Base Matriz') = 0,
+    'quem está em nível não sugere compra nenhuma');
+
+  -- Devolve o exemplo ao que o seed deixou.
+  insert into public.part_movements (tenant_id, part_id, depot_id, kind, quantity, notes)
+  values (v_tenant, v_kit, v_base, 'adjustment', -1, 'Desfaz o que a asserção lançou');
+  update public.parts set average_cost = 214.80 where id = v_kit;
+end
+$$;
+
+-- A contagem de inventário: a diferença vira movimento, e não um saldo novo.
+do $$
+declare
+  v_tenant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_kit    uuid := 'ef200000-0000-4000-8000-000000000001';
+  v_base   uuid := 'e1110000-0000-4000-8000-000000000001';
+  v_count  uuid;
+  v_antes  numeric(14,3);
+begin
+  select quantity into v_antes
+    from public.part_balances where part_id = v_kit and depot_id = v_base;
+
+  insert into public.inventory_counts (tenant_id, depot_id, code, counted_on)
+  values (v_tenant, v_base, 'CT-ASSERCAO', current_date)
+  returning id into v_count;
+
+  insert into public.inventory_count_items
+    (tenant_id, count_id, part_id, expected_quantity, counted_quantity)
+  values (v_tenant, v_count, v_kit, v_antes, null);
+
+  -- Contagem incompleta não ajusta NADA: ajustar pela metade produziria uma
+  -- perda registrada para a peça contada e silêncio para a não contada.
+  begin
+    update public.inventory_counts set status = 'closed' where id = v_count;
+    perform app.assert(false, 'fechar contagem com item em branco deveria ser recusado');
+  exception when check_violation then
+    perform app.assert(true, 'contagem com item sem lançamento não fecha');
+  end;
+
+  update public.inventory_count_items
+     set counted_quantity = v_antes - 1 where count_id = v_count;
+  update public.inventory_counts set status = 'closed', closed_by = '22220000-0000-4000-8000-000000000001'
+   where id = v_count;
+
+  perform app.assert(
+    (select quantity from public.part_balances where part_id = v_kit and depot_id = v_base) = v_antes - 1,
+    'fechada, a contagem corrige o saldo pela diferença');
+  perform app.assert(
+    (select count(*) from public.part_movements
+      where inventory_count_id = v_count and kind = 'adjustment') = 1,
+    'e a correção é um MOVIMENTO com a contagem no vínculo — a diferença não é apagada');
+  perform app.assert(
+    (select notes from public.part_movements where inventory_count_id = v_count)
+      like '%CT-ASSERCAO%esperado%contado%',
+    'o movimento carrega o esperado e o contado, que é o que responde "por que sumiu?"');
+  perform app.assert(
+    (select closed_at is not null from public.inventory_counts where id = v_count),
+    'e a contagem fica carimbada com a hora do fechamento');
+
+  -- Volta ao estado do seed.
+  insert into public.part_movements (tenant_id, part_id, depot_id, kind, quantity, notes)
+  values (v_tenant, v_kit, v_base, 'adjustment', 1, 'Desfaz a contagem da asserção');
+  delete from public.inventory_counts where id = v_count;
+end
+$$;
+
+-- O total da ordem de compra é a soma das linhas, como o da fatura.
+do $$
+declare
+  v_ordem uuid := 'ef300000-0000-4000-8000-000000000001';
+  v_total numeric(14,2);
+  v_soma  numeric(14,2);
+begin
+  select total into v_total from public.purchase_orders where id = v_ordem;
+  select sum(amount) into v_soma from public.purchase_order_items where order_id = v_ordem;
+  perform app.assert(v_total = v_soma,
+    format('o total da ordem (%s) é a soma das linhas (%s), por gatilho', v_total, v_soma));
+
+  perform app.assert(
+    (select count(*) from public.purchase_order_items
+      where order_id = v_ordem and received_quantity > 0 and received_quantity < quantity) = 1,
+    'o exemplo traz um recebimento PARCIAL — que é o caso normal, não a exceção');
+end
+$$;
+
+-- E o isolamento da view nova, pela mesma régua da 0052.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"00000000-0000-4000-8000-00000000dead","role":"authenticated","app_metadata":{"tenant_id":"00000000-0000-4000-8000-0000000000ff"}}';
+do $$
+begin
+  perform app.assert(
+    (select count(*) from public.vw_part_stock) = 0,
+    'a view de estoque não mostra nada para quem não é do tenant');
 end
 $$;
 reset role;

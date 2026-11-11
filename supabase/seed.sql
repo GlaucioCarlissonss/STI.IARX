@@ -784,8 +784,8 @@ insert into public.tickets
    client_id, branch_id, requester_id, assignee_id, created_at, tags)
 values
   ('ef100000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
-   'Impressora EQP-0412 com atolamento recorrente',
-   'Atola a cada 20 páginas no tabuleiro 2. Rolete de tração aparentemente gasto.',
+   'Concentrador EQP-0412 alarmando baixa pureza de O2',
+   'Alarme de pureza abaixo de 82% após 20 minutos de uso. Peneira molecular provavelmente saturada.',
    'in_progress', 'c0000000-0000-4000-8000-000000000002', null,
    'e0000000-0000-4000-8000-000000000004',
    'f0000000-0000-4000-8000-000000000001', '11110000-0000-4000-8000-000000000001',
@@ -793,8 +793,8 @@ values
    now() - interval '2 days', array['campo','corretiva']),
 
   ('ef100000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
-   'Preventiva semestral da EQP-0501',
-   'Revisão de 6 meses: limpeza do caminho de papel, troca do kit de manutenção.',
+   'Preventiva semestral do monitor EQP-0501',
+   'Revisão de 6 meses: calibração dos parâmetros, teste de bateria e troca do sensor de SpO2.',
    'assigned', 'c0000000-0000-4000-8000-000000000003', null,
    'e0000000-0000-4000-8000-000000000004',
    'f0000000-0000-4000-8000-000000000001', '11110000-0000-4000-8000-000000000001',
@@ -827,12 +827,86 @@ insert into public.ticket_labor_entries
 values
   ('a0000000-0000-4000-8000-000000000001', 'ef100000-0000-4000-8000-000000000001',
    '22220000-0000-4000-8000-000000000003', current_date - 1, 2.50, 120.00, 300.00,
-   'Desmontagem do tabuleiro 2 e diagnóstico do rolete.');
+   'Abertura do gabinete, teste de pureza e diagnóstico da peneira.');
 
+-- -----------------------------------------------------------------------------
+-- Peças e estoque (0053)
+-- -----------------------------------------------------------------------------
+-- O exemplo precisa mostrar as TRÊS situações da política de reposição, porque
+-- é a distinção entre elas que a tela existe para fazer: em nível, no limite e
+-- zerado. Um exemplo só com estoque cheio não mostraria nada.
+insert into public.parts (id, tenant_id, sku, name, manufacturer_id, unit, category, notes) values
+  ('ef200000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
+   'PC-0031', 'Peneira molecular — par', null, 'par', 'Oxigenoterapia',
+   'Para concentradores de 5L e 10L. Troca recomendada a cada 10 mil horas de uso.'),
+  ('ef200000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+   'PC-0014', 'Bateria selada 12V 4,5Ah', null, 'un', 'Energia', null),
+  ('ef200000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001',
+   'PC-0102', 'Sensor de SpO2 reutilizável', null, 'un', 'Monitorização', null);
+
+insert into public.part_stock_policies (tenant_id, part_id, depot_id, min_quantity, max_quantity, lead_time_days) values
+  ('a0000000-0000-4000-8000-000000000001', 'ef200000-0000-4000-8000-000000000001',
+   'e1110000-0000-4000-8000-000000000001', 8, 24, 7),
+  ('a0000000-0000-4000-8000-000000000001', 'ef200000-0000-4000-8000-000000000002',
+   'e1110000-0000-4000-8000-000000000001', 6, 16, 10),
+  -- A MESMA peça, outro depósito, outro mínimo: é o ponto da política ser por
+  -- peça E depósito. A oficina não guarda o que o galpão guarda.
+  ('a0000000-0000-4000-8000-000000000001', 'ef200000-0000-4000-8000-000000000002',
+   'e1110000-0000-4000-8000-000000000002', 2, 6, 10),
+  ('a0000000-0000-4000-8000-000000000001', 'ef200000-0000-4000-8000-000000000003',
+   'e1110000-0000-4000-8000-000000000001', 3, 9, 21);
+
+-- O saldo nasce de MOVIMENTO, nunca de um insert em part_balances: o seed
+-- obedece à mesma regra que a aplicação, senão ele seria a primeira exceção.
+insert into public.part_movements
+  (tenant_id, part_id, depot_id, kind, quantity, unit_cost, notes, created_at) values
+  ('a0000000-0000-4000-8000-000000000001', 'ef200000-0000-4000-8000-000000000001',
+   'e1110000-0000-4000-8000-000000000001', 'purchase', 5, 214.80, 'Entrada por compra OC-2026-011', now() - interval '30 days'),
+  ('a0000000-0000-4000-8000-000000000001', 'ef200000-0000-4000-8000-000000000002',
+   'e1110000-0000-4000-8000-000000000001', 'purchase', 12, 389.00, 'Entrada por compra OC-2026-011', now() - interval '30 days'),
+  ('a0000000-0000-4000-8000-000000000001', 'ef200000-0000-4000-8000-000000000002',
+   'e1110000-0000-4000-8000-000000000002', 'purchase', 1, 389.00, 'Transferência inicial para a oficina', now() - interval '20 days'),
+  -- Diferença de contagem: sai como AJUSTE, com o motivo escrito. Some do saldo
+  -- sem sumir do histórico.
+  ('a0000000-0000-4000-8000-000000000001', 'ef200000-0000-4000-8000-000000000001',
+   'e1110000-0000-4000-8000-000000000001', 'adjustment', -2, null, 'Contagem CT-2026-09: esperado 5, contado 3', now() - interval '11 days');
+
+/*
+ * A peça do atendimento de campo nasce LIGADA ao catálogo, e o gatilho da 0053
+ * dá a baixa sozinho: 5 comprados − 2 do ajuste − 1 deste consumo = 2 em
+ * estoque, abaixo do mínimo de 8.
+ *
+ * Por isso este insert está aqui embaixo, e não no bloco da Fase 5: a baixa é
+ * `after insert`. Ligar a peça depois, por `update`, não dispararia nada — e o
+ * exemplo nasceria com o saldo mentindo em uma unidade.
+ */
 insert into public.ticket_parts_used
-  (tenant_id, ticket_id, description, quantity, unit_cost, amount)
+  (tenant_id, ticket_id, part_id, depot_id, description, quantity, unit_cost, amount)
 values
   ('a0000000-0000-4000-8000-000000000001', 'ef100000-0000-4000-8000-000000000001',
-   'Kit de roletes de tração — tabuleiro 2', 1, 220.00, 220.00);
+   'ef200000-0000-4000-8000-000000000001', 'e1110000-0000-4000-8000-000000000001',
+   'Peneira molecular — par (saturada)', 1, 220.00, 220.00);
+
+-- Duas ordens de compra: uma recebida em parte (5 de 8 de um item, 0 de 4 do
+-- outro) e uma ainda a caminho. O recebimento parcial é o caso normal — fechar
+-- a ordem na primeira entrega é o que faz alguém comprar de novo o que já vem.
+insert into public.purchase_orders
+  (id, tenant_id, supplier_id, depot_id, code, status, expected_on, invoice_ref, notes) values
+  ('ef300000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
+   '44440000-0000-4000-8000-000000000002', 'e1110000-0000-4000-8000-000000000001',
+   'OC-2026-013', 'partial', current_date - 2, null, null),
+  ('ef300000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+   '44440000-0000-4000-8000-000000000002', 'e1110000-0000-4000-8000-000000000001',
+   'OC-2026-014', 'sent', current_date + 7, null,
+   'Reposição do fusor, que está zerado na base.');
+
+insert into public.purchase_order_items
+  (tenant_id, order_id, part_id, quantity, unit_price, amount, received_quantity) values
+  ('a0000000-0000-4000-8000-000000000001', 'ef300000-0000-4000-8000-000000000001',
+   'ef200000-0000-4000-8000-000000000002', 8, 389.00, 3112.00, 5),
+  ('a0000000-0000-4000-8000-000000000001', 'ef300000-0000-4000-8000-000000000001',
+   'ef200000-0000-4000-8000-000000000001', 4, 214.80, 859.20, 0),
+  ('a0000000-0000-4000-8000-000000000001', 'ef300000-0000-4000-8000-000000000002',
+   'ef200000-0000-4000-8000-000000000003', 6, 1070.00, 6420.00, 0);
 
 commit;

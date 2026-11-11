@@ -555,6 +555,28 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('locacao', 'manutencao', 'abrir', 'Abrir atendimento de campo', 'atendente'),
   act('locacao', 'manutencao', 'atender', 'Apontar horas e peças', 'atendente'),
   act('locacao', 'manutencao', 'aprovar', 'Aprovar custo acima da alçada', 'gestor'),
+  scr('locacao', 'pecas', 'Peças e estoque', 'visualizador'),
+  act('locacao', 'pecas', 'ver', 'Consultar peças e saldo', 'visualizador'),
+  act('locacao', 'pecas', 'gerenciar', 'Cadastrar peça e política', 'gestor'),
+  /* Movimentar é `atendente`: quem está na doca dá a entrada, e quem está em
+     campo dá a baixa. Exigir gestor para isso faria o estoque ficar sempre um
+     dia atrasado em relação ao galpão. */
+  act('locacao', 'pecas', 'movimentar', 'Lançar entrada, saída e transferência', 'atendente'),
+  /* A tela de compras é `atendente` porque RECEBER é `atendente`: uma ação não
+     pode exigir papel menor que a tela que a contém, senão fica inalcançável —
+     quem está na doca não abriria a tela onde se recebe. Esconder preço de
+     fornecedor é controle de campo, não de papel. */
+  scr('locacao', 'compras', 'Ordens de compra', 'atendente'),
+  act('locacao', 'compras', 'ver', 'Consultar ordens de compra', 'atendente'),
+  act('locacao', 'compras', 'gerenciar', 'Criar, enviar e cancelar ordem', 'gestor'),
+  act('locacao', 'compras', 'receber', 'Receber mercadoria', 'atendente'),
+  act('locacao', 'compras', 'faturar', 'Registrar NF e gerar título a pagar', 'gestor'),
+  scr('locacao', 'contagens', 'Contagens de inventário', 'visualizador'),
+  act('locacao', 'contagens', 'ver', 'Consultar contagens', 'visualizador'),
+  act('locacao', 'contagens', 'contar', 'Abrir e lançar contagem', 'atendente'),
+  /* Fechar é `gestor` porque o ajuste é uma perda ou uma sobra reconhecida —
+     a mesma separação de quem aprova custo acima da alçada. */
+  act('locacao', 'contagens', 'fechar', 'Fechar contagem e gerar ajustes', 'gestor'),
 ] as const
 
 /** Todas as chaves válidas — o SQL semeia exatamente esta lista. */

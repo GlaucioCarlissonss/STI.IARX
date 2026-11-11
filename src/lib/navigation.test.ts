@@ -261,20 +261,24 @@ describe('a esfera decide o que existe no menu', () => {
     expect(rotulosDele).not.toContain('Locação')
   })
 
-  it('o grupo de locação já aparece por mérito próprio — a Frota existe', () => {
+  it('o grupo de locação aparece por mérito próprio, e não pela exceção', () => {
     /*
      * Enquanto o grupo só tinha telas previstas, ele dependia da exceção de
      * `visibleNavGroups` e aparecia apenas para quem administra o ambiente. Com
-     * a Fase 2 (0048) ele tem duas telas de verdade, e passa a seguir a regra
-     * comum: aparece para quem alcança alguma delas. O resto do módulo continua
-     * listado como previsto DENTRO do grupo, que é o uso para o qual o selo
-     * "em breve" existe.
+     * a Fase 2 (0048) ele ganhou telas de verdade e passou a seguir a regra
+     * comum: aparece para quem alcança alguma delas.
+     *
+     * A Fase 6 (0053) entregou as últimas, e por isso a asserção que exigia um
+     * item "em breve" aqui saiu: ela caiu por ENTREGA, não por regressão, e
+     * mantê-la obrigaria a inventar uma promessa só para ter o que contar. O
+     * que continua valendo é o que importa — o grupo é alcançável por quem tem
+     * a chave de uma tela, e só por isso.
      */
     const frota = conceder('locacao.frota.ver')
     const locacao = visibleNavGroups(frota, ['rental']).find((g) => g.label === 'Locação')
     expect(locacao).toBeDefined()
     expect(locacao!.items.filter((i) => !i.soon).map((i) => i.href)).toContain('/locacao/frota')
-    expect(locacao!.items.some((i) => i.soon)).toBe(true)
+    expect(locacao!.items.every((i) => !i.soon)).toBe(true)
   })
 
   it('o destino pós-login respeita a esfera', () => {

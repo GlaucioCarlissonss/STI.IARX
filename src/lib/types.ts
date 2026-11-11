@@ -902,3 +902,126 @@ export interface FieldServiceCost {
   total_cost: number
   total_hours: number
 }
+
+/* --------------------------------------------------------------------------
+ * Peças, estoque e compras (0053)
+ * ------------------------------------------------------------------------ */
+
+export type PartUnit = 'un' | 'm' | 'kg' | 'l' | 'cx' | 'par'
+
+export type PartMovementKind =
+  | 'purchase'
+  | 'consumption'
+  | 'return'
+  | 'adjustment'
+  | 'transfer_in'
+  | 'transfer_out'
+
+export type StockLevel = 'sem_politica' | 'zerado' | 'abaixo' | 'no_limite' | 'em_nivel'
+
+export interface Part {
+  id: string
+  sku: string
+  name: string
+  manufacturer_id: string | null
+  unit: PartUnit
+  category: string | null
+  average_cost: number
+  notes: string | null
+  is_active: boolean
+}
+
+export interface PartStockPolicy {
+  id: string
+  part_id: string
+  depot_id: string
+  min_quantity: number
+  max_quantity: number
+  lead_time_days: number | null
+}
+
+/**
+ * Uma linha de `vw_part_stock`: peça × depósito, com saldo e política.
+ *
+ * `quantity` é lido, nunca escrito — quem o mantém é o gatilho da 0053.
+ */
+export interface PartStock {
+  part_id: string
+  sku: string
+  name: string
+  unit: PartUnit
+  category: string | null
+  average_cost: number
+  is_active: boolean
+  depot_id: string
+  depot_name: string
+  quantity: number
+  last_movement_at: string | null
+  min_quantity: number | null
+  max_quantity: number | null
+  lead_time_days: number | null
+  suggested_purchase: number | null
+  level: StockLevel
+  stock_value: number
+}
+
+export interface PartMovement {
+  id: string
+  part_id: string
+  depot_id: string
+  kind: PartMovementKind
+  quantity: number
+  unit_cost: number | null
+  ticket_id: string | null
+  purchase_order_id: string | null
+  inventory_count_id: string | null
+  transfer_depot_id: string | null
+  notes: string | null
+  created_at: string
+}
+
+export type PurchaseOrderStatus = 'draft' | 'sent' | 'partial' | 'received' | 'cancelled'
+
+export interface PurchaseOrder {
+  id: string
+  supplier_id: string | null
+  depot_id: string
+  code: string
+  status: PurchaseOrderStatus
+  expected_on: string | null
+  total: number
+  invoice_ref: string | null
+  payable_id: string | null
+  notes: string | null
+}
+
+export interface PurchaseOrderItem {
+  id: string
+  order_id: string
+  part_id: string
+  quantity: number
+  unit_price: number
+  amount: number
+  received_quantity: number
+}
+
+export type InventoryCountStatus = 'open' | 'closed' | 'cancelled'
+
+export interface InventoryCount {
+  id: string
+  depot_id: string
+  code: string
+  status: InventoryCountStatus
+  counted_on: string
+  closed_at: string | null
+  closed_by: string | null
+  notes: string | null
+}
+
+export interface InventoryCountItem {
+  id: string
+  count_id: string
+  part_id: string
+  expected_quantity: number
+  counted_quantity: number | null
+}

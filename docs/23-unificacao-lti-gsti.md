@@ -114,6 +114,26 @@ não guarda saldo nem recebimento; o título não guarda item nem cálculo. Canc
 a fatura cancela o título. É a mesma regra que fez o orçamento do GSTI *ler* os
 títulos em vez de recriá-los.
 
+### 2.5 O saldo de estoque é derivado, e o razão é imutável (Fase 6)
+
+Não é uma quinta decisão sua — é a consequência das quatro primeiras aplicada ao
+estoque, e fica escrita aqui porque é a que mais tenta se desfazer sozinha.
+
+`part_balances` é escrito **somente** pelo gatilho de `part_movements`; não há
+policy de escrita para ninguém, nem para o gestor. Para o saldo mudar, alguém
+precisa dizer *por quê* — entrou por compra, saiu por atendimento, foi ajustado
+por contagem. E movimento não se edita nem se apaga: errou, lança-se o
+contrário, e os dois ficam à vista.
+
+Três consequências que a tela cumpre:
+
+- **saldo negativo é recusado** — não é um número menor que zero, é a confissão
+  de que falta um movimento;
+- **a sugestão de compra é máximo − saldo**, não mínimo − saldo: repor até o
+  mínimo faz comprar de novo na semana seguinte;
+- **a contagem congela o esperado na abertura** — compará-lo com o saldo do
+  fechamento transformaria a peça consumida no meio numa falta que nunca houve.
+
 ---
 
 ## 3. As fases
@@ -129,7 +149,7 @@ fase posterior. A ordem não é gosto: cada uma é pré-requisito da seguinte.
 | **3 — Contratos** ✅ | Contrato, itens alocados, local de operação, franquia e excedente, estados em gatilho (0049) | Medição sem contrato não sabe o que cobrar |
 | **4 — Medição e fatura** ✅ | Medidor, leitura, consumo por competência, **fatura → título a receber** (0050) | É aqui que a locação vira dinheiro — e o que fecha o mês |
 | **5 — Campo** ✅ | Chamado de campo: equipamento, apontamento de horas e peças, alçada de custo em gatilho (0051) | Precisa da frota (o que quebrou) e do contrato (quem paga) |
-| **6 — Estoque e compras** | Peça, depósito, saldo, política de reposição, inventário, ordem de compra, NF de compra | Só faz sentido quando já existe consumo de peça para abastecer |
+| **6 — Estoque e compras** ✅ | Peça, saldo derivado do razão, política por peça×depósito, contagem, ordem de compra, **NF → título a pagar** (0053) | Só faz sentido quando já existe consumo de peça para abastecer |
 | **7 — Planilha do GSTI** | Importar e exportar Excel (o grupo *Sistema* do GSTI) | Conveniência de operação; não bloqueia nada |
 | **8 — Produção** | Banco real, migrações, backup, domínio, TLS, observabilidade na VPS | Ver seção 4 |
 

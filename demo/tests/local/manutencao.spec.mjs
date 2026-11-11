@@ -87,7 +87,7 @@ console.log('\n=== 2. O custo é SOMADO do detalhe, e não digitado ===')
   /* O chamado caro é o primeiro da lista — #ordenada por número decrescente, e
      os dois do exemplo nascem juntos. Abrimos pelo selo para não depender da
      ordem. */
-  await p.locator('tr:has-text("atolamento") [data-testid="abrir-registro"]').first().click()
+  await p.locator('tr:has-text("baixa pureza") [data-testid="abrir-registro"]').first().click()
   await p.waitForSelector('[data-testid="gaveta"]', { timeout: 20000 })
   await p.waitForTimeout(400)
 
@@ -293,7 +293,7 @@ console.log('\n=== 9. O estado do exemplo volta como estava ===')
    * lista consigo mesma e não com um número fixo.
    */
   await p.goto(`${BASE}/locacao/manutencao`, { waitUntil: 'networkidle' })
-  await p.locator('tr:has-text("atolamento") [data-testid="abrir-registro"]').first().click()
+  await p.locator('tr:has-text("baixa pureza") [data-testid="abrir-registro"]').first().click()
   await p.waitForSelector('[data-testid="gaveta"]', { timeout: 20000 })
   await p.waitForTimeout(400)
 
