@@ -179,13 +179,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         label: 'Modelos e categorias',
         permission: 'locacao.cadastros.ver',
       },
-      {
-        href: null,
-        label: 'Contratos',
-        permission: null,
-        soon: true,
-        hint: 'Contrato de locação com itens alocados, tabela de preço, franquia e reajuste.',
-      },
+      { href: '/locacao/contratos', label: 'Contratos', permission: 'locacao.contratos.ver' },
       {
         href: null,
         label: 'Medições e consumo',

@@ -737,3 +737,62 @@ export interface EquipmentMovement {
   created_by: string | null
   created_at: string
 }
+
+/* --------------------------------------------------------------------------
+ * Locação — contratos (migração 0049)
+ * ------------------------------------------------------------------------ */
+
+export type RentalContractStatus = 'draft' | 'active' | 'suspended' | 'ended' | 'cancelled'
+export type RentalItemStatus = 'reserved' | 'delivered' | 'returned' | 'cancelled'
+
+export interface OperationLocation {
+  id: string
+  client_id: string
+  branch_id: string | null
+  name: string
+  address_line: string | null
+  contact_name: string | null
+  contact_phone: string | null
+  notes: string | null
+  is_active: boolean
+}
+
+export interface RentalContract {
+  id: string
+  client_id: string
+  code: string
+  status: RentalContractStatus
+  starts_on: string
+  ends_on: string | null
+  billing_day: number
+  default_franchise: number | null
+  default_excess_price: number | null
+  adjustment_index: string | null
+  adjustment_month: number | null
+  notes: string | null
+}
+
+/** Linha de `vw_rental_allocations` — a alocação com tudo resolvido. */
+export interface RentalAllocation {
+  id: string
+  contract_id: string
+  contract_code: string
+  contract_status: RentalContractStatus
+  client_id: string
+  equipment_id: string
+  asset_tag: string
+  equipment_status: EquipmentStatus
+  meter_kind: MeterKind
+  meter_reading: number
+  model_name: string
+  operation_location_id: string | null
+  location_name: string | null
+  status: RentalItemStatus
+  monthly_price: number
+  franchise: number | null
+  excess_price: number | null
+  delivered_on: string | null
+  returned_on: string | null
+  meter_at_delivery: number | null
+  meter_at_return: number | null
+}

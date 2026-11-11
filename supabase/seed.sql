@@ -662,4 +662,78 @@ values
    'maintenance', 'none', 0, null, date '2025-11-30', 4100.00, 'NF 2019', 120,
    false, null, 'Solda do pedal de elevação');
 
+-- -----------------------------------------------------------------------------
+-- Contratos de locação (0049)
+-- -----------------------------------------------------------------------------
+-- Agora os três estados que a 0048 criou e ninguém alcançava passam a existir
+-- no exemplo: `reserved`, `in_transit_out` e `rented`. Eles NÃO são semeados à
+-- mão no equipamento — são consequência da alocação, exatamente como na tela.
+insert into public.operation_locations (id, tenant_id, client_id, name, address_line, contact_name) values
+  ('e5550000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
+   'f0000000-0000-4000-8000-000000000001', 'Unidade Centro', 'Rua das Palmeiras, 120 — São Paulo/SP', 'Recepção'),
+  ('e5550000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+   'f0000000-0000-4000-8000-000000000001', 'Unidade Norte', 'Av. Brasil, 4500 — São Paulo/SP', 'Enfermagem');
+
+insert into public.rental_contracts
+  (id, tenant_id, client_id, code, status, starts_on, ends_on, billing_day,
+   default_franchise, default_excess_price, adjustment_index, adjustment_month, notes)
+values
+  ('e6660000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
+   'f0000000-0000-4000-8000-000000000001', 'CTR-2026-018', 'active',
+   current_date - 240, current_date + 120, 5, 120, 18.40, 'IPCA', 2,
+   'Home care: concentradores e monitores nas duas unidades.'),
+  ('e6660000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+   'f0000000-0000-4000-8000-000000000001', 'CTR-2026-027', 'draft',
+   current_date + 15, current_date + 380, 10, 100, 15.00, 'IGP-M', 6,
+   'Em negociação: ampliação para a unidade nova.');
+
+-- As alocações, com o equipamento acompanhando — a ordem é a mesma da tela:
+-- aloca (reserva), expede, entrega.
+insert into public.rental_contract_items
+  (id, tenant_id, contract_id, equipment_id, operation_location_id, status,
+   monthly_price, franchise, excess_price, delivered_on, meter_at_delivery)
+select
+  ('e7770000-0000-4000-8000-00000000000' || row_number() over (order by e.asset_tag))::uuid,
+  'a0000000-0000-4000-8000-000000000001',
+  'e6660000-0000-4000-8000-000000000001',
+  e.id,
+  'e5550000-0000-4000-8000-000000000001',
+  'delivered',
+  1400.00, 120, 18.40,
+  current_date - 230,
+  e.meter_reading
+from public.rental_equipment e
+where e.tenant_id = 'a0000000-0000-4000-8000-000000000001'
+  and e.asset_tag in ('EQP-0412', 'EQP-0501')
+order by e.asset_tag;
+
+-- Pelo caminho inteiro, e não por atalho: o gatilho da 0048 recusa
+-- `available → rented`, e está certo — foi o que esta linha tentou fazer na
+-- primeira versão do exemplo. A peça sai da base, viaja e só então opera.
+update public.rental_equipment set status = 'reserved'
+ where tenant_id = 'a0000000-0000-4000-8000-000000000001'
+   and asset_tag in ('EQP-0412', 'EQP-0501');
+update public.rental_equipment set status = 'in_transit_out'
+ where tenant_id = 'a0000000-0000-4000-8000-000000000001'
+   and asset_tag in ('EQP-0412', 'EQP-0501');
+update public.rental_equipment set status = 'rented'
+ where tenant_id = 'a0000000-0000-4000-8000-000000000001'
+   and asset_tag in ('EQP-0412', 'EQP-0501');
+
+-- Uma reservada e ainda na base: é o caso que a tela chama de "a expedir".
+insert into public.rental_contract_items
+  (tenant_id, contract_id, equipment_id, operation_location_id, status, monthly_price, franchise, excess_price)
+select
+  'a0000000-0000-4000-8000-000000000001',
+  'e6660000-0000-4000-8000-000000000001',
+  e.id,
+  'e5550000-0000-4000-8000-000000000002',
+  'reserved', 890.00, null, null
+from public.rental_equipment e
+where e.tenant_id = 'a0000000-0000-4000-8000-000000000001' and e.asset_tag = 'EQP-0620';
+
+update public.rental_equipment
+   set status = 'reserved'
+ where tenant_id = 'a0000000-0000-4000-8000-000000000001' and asset_tag = 'EQP-0620';
+
 commit;

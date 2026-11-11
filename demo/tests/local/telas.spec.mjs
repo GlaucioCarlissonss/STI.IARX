@@ -43,6 +43,7 @@ const ROTAS = [
      rota responde 200, sem erro de servidor nem de hidratação. */
   '/locacao/frota',
   '/locacao/cadastros',
+  '/locacao/contratos',
   '/filas',
   '/sla',
   '/sla/horarios',

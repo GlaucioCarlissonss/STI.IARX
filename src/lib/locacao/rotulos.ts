@@ -1,4 +1,9 @@
-import type { EquipmentStatus, MeterKind } from '@/lib/types'
+import type {
+  EquipmentStatus,
+  MeterKind,
+  RentalContractStatus,
+  RentalItemStatus,
+} from '@/lib/types'
 
 /**
  * Os dez estados do equipamento, em português e com tom.
@@ -92,4 +97,54 @@ export function descreverMovimento(m: {
   }
   if (m.kind === 'block') return m.notes ?? 'Bloqueio alterado'
   return m.notes ?? 'Anotação'
+}
+
+/* --------------------------------------------------------------------------
+ * Contratos (0049)
+ * ------------------------------------------------------------------------ */
+
+export const ESTADO_DO_CONTRATO: Record<
+  RentalContractStatus,
+  { label: string; tone: 'ok' | 'warn' | 'breach' | 'info' | 'neutral' }
+> = {
+  draft: { label: 'Rascunho', tone: 'info' },
+  active: { label: 'Ativo', tone: 'ok' },
+  suspended: { label: 'Suspenso', tone: 'warn' },
+  ended: { label: 'Encerrado', tone: 'neutral' },
+  cancelled: { label: 'Rescindido', tone: 'breach' },
+}
+
+export const ESTADO_DA_ALOCACAO: Record<
+  RentalItemStatus,
+  { label: string; tone: 'ok' | 'warn' | 'breach' | 'info' | 'neutral' }
+> = {
+  reserved: { label: 'Reservado', tone: 'info' },
+  delivered: { label: 'Em operação', tone: 'ok' },
+  returned: { label: 'Devolvido', tone: 'neutral' },
+  cancelled: { label: 'Cancelado', tone: 'neutral' },
+}
+
+/**
+ * Quantos dias do mês a peça ficou em operação.
+ *
+ * É a conta do pró-rata, e ela mora aqui — em função pura, com teste — e não
+ * dentro da tela: a Fase 4 vai precisar exatamente dela para faturar, e duas
+ * implementações da mesma conta é como a fatura e a tela passam a discordar.
+ *
+ * Entrega no dia 20 de um mês de 30 cobra 11 dias (20 a 30, inclusive), e não
+ * 10: o dia da entrega é dia de uso.
+ */
+export function diasEmOperacao(
+  inicioDoMes: Date,
+  fimDoMes: Date,
+  entregue: string | null,
+  devolvido: string | null,
+): number {
+  const dia = 86400000
+  const de = entregue ? new Date(`${entregue}T00:00:00`) : inicioDoMes
+  const ate = devolvido ? new Date(`${devolvido}T00:00:00`) : fimDoMes
+  const comeco = de > inicioDoMes ? de : inicioDoMes
+  const fim = ate < fimDoMes ? ate : fimDoMes
+  if (fim < comeco) return 0
+  return Math.round((fim.getTime() - comeco.getTime()) / dia) + 1
 }

@@ -533,6 +533,12 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
     'locacao', 'cadastros', 'gerenciar',
     'Cadastrar fabricante, categoria, modelo e depósito', 'gestor',
   ),
+  scr('locacao', 'contratos', 'Contratos de locação', 'visualizador'),
+  act('locacao', 'contratos', 'ver', 'Consultar contratos de locação', 'visualizador'),
+  act('locacao', 'contratos', 'criar', 'Criar contrato de locação', 'gestor'),
+  act('locacao', 'contratos', 'editar', 'Editar contrato e locais de operação', 'gestor'),
+  act('locacao', 'contratos', 'alocar', 'Alocar, expedir, entregar e recolher', 'atendente'),
+  act('locacao', 'contratos', 'mover', 'Ativar, suspender, encerrar e rescindir', 'gestor'),
 ] as const
 
 /** Todas as chaves válidas — o SQL semeia exatamente esta lista. */
