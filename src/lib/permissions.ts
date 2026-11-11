@@ -75,6 +75,7 @@ export const MODULE_LABEL: Record<string, string> = {
   projetos: 'Projetos',
   gestao: 'Gestão',
   ambiente: 'Ambiente',
+  locacao: 'Locação',
   ia: 'Sugestões de IA',
 }
 
@@ -512,6 +513,26 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   scr('ambiente', 'preferencias', 'Preferências do ambiente', 'admin'),
   act('ambiente', 'preferencias', 'ver', 'Consultar as preferências do ambiente', 'admin'),
   act('ambiente', 'preferencias', 'editar', 'Alterar as preferências do ambiente', 'admin'),
+
+  /* --- Locação (0048) ------------------------------------------------------ */
+  /* Mover o ciclo de vida é `atendente`, e não `gestor`: quem recolhe, entrega
+     e leva para a oficina é quem está no campo. Exigir papel de gestão faria o
+     técnico pedir a alguém que mexesse no sistema por ele, e o estado da frota
+     passaria a ser o que o escritório teve tempo de digitar.
+
+     Cadastrar modelo e preço de tabela é decisão comercial — essa é de gestão. */
+  mod('locacao', 'visualizador'),
+  scr('locacao', 'frota', 'Frota', 'visualizador'),
+  act('locacao', 'frota', 'ver', 'Consultar a frota', 'visualizador'),
+  act('locacao', 'frota', 'criar', 'Cadastrar equipamento', 'gestor'),
+  act('locacao', 'frota', 'editar', 'Editar ficha do equipamento', 'gestor'),
+  act('locacao', 'frota', 'mover', 'Mover o ciclo de vida', 'atendente'),
+  scr('locacao', 'cadastros', 'Modelos e categorias', 'visualizador'),
+  act('locacao', 'cadastros', 'ver', 'Consultar modelos e categorias', 'visualizador'),
+  act(
+    'locacao', 'cadastros', 'gerenciar',
+    'Cadastrar fabricante, categoria, modelo e depósito', 'gestor',
+  ),
 ] as const
 
 /** Todas as chaves válidas — o SQL semeia exatamente esta lista. */
@@ -573,11 +594,12 @@ export interface CatalogModule {
  * equipamento criaria uma chave que não governa tela nenhuma — e configuração
  * morta é pior que ausência de configuração, porque parece ter surtido efeito.
  *
- * O módulo de locação ainda não está aqui porque as telas dele ainda não
- * existem: o catálogo cobre apenas tela que existe, e as chaves chegam junto
- * com a tela de cada fase.
+ * O módulo de locação entrou na Fase 2, junto com as duas primeiras telas dele
+ * — e não antes: o catálogo cobre apenas tela que existe, e chave que não
+ * governa tela é configuração morta.
  */
 export const MODULE_SPHERE: Readonly<Record<string, readonly Esfera[]>> = {
+  locacao: ['rental'],
   inventario: ['management'],
   telefonia: ['management'],
   conectividade: ['management'],

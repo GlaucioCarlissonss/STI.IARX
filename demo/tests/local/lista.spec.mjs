@@ -227,6 +227,22 @@ console.log('\n=== 5. Teclado: anda, marca, limpa ===')
 console.log('\n=== 6. Ação em massa: atribuir dois de uma vez ===')
 // ---------------------------------------------------------------------------
 {
+  /*
+   * O cenário é PREPARADO aqui, e não herdado do exemplo.
+   *
+   * Esta asserção reprovava quando outra suíte rodava antes e atribuía os
+   * chamados que o exemplo deixa sem atendente — falha por ordem de execução,
+   * que é a pior de depurar porque a suíte passa sozinha. Tirar o atendente de
+   * dois chamados primeiro custa dois cliques e torna a §6 independente.
+   */
+  await p.goto(`${BASE}/tickets?status=todos`, { waitUntil: 'networkidle' })
+  await p.waitForTimeout(600)
+  await p.locator('tr[data-indice="0"] input[type="checkbox"]').check()
+  await p.locator('tr[data-indice="1"] input[type="checkbox"]').check()
+  await p.locator('[data-testid="lote-atribuir"]').selectOption({ label: 'Sem atendente' })
+  await p.waitForSelector('[data-testid="aviso-ok"]', { timeout: 15000 })
+  await p.waitForTimeout(1500)
+
   await p.goto(`${BASE}/tickets?atendente=nenhum`, { waitUntil: 'networkidle' })
   const antes = await linhas(p)
   if (antes.length < 2) {

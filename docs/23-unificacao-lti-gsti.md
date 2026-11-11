@@ -124,9 +124,9 @@ fase posterior. A ordem não é gosto: cada uma é pré-requisito da seguinte.
 | Fase | Entrega | Por que nesta ordem |
 |---|---|---|
 | **0 — Acesso** ✅ | O protótipo cabendo no celular (18 das 25 telas estouravam; agora 0) | Você precisa conseguir revisar antes de aprovar |
-| **1 — Esferas** | Esfera por empresa, seletor no cabeçalho, catálogo de permissão da Locação, grupo de menu | Sem ela, cada tela nova nasce no lugar errado e o menu vira depósito |
-| **2 — Frota** | Equipamento próprio, ciclo de vida, modelo/fabricante/categoria, local de operação, movimentação | Contrato sem equipamento não aloca nada |
-| **3 — Contratos** | Contrato, itens alocados, tabela de preço, franquia, reajuste, desconto | Medição sem contrato não sabe o que cobrar |
+| **1 — Esferas** ✅ | Esfera por empresa (0047), seletor no cabeçalho, filtro no menu e na matriz de permissão | Sem ela, cada tela nova nasce no lugar errado e o menu vira depósito |
+| **2 — Frota** ✅ | Equipamento próprio, ciclo de vida em gatilho, modelo/fabricante/categoria/depósito, movimentação (0048) | Contrato sem equipamento não aloca nada |
+| **3 — Contratos** | Contrato, itens alocados, local de operação, tabela de preço, franquia, reajuste, desconto | Medição sem contrato não sabe o que cobrar |
 | **4 — Medição e fatura** | Medidor, leitura, importação de leitura, consumo por competência, **fatura → título a receber** | É aqui que a locação vira dinheiro — e o que fecha o mês |
 | **5 — Campo** | Chamado de campo: apontamento, pausa, peça consumida, alçada de custo | Precisa da frota (o que quebrou) e do contrato (quem paga) |
 | **6 — Estoque e compras** | Peça, depósito, saldo, política de reposição, inventário, ordem de compra, NF de compra | Só faz sentido quando já existe consumo de peça para abastecer |

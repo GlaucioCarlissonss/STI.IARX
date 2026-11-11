@@ -646,3 +646,94 @@ export interface TelecomDashboardRow {
   without_user: number
   free_to_cancel: number
 }
+
+/* --------------------------------------------------------------------------
+ * Locação — a frota (migração 0048)
+ * ------------------------------------------------------------------------ */
+
+export type EquipmentStatus =
+  | 'available'
+  | 'reserved'
+  | 'in_transit_out'
+  | 'rented'
+  | 'in_transit_back'
+  | 'inspection'
+  | 'maintenance'
+  | 'blocked'
+  | 'lost'
+  | 'written_off'
+
+export type MeterKind = 'none' | 'hours' | 'cycles' | 'distance'
+
+export interface RentalDepot {
+  id: string
+  name: string
+  code: string | null
+  kind: 'warehouse' | 'workshop' | 'transit'
+  city: string | null
+  state: string | null
+  is_active: boolean
+}
+
+export interface EquipmentManufacturer {
+  id: string
+  name: string
+  support_contact: string | null
+  notes: string | null
+  is_active: boolean
+}
+
+export interface EquipmentCategory {
+  id: string
+  code: string
+  name: string
+  default_meter_kind: MeterKind
+  default_useful_life_months: number | null
+  is_active: boolean
+}
+
+export interface EquipmentModel {
+  id: string
+  manufacturer_id: string
+  category_id: string
+  code: string
+  name: string
+  specs: Record<string, string>
+  monthly_price: number | null
+  daily_price: number | null
+  is_active: boolean
+}
+
+export interface RentalEquipment {
+  id: string
+  asset_tag: string
+  serial_number: string | null
+  model_id: string
+  depot_id: string | null
+  status: EquipmentStatus
+  blocked: boolean
+  block_reason: string | null
+  block_until: string | null
+  meter_kind: MeterKind
+  meter_reading: number
+  meter_read_at: string | null
+  acquisition_date: string | null
+  acquisition_value: number | null
+  invoice_ref: string | null
+  useful_life_months: number | null
+  notes: string | null
+}
+
+export interface EquipmentMovement {
+  id: string
+  equipment_id: string
+  kind: 'status' | 'depot' | 'meter' | 'block' | 'note'
+  from_status: string | null
+  to_status: string | null
+  from_depot_id: string | null
+  to_depot_id: string | null
+  meter_reading: number | null
+  notes: string | null
+  created_by: string | null
+  created_at: string
+}

@@ -164,20 +164,20 @@ export const NAV_GROUPS: readonly NavGroup[] = [
    *
    * Entra acima de Inventário porque numa empresa de locação é o trabalho do
    * dia; e abaixo de Atendimento porque o chamado continua sendo o que
-   * interrompe. As seis telas chegam uma por fase: nesta rodada todas são
-   * PREVISTAS, com selo, e é daí que vem a exceção explicada em
-   * `visibleNavGroups`.
+   * interrompe. As telas chegam uma por fase — a Frota e os cadastros dela na
+   * Fase 2 (0048), as outras quatro em seguida. Enquanto o grupo tinha só
+   * previstas, ele aparecia apenas para quem administra o ambiente; ver a
+   * exceção explicada em `visibleNavGroups`.
    */
   {
     label: 'Locação',
     spheres: ['rental'],
     items: [
+      { href: '/locacao/frota', label: 'Frota', permission: 'locacao.frota.ver' },
       {
-        href: null,
-        label: 'Frota',
-        permission: null,
-        soon: true,
-        hint: 'Equipamento próprio destinado a locar: ciclo de vida, modelo, local de operação e movimentação.',
+        href: '/locacao/cadastros',
+        label: 'Modelos e categorias',
+        permission: 'locacao.cadastros.ver',
       },
       {
         href: null,

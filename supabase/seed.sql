@@ -566,4 +566,100 @@ insert into public.bank_account_movements
    'in',  10000.00, current_date - 3, 'Aporte recebido da conta Operação',
    'c3330000-0000-4000-8000-000000000001', '22220000-0000-4000-8000-000000000006');
 
+-- -----------------------------------------------------------------------------
+-- A frota de locação (0048)
+-- -----------------------------------------------------------------------------
+-- Os estados que aparecem aqui são os alcançáveis SEM contrato: disponível, em
+-- manutenção e bloqueado. `reservado`, `em trânsito` e `locado` só nascem de
+-- uma alocação, que é da Fase 3 — semeá-los à mão criaria frota em operação
+-- sem contrato nenhum por trás, que é exatamente a mentira que o gatilho de
+-- ciclo de vida existe para impedir.
+insert into public.rental_depots (id, tenant_id, name, code, kind, city, state) values
+  ('e1110000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
+   'Base Matriz', 'MTZ', 'warehouse', 'São Paulo', 'SP'),
+  ('e1110000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+   'Oficina Matriz', 'OFI', 'workshop', 'São Paulo', 'SP'),
+  ('e1110000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001',
+   'Base Campinas', 'CPQ', 'warehouse', 'Campinas', 'SP');
+
+insert into public.equipment_manufacturers (id, tenant_id, name, support_contact) values
+  ('e2220000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Philips', '0800 123 4567'),
+  ('e2220000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'Mindray', 'suporte@mindray.com.br'),
+  ('e2220000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'Hillrom', '0800 765 4321');
+
+insert into public.equipment_categories
+  (id, tenant_id, code, name, default_meter_kind, default_useful_life_months) values
+  ('e3330000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
+   'OXI', 'Oxigenoterapia', 'hours', 96),
+  ('e3330000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+   'MON', 'Monitorização', 'hours', 72),
+  ('e3330000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001',
+   'INF', 'Infusão', 'cycles', 60),
+  ('e3330000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000001',
+   'MOB', 'Mobiliário', 'none', 120);
+
+insert into public.equipment_models
+  (id, tenant_id, manufacturer_id, category_id, code, name, specs, monthly_price, daily_price) values
+  ('e4440000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
+   'e2220000-0000-4000-8000-000000000001', 'e3330000-0000-4000-8000-000000000001',
+   'OXI-5L', 'Concentrador O2 5L', '{"vazao":"5 L/min","tensao":"127/220 V"}'::jsonb, 1400.00, 70.00),
+  ('e4440000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+   'e2220000-0000-4000-8000-000000000001', 'e3330000-0000-4000-8000-000000000001',
+   'OXI-10L', 'Concentrador O2 10L', '{"vazao":"10 L/min"}'::jsonb, 2200.00, 110.00),
+  ('e4440000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001',
+   'e2220000-0000-4000-8000-000000000002', 'e3330000-0000-4000-8000-000000000002',
+   'MON-7', 'Monitor multiparâmetro 7"', '{"parametros":"ECG, SpO2, PNI"}'::jsonb, 2100.00, 105.00),
+  ('e4440000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000001',
+   'e2220000-0000-4000-8000-000000000002', 'e3330000-0000-4000-8000-000000000003',
+   'INF-VOL', 'Bomba de infusão volumétrica', '{}'::jsonb, 950.00, 48.00),
+  ('e4440000-0000-4000-8000-000000000005', 'a0000000-0000-4000-8000-000000000001',
+   'e2220000-0000-4000-8000-000000000003', 'e3330000-0000-4000-8000-000000000004',
+   'CAMA-3M', 'Cama hospitalar 3 movimentos', '{"carga":"180 kg"}'::jsonb, 890.00, 45.00);
+
+insert into public.rental_equipment
+  (tenant_id, asset_tag, serial_number, model_id, depot_id, status, meter_kind,
+   meter_reading, meter_read_at, acquisition_date, acquisition_value, invoice_ref,
+   useful_life_months, blocked, block_reason, notes)
+values
+  ('a0000000-0000-4000-8000-000000000001', 'EQP-0412', '5XK-99124',
+   'e4440000-0000-4000-8000-000000000001', 'e1110000-0000-4000-8000-000000000001',
+   'available', 'hours', 4182, now() - interval '11 days', date '2026-01-11', 7400.00, 'NF 4821', 96,
+   false, null, null),
+  ('a0000000-0000-4000-8000-000000000001', 'EQP-0413', '5XK-99125',
+   'e4440000-0000-4000-8000-000000000001', 'e1110000-0000-4000-8000-000000000001',
+   'available', 'hours', 1190, now() - interval '9 days', date '2026-01-11', 7400.00, 'NF 4821', 96,
+   false, null, null),
+  ('a0000000-0000-4000-8000-000000000001', 'EQP-0118', '7PP-10488',
+   'e4440000-0000-4000-8000-000000000002', 'e1110000-0000-4000-8000-000000000003',
+   'available', 'hours', 11930, now() - interval '20 days', date '2025-04-02', 12800.00, 'NF 3310', 96,
+   true, 'Preventiva vencida desde 10/10', 'Aguarda visita do fabricante'),
+  ('a0000000-0000-4000-8000-000000000001', 'EQP-0501', '9MD-55210',
+   'e4440000-0000-4000-8000-000000000003', 'e1110000-0000-4000-8000-000000000001',
+   'available', 'hours', 2907, now() - interval '5 days', date '2026-02-20', 15900.00, 'NF 5102', 72,
+   false, null, null),
+  ('a0000000-0000-4000-8000-000000000001', 'EQP-0502', '9MD-55211',
+   'e4440000-0000-4000-8000-000000000003', 'e1110000-0000-4000-8000-000000000003',
+   'available', 'hours', 640, now() - interval '3 days', date '2026-02-20', 15900.00, 'NF 5102', 72,
+   false, null, null),
+  ('a0000000-0000-4000-8000-000000000001', 'EQP-0333', '4BI-71009',
+   'e4440000-0000-4000-8000-000000000004', 'e1110000-0000-4000-8000-000000000002',
+   'maintenance', 'cycles', 8410, now() - interval '2 days', date '2025-08-14', 6200.00, 'NF 2887', 60,
+   false, null, 'Troca da válvula de retenção'),
+  ('a0000000-0000-4000-8000-000000000001', 'EQP-0334', '4BI-71010',
+   'e4440000-0000-4000-8000-000000000004', 'e1110000-0000-4000-8000-000000000001',
+   'available', 'cycles', 3020, now() - interval '15 days', date '2025-08-14', 6200.00, 'NF 2887', 60,
+   false, null, null),
+  ('a0000000-0000-4000-8000-000000000001', 'EQP-0620', null,
+   'e4440000-0000-4000-8000-000000000005', 'e1110000-0000-4000-8000-000000000001',
+   'available', 'none', 0, null, date '2025-11-30', 4100.00, 'NF 2019', 120,
+   false, null, null),
+  ('a0000000-0000-4000-8000-000000000001', 'EQP-0621', null,
+   'e4440000-0000-4000-8000-000000000005', 'e1110000-0000-4000-8000-000000000001',
+   'available', 'none', 0, null, date '2025-11-30', 4100.00, 'NF 2019', 120,
+   false, null, null),
+  ('a0000000-0000-4000-8000-000000000001', 'EQP-0622', null,
+   'e4440000-0000-4000-8000-000000000005', 'e1110000-0000-4000-8000-000000000003',
+   'maintenance', 'none', 0, null, date '2025-11-30', 4100.00, 'NF 2019', 120,
+   false, null, 'Solda do pedal de elevação');
+
 commit;

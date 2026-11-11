@@ -39,6 +39,10 @@ const ROTAS = [
   '/resultado',
   '/tickets',
   '/tickets/novo',
+  /* Locação (0048). Entram aqui como qualquer outra: a varredura confere que a
+     rota responde 200, sem erro de servidor nem de hidratação. */
+  '/locacao/frota',
+  '/locacao/cadastros',
   '/filas',
   '/sla',
   '/sla/horarios',

@@ -370,7 +370,11 @@ console.log('\n=== 8. O mesmo padrão nas telas migradas ===')
     ok(temBotao, `${rota}: o cadastro virou botão`)
 
     await p.locator(`[data-testid="${testid}"]`).first().click()
-    await p.waitForSelector('[data-testid="gaveta"]', { timeout: 10000 })
+    /* 20s, e não 10: abrir o cadastro é uma navegação que o servidor atende, e
+       nas telas pesadas (contas bancárias, links) ela passa dos dez segundos
+       quando a suíte roda em sequência com as outras. Prazo curto aqui reprova
+       por lentidão conhecida, não por defeito. */
+    await p.waitForSelector('[data-testid="gaveta"]', { timeout: 20000 })
     ok(
       (await p.locator(`[data-testid="gaveta"] ${campo}`).count()) === 1,
       `${rota}: e o botão abre o cadastro na gaveta`,

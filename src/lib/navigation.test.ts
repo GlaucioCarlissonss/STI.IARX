@@ -261,17 +261,20 @@ describe('a esfera decide o que existe no menu', () => {
     expect(rotulosDele).not.toContain('Locação')
   })
 
-  it('o grupo de locação aparece só com telas previstas, porque a esfera foi LIGADA', () => {
+  it('o grupo de locação já aparece por mérito próprio — a Frota existe', () => {
     /*
-     * A regra geral manda sumir o grupo sem item alcançável — ela existe para
-     * não anunciar módulo a quem não tem acesso. Um grupo de esfera é outro
-     * caso: ele só chega aqui porque alguém ligou aquela esfera de propósito, e
-     * esconder tudo faria parecer que ligar não surtiu efeito.
+     * Enquanto o grupo só tinha telas previstas, ele dependia da exceção de
+     * `visibleNavGroups` e aparecia apenas para quem administra o ambiente. Com
+     * a Fase 2 (0048) ele tem duas telas de verdade, e passa a seguir a regra
+     * comum: aparece para quem alcança alguma delas. O resto do módulo continua
+     * listado como previsto DENTRO do grupo, que é o uso para o qual o selo
+     * "em breve" existe.
      */
-    const locacao = visibleNavGroups(tudo, ['rental']).find((g) => g.label === 'Locação')
+    const frota = conceder('locacao.frota.ver')
+    const locacao = visibleNavGroups(frota, ['rental']).find((g) => g.label === 'Locação')
     expect(locacao).toBeDefined()
-    expect(locacao!.items.length).toBeGreaterThan(0)
-    expect(locacao!.items.every((i) => i.soon)).toBe(true)
+    expect(locacao!.items.filter((i) => !i.soon).map((i) => i.href)).toContain('/locacao/frota')
+    expect(locacao!.items.some((i) => i.soon)).toBe(true)
   })
 
   it('o destino pós-login respeita a esfera', () => {
