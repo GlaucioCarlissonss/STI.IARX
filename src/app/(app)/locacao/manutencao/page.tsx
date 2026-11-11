@@ -258,7 +258,7 @@ export default async function ManutencaoPage({
                   <span className="flex flex-wrap items-center gap-1.5">
                     <Badge tone="info">{ticketStatusLabel[l.status]}</Badge>
                     {l.alcada.estado === 'estourou' && (
-                      <Badge tone="breach" data-testid="selo-de-alcada">
+                      <Badge tone="breach" testid="selo-de-alcada">
                         acima da alçada
                       </Badge>
                     )}

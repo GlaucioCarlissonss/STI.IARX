@@ -396,6 +396,31 @@ decisão de dentro da tela — `FaixaDeIndicadores` deriva as colunas do número
 de indicadores, e `CabecalhoDaGaveta`/`CorpoDaGaveta` dão a mesma moldura a
 todas as gavetas.
 
+### A faixa quebra pelo CONTÊINER, e não pela janela
+
+Isto saiu de uma captura da Fase 6, não de uma revisão de código: a tela de
+peças mostrava **"R$ 5.486,"** — o valor cortado, com cara de valor inteiro.
+
+Medindo, a causa apareceu. A faixa quebrava por *viewport* (`sm:`, `xl:`), o
+que vale enquanto ela ocupa a largura da tela e deixa de valer no instante em
+que a gaveta abre: a área útil perde 35rem, a janela continua "xl", e os quatro
+blocos passam a dividir 265px. A 1280px com a gaveta aberta sobravam **63px**
+por bloco para escrever "R$ 3.690,00"; o excesso não sumia — o bloco seguinte,
+que pinta depois, cobria o resto.
+
+Dois ajustes, os dois por consulta de contêiner: a faixa volta a duas colunas
+quando ela mesma encolhe, e o número dentro do bloco diminui de corpo conforme
+o bloco. Nenhuma tela precisa saber se há gaveta aberta.
+
+Conferido em 1920, 1440, 1280, 1024 e 390px, com e sem gaveta: **nenhum
+indicador estoura**. As três faixas que escrevem a própria classe (`/painel`,
+`/mapas`, `/inventario/agentes/[id]`) seguem quebrando por viewport, e isso
+continua correto — nenhuma delas tem gaveta que encolha a coluna por baixo.
+
+A lição é sobre o método, não sobre CSS: um defeito que a suíte não via, porque
+ela media o *documento* (nada estourava a página) e não o *bloco*. Olhar a
+captura foi o que acusou.
+
 **Grupo 1, concluído — financeiro:** títulos a pagar, títulos a receber,
 contas bancárias e centros de custo. Além da coluna, saíram da consulta da
 tela oito lookups e os anexos da página inteira, que eram buscados em toda

@@ -26,9 +26,27 @@ const toneClasses: Record<Tone, string> = {
   info: 'bg-[var(--color-brand-soft)] text-[var(--color-brand-ink)]',
 }
 
-export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: ReactNode }) {
+/**
+ * `testid` é um prop NOMEADO, e não `data-testid` solto.
+ *
+ * O TypeScript não confere atributos com hífen em JSX — ele os trata como
+ * `data-*`/`aria-*` e deixa passar qualquer um. Escrever `data-testid` aqui
+ * compila limpo, o Badge descarta o que não conhece, e a suíte passa a procurar
+ * um seletor que nunca existiu no DOM: um teste que não testa nada, sem um
+ * único aviso. Dois selos já tinham nascido assim.
+ */
+export function Badge({
+  tone = 'neutral',
+  testid,
+  children,
+}: {
+  tone?: Tone
+  testid?: string
+  children: ReactNode
+}) {
   return (
     <span
+      data-testid={testid}
       /* `whitespace-nowrap`: "Aguardando terceiro" e "SLA estourado" quebravam
          em duas linhas dentro da coluna e empurravam a altura da linha inteira
          — numa lista compacta isso custa duas linhas de dado por chamado. */
@@ -121,13 +139,25 @@ export function StatTile({
   hint?: string
   tone?: Tone
 }) {
+  /*
+   * O TAMANHO DO NÚMERO RESPONDE À LARGURA DO PRÓPRIO BLOCO.
+   *
+   * Medido: a 1440px com a gaveta aberta, a área útil encolhe 35rem e cada
+   * bloco fica com ~103px — mas "R$ 5.486,60" ocupa 169px em `text-3xl`. O
+   * excesso não some: o bloco seguinte, que pinta depois, cobre o resto, e a
+   * tela passa a mostrar "R$ 5.486," como se fosse o valor. Um número cortado
+   * que parece inteiro é pior que um número pequeno.
+   *
+   * A consulta é de CONTÊINER, e não de viewport: quem encolheu foi a coluna,
+   * não a janela, e `xl:` não sabe disso.
+   */
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
+    <div className="@container rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-3)]">
         {label}
       </p>
       <p
-        className={`fonte-display mt-1.5 text-3xl font-bold tabular-nums ${toneClasses[tone].split(' ')[1]}`}
+        className={`fonte-display mt-1.5 text-xl font-bold tabular-nums @[7rem]:text-2xl @[10rem]:text-3xl ${toneClasses[tone].split(' ')[1]}`}
       >
         {value}
       </p>
@@ -166,27 +196,45 @@ export function StatTile({
  *
  * Ou seja: a faixa padronizou dezesseis telas e as exceções têm motivo escrito.
  * É a diferença entre uma regra e uma uniformização.
+ *
+ * As três exceções continuam quebrando por VIEWPORT, e isso segue correto:
+ * nenhuma delas tem gaveta que encolha a coluna por baixo. Foi medido — a
+ * 1920, 1440, 1280, 1024 e 390px, com e sem gaveta, nenhum indicador estoura.
  */
 export function FaixaDeIndicadores({ children }: { children: ReactNode }) {
   const quantos = Children.count(children)
-  /* Classes escritas por extenso, não montadas por interpolação: o Tailwind
-     varre o código em busca de nomes literais, e `xl:grid-cols-${n}` não
-     existiria no CSS final. */
+  /*
+   * AS COLUNAS RESPONDEM AO CONTÊINER, E NÃO À JANELA.
+   *
+   * A versão anterior quebrava por viewport (`sm:`, `xl:`). Isso vale enquanto
+   * a faixa ocupa a largura da tela — e deixa de valer no instante em que a
+   * gaveta abre: a área útil perde 35rem, a janela continua "xl", e os quatro
+   * blocos passam a dividir 265px. Medido a 1280px com a gaveta aberta, cada
+   * bloco ficava com 63px de espaço para escrever "R$ 3.690,00"; o excesso era
+   * coberto pelo bloco seguinte, e a tela mostrava um número cortado com cara
+   * de inteiro.
+   *
+   * Com consulta de contêiner, quem encolhe é a faixa, e ela volta para duas
+   * colunas sozinha — sem cada tela precisar saber se há gaveta aberta.
+   *
+   * Classes por extenso, não montadas por interpolação: o Tailwind varre o
+   * código em busca de nomes literais, e `@3xl:grid-cols-${n}` não existiria no
+   * CSS final.
+   */
   const colunas =
     quantos <= 2
-      ? 'sm:grid-cols-2'
+      ? '@md:grid-cols-2'
       : quantos === 3
-        ? 'sm:grid-cols-2 xl:grid-cols-3'
+        ? '@md:grid-cols-2 @3xl:grid-cols-3'
         : quantos === 5
-          ? 'sm:grid-cols-2 xl:grid-cols-5'
+          ? '@md:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-5'
           : quantos >= 6
-            ? /* Seis em uma linha só cabe em tela muito larga: a 1440px um
-                 valor em reais encosta na borda do bloco. Até lá, três por
-                 linha. */
-              'sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6'
-            : 'sm:grid-cols-2 xl:grid-cols-4'
+            ? /* Seis em uma linha só cabe em faixa muito larga. Até lá, três
+                 por linha. */
+              '@md:grid-cols-2 @2xl:grid-cols-3 @6xl:grid-cols-6'
+            : '@md:grid-cols-2 @4xl:grid-cols-4'
 
-  return <div className={`mb-6 grid gap-3 ${colunas}`}>{children}</div>
+  return <div className={`@container mb-6 grid gap-3 ${colunas}`}>{children}</div>
 }
 
 export function PageHeader({
