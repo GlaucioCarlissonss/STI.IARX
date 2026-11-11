@@ -76,6 +76,7 @@ export const MODULE_LABEL: Record<string, string> = {
   gestao: 'Gestão',
   ambiente: 'Ambiente',
   locacao: 'Locação',
+  sistema: 'Sistema',
   ia: 'Sugestões de IA',
 }
 
@@ -541,6 +542,9 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('locacao', 'contratos', 'mover', 'Ativar, suspender, encerrar e rescindir', 'gestor'),
   scr('locacao', 'medicoes', 'Medições e consumo', 'visualizador'),
   act('locacao', 'medicoes', 'ver', 'Consultar medições e consumo', 'visualizador'),
+  /* A leitura só entrava pelo gatilho da entrega até a importação existir.
+     Autorizá-la com `ver` faria uma chave de leitura abrir uma escrita. */
+  act('locacao', 'medicoes', 'lancar', 'Lançar leitura de medidor', 'atendente'),
   /* Faturar é `gestor` inteiro, inclusive o `ver`: a fatura mostra preço
      acordado por cliente, que é informação comercial — diferente da frota, que
      qualquer técnico precisa consultar. */
@@ -577,6 +581,14 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   /* Fechar é `gestor` porque o ajuste é uma perda ou uma sobra reconhecida —
      a mesma separação de quem aprova custo acima da alçada. */
   act('locacao', 'contagens', 'fechar', 'Fechar contagem e gerar ajustes', 'gestor'),
+  mod('sistema', 'visualizador'),
+  scr('sistema', 'planilhas', 'Planilhas', 'visualizador'),
+  act('sistema', 'planilhas', 'ver', 'Consultar importações', 'visualizador'),
+  act('sistema', 'planilhas', 'exportar', 'Exportar dados em planilha', 'visualizador'),
+  /* Importar é `admin`, e não `gestor`: mesmo passando pelas mesmas regras
+     linha a linha, a ESCALA é outra — um engano digitado atinge um registro,
+     e um engano importado atinge a planilha inteira. */
+  act('sistema', 'planilhas', 'importar', 'Importar planilha', 'admin'),
 ] as const
 
 /** Todas as chaves válidas — o SQL semeia exatamente esta lista. */

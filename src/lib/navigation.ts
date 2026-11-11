@@ -340,6 +340,11 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: '/auditoria/trabalhos', label: 'Trabalhos agendados', permission: 'auditoria.trabalhos.ver' },
       { href: '/perfis', label: 'Perfis de acesso', permission: 'usuarios.perfis.ver' },
       { href: '/tv', label: 'Painéis de TV', permission: 'tv.tokens.ver' },
+      /* O ciclo de planilha fica em Administração, e não dentro de cada
+         cadastro: importar é operação rara e de escala, e espalhá-la por seis
+         telas multiplicaria a interface e o risco. Um lugar, uma regra, uma
+         trilha. */
+      { href: '/sistema/planilhas', label: 'Planilhas', permission: 'sistema.planilhas.ver' },
     ],
   },
   {

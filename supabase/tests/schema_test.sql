@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 250,
-    'catálogo de permissões tem as 250 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 256,
+    'catálogo de permissões tem as 256 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 250,
+  perform app.assert((select count(*) from public.permission_catalog) = 256,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -9418,6 +9418,107 @@ begin
   perform app.assert(
     (select count(*) from public.vw_part_stock) = 0,
     'a view de estoque não mostra nada para quem não é do tenant');
+end
+$$;
+reset role;
+reset request.jwt.claims;
+
+-- =============================================================================
+\echo '=== 52. Ciclo de planilha: a prévia não escreve, e o lote não reabre (0054) ==='
+-- =============================================================================
+reset role;
+
+-- O que estas asserções protegem é a propriedade que torna o importador
+-- confiável: a conferência é SÓ leitura do lado do negócio. Se um dia alguém
+-- fizer a prévia gravar "só o que está certo", a tela continuará dizendo "nada
+-- foi gravado ainda" — e estará mentindo.
+
+do $$
+declare
+  v_tenant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_lote   uuid;
+  v_clientes_antes int;
+  v_erro   text;
+begin
+  select count(*) into v_clientes_antes from public.clients where deleted_at is null;
+
+  insert into public.import_batches (tenant_id, resource, file_name, file_bytes, created_by)
+  values (v_tenant, 'clientes', 'assercao.csv', 1024, '22220000-0000-4000-8000-000000000001')
+  returning id into v_lote;
+
+  perform app.assert(
+    (select status from public.import_batches where id = v_lote) = 'preview',
+    'o lote nasce como prévia');
+
+  -- 1. Os contadores saem das LINHAS, e não de quem escreveu.
+  insert into public.import_rows (tenant_id, batch_id, line_number, raw, outcome) values
+    (v_tenant, v_lote, 2, '{"cru":{}}'::jsonb, 'create'),
+    (v_tenant, v_lote, 3, '{"cru":{}}'::jsonb, 'create'),
+    (v_tenant, v_lote, 4, '{"cru":{}}'::jsonb, 'update');
+  insert into public.import_rows (tenant_id, batch_id, line_number, raw, outcome, reason)
+  values (v_tenant, v_lote, 5, '{"cru":{}}'::jsonb, 'reject', 'CNPJ inválido.');
+
+  perform app.assert(
+    (select total_rows from public.import_batches where id = v_lote) = 4
+    and (select created_rows from public.import_batches where id = v_lote) = 2
+    and (select updated_rows from public.import_batches where id = v_lote) = 1
+    and (select rejected_rows from public.import_batches where id = v_lote) = 1,
+    'os contadores do lote são somados das linhas, por gatilho');
+
+  -- 2. A prévia NÃO tocou no negócio.
+  perform app.assert(
+    (select count(*) from public.clients where deleted_at is null) = v_clientes_antes,
+    'conferir não criou cliente nenhum: a prévia é só leitura do lado do negócio');
+
+  -- 3. Recusa sem motivo é recusada pelo banco.
+  begin
+    insert into public.import_rows (tenant_id, batch_id, line_number, raw, outcome)
+    values (v_tenant, v_lote, 6, '{}'::jsonb, 'reject');
+    perform app.assert(false, 'recusa sem motivo deveria ser recusada');
+  exception when check_violation then
+    perform app.assert(true, 'recusa sem motivo não entra — "falhou" sozinho não ajuda ninguém');
+  end;
+
+  -- 4. Motivo numa linha que não é recusa também não cola: diria que algo deu
+  --    errado numa linha que entrou.
+  begin
+    insert into public.import_rows (tenant_id, batch_id, line_number, raw, outcome, reason)
+    values (v_tenant, v_lote, 7, '{}'::jsonb, 'create', 'motivo à toa');
+    perform app.assert(false, 'motivo em linha aceita deveria ser recusado');
+  exception when check_violation then
+    perform app.assert(true, 'motivo só existe onde houve recusa');
+  end;
+
+  -- 5. Aplicado não volta a ser prévia.
+  update public.import_batches set status = 'applied', applied_at = now() where id = v_lote;
+  begin
+    update public.import_batches set status = 'preview' where id = v_lote;
+    perform app.assert(false, 'reabrir lote aplicado deveria ser recusado');
+  exception when check_violation then
+    get stacked diagnostics v_erro = message_text;
+    perform app.assert(v_erro like '%não volta a ser prévia%',
+      'lote aplicado não reabre — aplicar duas vezes criaria tudo de novo');
+  end;
+
+  -- 6. Apagar o lote leva as linhas junto: linha órfã é relatório sem dono.
+  delete from public.import_batches where id = v_lote;
+  perform app.assert(
+    (select count(*) from public.import_rows where batch_id = v_lote) = 0,
+    'apagar o lote leva as linhas junto');
+end
+$$;
+
+-- E o isolamento: um lote de outro tenant não existe para esta sessão.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"00000000-0000-4000-8000-00000000dead","role":"authenticated","app_metadata":{"tenant_id":"00000000-0000-4000-8000-0000000000ff"}}';
+do $$
+begin
+  perform app.assert(
+    (select count(*) from public.import_batches) = 0,
+    'quem não é do tenant não vê lote de importação nenhum');
+  perform app.assert(
+    (select count(*) from public.import_rows) = 0,
+    'nem as linhas, que carregam o dado cru da planilha');
 end
 $$;
 reset role;

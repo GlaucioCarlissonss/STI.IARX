@@ -30,9 +30,16 @@ deste documento:
 - **SLA agregado não entrou**: aqui a conformidade é contada chamado a chamado,
   e um agregado digitado competiria com um número derivado.
 
-Resta **uma** peça do GSTI: o ciclo de planilha (importar e exportar Excel), que
-lá é o grupo *Sistema*. Entra na Fase 7, porque é conveniência de operação e não
-regra de negócio.
+Restava **uma** peça do GSTI: o ciclo de planilha, que lá é o grupo *Sistema*.
+Entrou na Fase 7 (0054) — com uma diferença deliberada em relação ao original:
+**CSV, e não Excel**. Ler `.xlsx` exige uma biblioteca que descompacta ZIP e lê
+XML, e enquanto “Salvar como CSV” resolve, o peso não se justifica; a tela diz
+isso em vez de aceitar o arquivo e falhar depois. A exportação já seguia o mesmo
+raciocínio desde a LG-11.
+
+E o ciclo fechou uma lacuna que a Fase 4 tinha deixado em aberto: a **importação
+de leitura de medidor**, prometida naquela linha e não entregue. É o recurso de
+maior volume dos seis — mil leituras por mês não se digitam.
 
 ### O LTI é o trabalho de verdade
 
@@ -134,6 +141,29 @@ Três consequências que a tela cumpre:
 - **a contagem congela o esperado na abertura** — compará-lo com o saldo do
   fechamento transformaria a peça consumida no meio numa falta que nunca houve.
 
+### 2.6 O importador não é porta dos fundos (Fase 7)
+
+Toda linha importada passa pela mesma guarda, pelo mesmo RLS e pelos mesmos
+gatilhos de quem digita na tela. A permissão é **dupla**: uma chave para usar o
+importador e a chave do próprio cadastro — quem não pode criar cliente à mão não
+cria em lote.
+
+Quatro regras sustentam o resto, e as quatro existem para o mesmo fim: que o
+erro apareça **antes** de virar dado.
+
+1. **Nada é gravado antes da conferência.** O lote nasce como prévia e só
+   escreve quando alguém manda aplicar.
+2. **Erro é por linha**, com o número e o motivo em português. "Falhou" num
+   arquivo de 300 linhas não diz nada a ninguém.
+3. **A chave natural decide** criar, atualizar ou pular — reenviar o mesmo
+   arquivo não duplica. É o acidente mais comum de importador.
+4. **As recusadas voltam num arquivo**, com a linha original e o motivo ao lado.
+   Sem ele, corrigir sete linhas no meio de 312 leva a pessoa a refazer a
+   planilha inteira.
+
+E a planilha enviada **não é guardada**: é lida em memória e descartada. Guardá-la
+criaria um arquivo com dado de cliente dentro do bucket, sem dono e sem prazo.
+
 ---
 
 ## 3. As fases
@@ -150,7 +180,7 @@ fase posterior. A ordem não é gosto: cada uma é pré-requisito da seguinte.
 | **4 — Medição e fatura** ✅ | Medidor, leitura, consumo por competência, **fatura → título a receber** (0050) | É aqui que a locação vira dinheiro — e o que fecha o mês |
 | **5 — Campo** ✅ | Chamado de campo: equipamento, apontamento de horas e peças, alçada de custo em gatilho (0051) | Precisa da frota (o que quebrou) e do contrato (quem paga) |
 | **6 — Estoque e compras** ✅ | Peça, saldo derivado do razão, política por peça×depósito, contagem, ordem de compra, **NF → título a pagar** (0053) | Só faz sentido quando já existe consumo de peça para abastecer |
-| **7 — Planilha do GSTI** | Importar e exportar Excel (o grupo *Sistema* do GSTI) | Conveniência de operação; não bloqueia nada |
+| **7 — Planilha do GSTI** ✅ | Importar com conferência linha a linha, modelo por recurso, arquivo de correção; exportação atrás de chave própria (0054) | Conveniência de operação; não bloqueia nada |
 | **8 — Produção** | Banco real, migrações, backup, domínio, TLS, observabilidade na VPS | Ver seção 4 |
 
 **Como cada fase é verificada:** migração aplicada em banco limpo, `tsc` e lint

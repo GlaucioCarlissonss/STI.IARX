@@ -50,6 +50,7 @@ const ROTAS = [
   '/locacao/pecas',
   '/locacao/compras',
   '/locacao/contagens',
+  '/sistema/planilhas',
   '/filas',
   '/sla',
   '/sla/horarios',

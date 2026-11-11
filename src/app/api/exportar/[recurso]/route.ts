@@ -190,6 +190,26 @@ export async function GET(
     return NextResponse.json({ erro: 'Sem permissão para exportar este dado.' }, { status: 403 })
   }
 
+  /*
+   * A SEGUNDA chave, e por que ela não é redundante.
+   *
+   * A primeira diz que a pessoa pode VER aquele dado. Esta diz que ela pode
+   * LEVÁ-LO EMBORA — e são coisas diferentes: um escritório pode querer que o
+   * atendente consulte a carteira de clientes na tela e não saia com ela num
+   * arquivo. Sem a separação, toda tela de consulta vira uma tela de extração,
+   * e a decisão de permitir isso nunca é tomada por ninguém.
+   *
+   * Ela vem depois, e não antes, de propósito: quem não pode ver o dado recebe
+   * a recusa sobre o DADO, e não sobre a exportação — dizer "você não pode
+   * exportar" a quem nem enxerga aquilo revelaria que aquilo existe.
+   */
+  if (!(await allowed('sistema.planilhas.exportar'))) {
+    return NextResponse.json(
+      { erro: 'Sem permissão para exportar dados desta empresa.' },
+      { status: 403 },
+    )
+  }
+
   const supabase = await createClient()
   const linhas = await definicao.buscar(supabase)
 
