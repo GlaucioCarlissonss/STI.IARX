@@ -126,9 +126,9 @@ fase posterior. A ordem não é gosto: cada uma é pré-requisito da seguinte.
 | **0 — Acesso** ✅ | O protótipo cabendo no celular (18 das 25 telas estouravam; agora 0) | Você precisa conseguir revisar antes de aprovar |
 | **1 — Esferas** ✅ | Esfera por empresa (0047), seletor no cabeçalho, filtro no menu e na matriz de permissão | Sem ela, cada tela nova nasce no lugar errado e o menu vira depósito |
 | **2 — Frota** ✅ | Equipamento próprio, ciclo de vida em gatilho, modelo/fabricante/categoria/depósito, movimentação (0048) | Contrato sem equipamento não aloca nada |
-| **3 — Contratos** | Contrato, itens alocados, local de operação, tabela de preço, franquia, reajuste, desconto | Medição sem contrato não sabe o que cobrar |
-| **4 — Medição e fatura** | Medidor, leitura, importação de leitura, consumo por competência, **fatura → título a receber** | É aqui que a locação vira dinheiro — e o que fecha o mês |
-| **5 — Campo** | Chamado de campo: apontamento, pausa, peça consumida, alçada de custo | Precisa da frota (o que quebrou) e do contrato (quem paga) |
+| **3 — Contratos** ✅ | Contrato, itens alocados, local de operação, franquia e excedente, estados em gatilho (0049) | Medição sem contrato não sabe o que cobrar |
+| **4 — Medição e fatura** ✅ | Medidor, leitura, consumo por competência, **fatura → título a receber** (0050) | É aqui que a locação vira dinheiro — e o que fecha o mês |
+| **5 — Campo** ✅ | Chamado de campo: equipamento, apontamento de horas e peças, alçada de custo em gatilho (0051) | Precisa da frota (o que quebrou) e do contrato (quem paga) |
 | **6 — Estoque e compras** | Peça, depósito, saldo, política de reposição, inventário, ordem de compra, NF de compra | Só faz sentido quando já existe consumo de peça para abastecer |
 | **7 — Planilha do GSTI** | Importar e exportar Excel (o grupo *Sistema* do GSTI) | Conveniência de operação; não bloqueia nada |
 | **8 — Produção** | Banco real, migrações, backup, domínio, TLS, observabilidade na VPS | Ver seção 4 |
@@ -137,6 +137,15 @@ fase posterior. A ordem não é gosto: cada uma é pré-requisito da seguinte.
 limpos, suíte de unidade verde, suíte de navegador própria (como
 `demo/tests/local/gaveta.spec.mjs`), e as telas medidas a 390px — a Fase 0
 mostrou que “parece certo” não é medição.
+
+> **E a validação de schema roda a CADA fase, não ao final.** As Fases 3 e 4
+> foram emendadas sem rodar `npm run db:validate` entre elas, e as duas
+> entregaram views sem `security_invoker = true` — o que, em Postgres, faz a
+> view rodar com os privilégios do dono e ignorar o RLS. Uma sessão autenticada
+> de um tenant inexistente via **três alocações e dois consumos** de outro
+> tenant. A asserção que cobra a opção em toda view de `public` existe desde a
+> seção 1 de `supabase/tests/schema_test.sql` e acusou as três assim que foi
+> executada; a correção é a migração **0052**. A rede existia — faltou puxá-la.
 
 ---
 

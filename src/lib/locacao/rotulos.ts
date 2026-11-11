@@ -1,5 +1,6 @@
 import type {
   EquipmentStatus,
+  FieldServiceKind,
   MeterKind,
   RentalContractStatus,
   RentalInvoiceStatus,
@@ -165,6 +166,52 @@ export const TIPO_DA_LINHA: Record<string, string> = {
   service: 'Serviço',
   part: 'Peça',
   discount: 'Desconto',
+}
+
+/* --------------------------------------------------------------------------
+ * Manutenção em campo (0051)
+ * ------------------------------------------------------------------------ */
+
+export const TIPO_DO_ATENDIMENTO: Record<
+  FieldServiceKind,
+  { label: string; tone: 'ok' | 'warn' | 'breach' | 'info' | 'neutral'; resumo: string }
+> = {
+  corrective: {
+    label: 'Corretiva',
+    tone: 'warn',
+    resumo: 'Quebrou e parou — o atendimento que o cliente abre.',
+  },
+  preventive: {
+    label: 'Preventiva',
+    tone: 'info',
+    resumo: 'No calendário ou no medidor, antes de quebrar.',
+  },
+  installation: { label: 'Instalação', tone: 'ok', resumo: 'Entrega e ativação no local.' },
+  removal: { label: 'Retirada', tone: 'neutral', resumo: 'Recolhimento ao fim da operação.' },
+}
+
+export const QUEM_PAGA: Record<'provider' | 'client', string> = {
+  provider: 'Nós (garantia ou desgaste)',
+  client: 'O cliente (mau uso ou fora do contrato)',
+}
+
+/**
+ * Em que pé o custo está em relação à alçada.
+ *
+ * Três situações, e a do meio é a única que exige ação de alguém: o custo passou
+ * do teto e ninguém autorizou. Devolver só um booleano "pode fechar?" perderia a
+ * diferença entre "não tem teto" e "tem teto e já foi aprovado" — que é
+ * exatamente o que a tela precisa dizer com palavras diferentes.
+ */
+export function situacaoDaAlcada(
+  limite: number | null,
+  custo: number,
+  aprovadoEm: string | null,
+): { estado: 'sem_teto' | 'dentro' | 'estourou' | 'aprovado'; label: string; tone: 'ok' | 'warn' | 'breach' | 'neutral' } {
+  if (aprovadoEm) return { estado: 'aprovado', label: 'Custo aprovado', tone: 'ok' }
+  if (limite === null) return { estado: 'sem_teto', label: 'Sem alçada definida', tone: 'neutral' }
+  if (custo > limite) return { estado: 'estourou', label: 'Acima da alçada', tone: 'breach' }
+  return { estado: 'dentro', label: 'Dentro da alçada', tone: 'ok' }
 }
 
 /** "2026-11-01" → "11/2026". A competência é mês, e lê-se como mês. */

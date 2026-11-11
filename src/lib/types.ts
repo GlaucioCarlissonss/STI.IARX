@@ -842,3 +842,63 @@ export interface RentalInvoiceItem {
   meter_to: number | null
   days: number | null
 }
+
+/* --------------------------------------------------------------------------
+ * Manutenção em campo (0051)
+ * ------------------------------------------------------------------------ */
+
+export type FieldServiceKind = 'corrective' | 'preventive' | 'installation' | 'removal'
+
+/**
+ * A extensão de campo do chamado — 1:1 com `tickets`.
+ *
+ * Não são colunas dentro de `tickets` porque chamado de helpdesk não tem
+ * equipamento de locação: seriam dez colunas nulas em todo chamado da esfera de
+ * gestão.
+ */
+export interface TicketFieldService {
+  ticket_id: string
+  equipment_id: string
+  contract_item_id: string | null
+  kind: FieldServiceKind
+  cost_limit: number | null
+  approved_by: string | null
+  approved_at: string | null
+  approval_note: string | null
+  billable_to: 'provider' | 'client'
+}
+
+export interface TicketLaborEntry {
+  id: string
+  ticket_id: string
+  technician_id: string | null
+  worked_on: string
+  hours: number
+  hourly_rate: number
+  amount: number
+  notes: string | null
+}
+
+export interface TicketPartUsed {
+  id: string
+  ticket_id: string
+  description: string
+  quantity: number
+  unit_cost: number
+  amount: number
+}
+
+/** O custo somado do detalhe — `vw_field_service_cost`, nunca um campo digitado. */
+export interface FieldServiceCost {
+  ticket_id: string
+  equipment_id: string
+  contract_item_id: string | null
+  kind: FieldServiceKind
+  billable_to: 'provider' | 'client'
+  cost_limit: number | null
+  approved_at: string | null
+  labor_cost: number
+  parts_cost: number
+  total_cost: number
+  total_hours: number
+}

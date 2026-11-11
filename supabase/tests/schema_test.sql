@@ -112,7 +112,7 @@ set role rls_tester;
 set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
 do $$
 begin
-  perform app.assert((select count(*) from public.tickets) = 6, 'admin vê os 6 tickets do tenant');
+  perform app.assert((select count(*) from public.tickets) = 8, 'admin vê os 8 tickets do tenant');
   perform app.assert((select count(*) from public.clients) = 2, 'admin vê os 2 clientes do tenant');
   perform app.assert((select count(*) from public.it_assets) = 6, 'admin vê os 6 ativos do tenant');
 end
@@ -145,7 +145,7 @@ begin
   from public.tickets where branch_id = '11110000-0000-4000-8000-000000000003';
 
   perform app.assert(v_manaus = 0, 'atendente de SP/Campinas não vê ticket de Manaus');
-  perform app.assert((select count(*) from public.tickets) = 5, 'Ana vê os 5 tickets das suas filiais');
+  perform app.assert((select count(*) from public.tickets) = 7, 'Ana vê os 7 tickets das suas filiais');
   perform app.assert(
     (select count(*) from public.it_assets where branch_id = '11110000-0000-4000-8000-000000000003') = 0,
     'atendente de SP/Campinas não vê ativo de Manaus');
@@ -164,7 +164,7 @@ $$;
 set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000005","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
 do $$
 begin
-  perform app.assert((select count(*) from public.tickets) = 4,
+  perform app.assert((select count(*) from public.tickets) = 6,
     'solicitante vê apenas os tickets que abriu');
   perform app.assert((select count(*) from public.ticket_comments where visibility = 'internal') = 0,
     'solicitante NÃO enxerga comentário interno');
@@ -177,7 +177,7 @@ $$;
 set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
 do $$
 begin
-  perform app.assert((select count(*) from public.tickets) = 6, 'gestor vê todas as filiais');
+  perform app.assert((select count(*) from public.tickets) = 8, 'gestor vê todas as filiais');
   perform app.assert((select count(*) from public.ticket_comments where visibility = 'internal') = 1,
     'gestor enxerga comentário interno');
 end
@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 211,
-    'catálogo de permissões tem as 211 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 237,
+    'catálogo de permissões tem as 237 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 211,
+  perform app.assert((select count(*) from public.permission_catalog) = 237,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -9093,6 +9093,107 @@ begin
   delete from public.link_availability_events where link_id = v_link;
 end
 $$;
+
+-- =============================================================================
+\echo '=== 50. Manutenção em campo: a alçada trava o FECHAMENTO (0051) ==='
+-- =============================================================================
+reset role;
+
+-- O que estas asserções protegem é a direção da trava. Travar o APONTAMENTO
+-- seria o erro fácil e caro: o técnico que não consegue lançar a peça que já
+-- instalou simplesmente não a lança, e o custo real some do sistema em vez de
+-- aparecer pedindo aprovação. O que a alçada governa é dar o serviço por
+-- concluído com um custo que ninguém autorizou.
+
+do $$
+declare
+  v_tenant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_caro   uuid := 'ef100000-0000-4000-8000-000000000001';  -- alçada 400, custo 520
+  v_livre  uuid := 'ef100000-0000-4000-8000-000000000002';  -- sem alçada
+  v_total  numeric;
+  v_erro   text;
+begin
+  perform app.assert(
+    (select count(*) from public.ticket_field_service where tenant_id = v_tenant) = 2,
+    'o exemplo traz dois atendimentos de campo');
+
+  select total_cost into v_total from public.vw_field_service_cost where ticket_id = v_caro;
+  perform app.assert(v_total = 520.00,
+    'o custo é a soma de mão de obra e peça (300 + 220), e não um campo digitado — veio ' || v_total::text);
+
+  -- 1. Apontar mais custo acima da alçada é PERMITIDO.
+  insert into public.ticket_parts_used (tenant_id, ticket_id, description, quantity, unit_cost, amount)
+  values (v_tenant, v_caro, 'Peça da asserção', 1, 50.00, 50.00);
+  select total_cost into v_total from public.vw_field_service_cost where ticket_id = v_caro;
+  perform app.assert(v_total = 570.00,
+    'apontar acima da alçada é permitido: o custo real sobe e fica visível');
+
+  -- 2. Fechar com custo acima da alçada é RECUSADO, e o erro diz o número.
+  begin
+    update public.tickets set status = 'resolved' where id = v_caro;
+    perform app.assert(false, 'fechar acima da alçada deveria ter sido recusado');
+  exception when check_violation then
+    get stacked diagnostics v_erro = message_text;
+    perform app.assert(v_erro like '%570,00%' and v_erro like '%400,00%',
+      'a recusa diz o custo e o teto, em pt-BR, e não só "não pode" — disse: ' || v_erro);
+  end;
+
+  perform app.assert(
+    (select status from public.tickets where id = v_caro) = 'in_progress',
+    'e o chamado continua aberto: a recusa não deixou estado pela metade');
+
+  -- 3. Aprovado, fecha. A aprovação é o que destrava, e não apagar o custo.
+  update public.ticket_field_service
+     set approved_by = '22220000-0000-4000-8000-000000000001', approved_at = now(),
+         approval_note = 'Aprovado na asserção'
+   where ticket_id = v_caro;
+  update public.tickets set status = 'resolved' where id = v_caro;
+  perform app.assert(
+    (select status from public.tickets where id = v_caro) = 'resolved',
+    'com a aprovação registrada, o mesmo fechamento passa');
+
+  -- 4. Sem alçada definida, nada trava — o padrão não inventa um teto.
+  --    O caminho é o do estado: `assigned → in_progress → resolved`. Pular o
+  --    meio é recusado pela máquina de estados da 0005, e está certo.
+  insert into public.ticket_labor_entries (tenant_id, ticket_id, worked_on, hours, hourly_rate, amount)
+  values (v_tenant, v_livre, current_date, 9.00, 500.00, 4500.00);
+  update public.tickets set status = 'in_progress' where id = v_livre;
+  update public.tickets set status = 'resolved' where id = v_livre;
+  perform app.assert(
+    (select status from public.tickets where id = v_livre) = 'resolved',
+    'sem alçada, 4.500 fecha sem perguntar: ausência de teto é ausência de teto');
+
+  -- Desfaz o que a asserção mexeu, para que a suíte de navegador encontre o
+  -- exemplo como o seed o deixou.
+  delete from public.ticket_parts_used where description = 'Peça da asserção';
+  delete from public.ticket_labor_entries where ticket_id = v_livre and hourly_rate = 500.00;
+  update public.ticket_field_service
+     set approved_by = null, approved_at = null, approval_note = null
+   where ticket_id = v_caro;
+  update public.tickets set status = 'in_progress' where id = v_caro;
+  update public.tickets set status = 'in_progress' where id = v_livre;
+  update public.tickets set status = 'assigned' where id = v_livre;
+end
+$$;
+
+-- E o isolamento, que é o motivo de a view existir com `security_invoker`.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"00000000-0000-4000-8000-00000000dead","role":"authenticated","app_metadata":{"tenant_id":"00000000-0000-4000-8000-0000000000ff"}}';
+do $$
+begin
+  perform app.assert(
+    (select count(*) from public.vw_field_service_cost) = 0,
+    'a view do custo de campo não mostra nada para quem não é do tenant');
+  perform app.assert(
+    (select count(*) from public.vw_rental_allocations) = 0,
+    'nem a de alocações — a 0052 fechou o vazamento que a 0049 abriu');
+  perform app.assert(
+    (select count(*) from public.vw_rental_consumption) = 0,
+    'nem a de consumo — idem para a 0050');
+end
+$$;
+reset role;
+reset request.jwt.claims;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

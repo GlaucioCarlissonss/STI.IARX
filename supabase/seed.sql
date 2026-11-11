@@ -764,4 +764,75 @@ update public.rental_equipment e
     where i.equipment_id = e.id and i.status = 'delivered'
  );
 
+-- -----------------------------------------------------------------------------
+-- Manutenção em campo (0051)
+-- -----------------------------------------------------------------------------
+-- A ordem de serviço da locação é um CHAMADO, em fila própria. A fila existe
+-- para que o campo tenha SLA e roteamento próprios sem virar uma segunda lista
+-- de trabalho pendente — ver o cabeçalho da 0051.
+insert into public.queues (id, tenant_id, name, slug, description, weight_criticality, weight_deadline, weight_age) values
+  ('e0000000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000001',
+   'Campo — Locação', 'campo',
+   'Atendimento em campo nos equipamentos locados: corretiva, preventiva, instalação e retirada.',
+   60, 30, 10);
+
+-- Dois atendimentos, e os dois existem para mostrar a MESMA regra dos dois
+-- lados: um cabe na alçada e fecha; o outro estourou e está travado esperando
+-- aprovação. Um exemplo só com o caso feliz não mostraria o que a tela faz.
+insert into public.tickets
+  (id, tenant_id, title, description, status, priority_id, category_id, queue_id,
+   client_id, branch_id, requester_id, assignee_id, created_at, tags)
+values
+  ('ef100000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
+   'Impressora EQP-0412 com atolamento recorrente',
+   'Atola a cada 20 páginas no tabuleiro 2. Rolete de tração aparentemente gasto.',
+   'in_progress', 'c0000000-0000-4000-8000-000000000002', null,
+   'e0000000-0000-4000-8000-000000000004',
+   'f0000000-0000-4000-8000-000000000001', '11110000-0000-4000-8000-000000000001',
+   '22220000-0000-4000-8000-000000000005', '22220000-0000-4000-8000-000000000003',
+   now() - interval '2 days', array['campo','corretiva']),
+
+  ('ef100000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001',
+   'Preventiva semestral da EQP-0501',
+   'Revisão de 6 meses: limpeza do caminho de papel, troca do kit de manutenção.',
+   'assigned', 'c0000000-0000-4000-8000-000000000003', null,
+   'e0000000-0000-4000-8000-000000000004',
+   'f0000000-0000-4000-8000-000000000001', '11110000-0000-4000-8000-000000000001',
+   '22220000-0000-4000-8000-000000000005', '22220000-0000-4000-8000-000000000003',
+   now() - interval '6 hours', array['campo','preventiva']);
+
+insert into public.ticket_field_service
+  (ticket_id, tenant_id, equipment_id, contract_item_id, kind, cost_limit, billable_to)
+select
+  'ef100000-0000-4000-8000-000000000001', i.tenant_id, i.equipment_id, i.id,
+  'corrective',
+  /* Alçada de 400: o apontamento abaixo soma 520, de propósito. É o chamado
+     que a tela mostra como "acima da alçada, aguardando aprovação". */
+  400.00, 'provider'
+from public.rental_contract_items i
+join public.rental_equipment e on e.id = i.equipment_id
+where e.asset_tag = 'EQP-0412' and i.status = 'delivered';
+
+insert into public.ticket_field_service
+  (ticket_id, tenant_id, equipment_id, contract_item_id, kind, cost_limit, billable_to)
+select
+  'ef100000-0000-4000-8000-000000000002', i.tenant_id, i.equipment_id, i.id,
+  'preventive', null, 'provider'
+from public.rental_contract_items i
+join public.rental_equipment e on e.id = i.equipment_id
+where e.asset_tag = 'EQP-0501' and i.status = 'delivered';
+
+insert into public.ticket_labor_entries
+  (tenant_id, ticket_id, technician_id, worked_on, hours, hourly_rate, amount, notes)
+values
+  ('a0000000-0000-4000-8000-000000000001', 'ef100000-0000-4000-8000-000000000001',
+   '22220000-0000-4000-8000-000000000003', current_date - 1, 2.50, 120.00, 300.00,
+   'Desmontagem do tabuleiro 2 e diagnóstico do rolete.');
+
+insert into public.ticket_parts_used
+  (tenant_id, ticket_id, description, quantity, unit_cost, amount)
+values
+  ('a0000000-0000-4000-8000-000000000001', 'ef100000-0000-4000-8000-000000000001',
+   'Kit de roletes de tração — tabuleiro 2', 1, 220.00, 220.00);
+
 commit;

@@ -183,11 +183,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: '/locacao/medicoes', label: 'Medições e consumo', permission: 'locacao.medicoes.ver' },
       { href: '/locacao/faturamento', label: 'Faturamento', permission: 'locacao.faturamento.ver' },
       {
-        href: null,
-        label: 'Manutenção',
-        permission: null,
-        soon: true,
-        hint: 'Chamado de campo: apontamento de horas, peça consumida e alçada de custo.',
+        href: '/locacao/manutencao',
+        label: 'Manutenção em campo',
+        permission: 'locacao.manutencao.ver',
       },
       {
         href: null,
