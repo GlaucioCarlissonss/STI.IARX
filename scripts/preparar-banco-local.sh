@@ -81,6 +81,21 @@ grant all on all tables in schema public to service_role;
 grant all on all sequences in schema public to service_role;
 grant execute on all functions in schema public to service_role;
 grant all on all tables in schema storage to service_role;
+
+-- E o mesmo para o que ainda NÃO existe.
+--
+-- Os \`grant ... on all tables\` acima alcançam só as tabelas deste instante. Uma
+-- migração aplicada depois cria tabela sem concessão nenhuma para
+-- \`service_role\`, e o sintoma é traiçoeiro: o papel tem BYPASSRLS, então quem
+-- investiga descarta "é permissão" logo de cara e vai procurar no lugar errado.
+-- BYPASSRLS ignora POLICY, não ignora GRANT de tabela.
+--
+-- Foi exatamente o que aconteceu ao escrever a migração 0055. No Supabase isto
+-- não acontece porque o projeto já nasce com estas \`default privileges\`; aqui
+-- elas faltavam, e o ambiente local deixava de provar o que a produção prova.
+alter default privileges in schema public grant all on tables to service_role;
+alter default privileges in schema public grant all on sequences to service_role;
+alter default privileges in schema public grant execute on functions to service_role;
 SQL
 
 echo

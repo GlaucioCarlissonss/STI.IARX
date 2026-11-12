@@ -9524,5 +9524,167 @@ $$;
 reset role;
 reset request.jwt.claims;
 
+-- =============================================================================
+-- 53. Alerta de trabalho parado: um aviso por episódio (0055)
+-- =============================================================================
+-- Este alerta tem uma propriedade que nenhum teste de tela alcança: ele precisa
+-- avisar UMA vez. Um trabalho que falha de cinco em cinco minutos mandaria 288
+-- e-mails por dia, e no segundo dia ninguém lê nenhum — o alerta deixaria de
+-- existir com todo mundo achando que ele existe. É o índice parcial que impede
+-- isso, e é ele que estas asserções protegem.
+--
+-- A outra propriedade é a distinção entre "parou" (ausência de execução) e
+-- "falhou" (execução que terminou mal). Confundi-las apagaria justamente a
+-- informação que diz a quem lê se o agendador está de pé.
+
+\echo ''
+\echo '=== 53. Alerta de trabalho parado: um aviso por episódio (0055) ==='
+
+do $$
+declare
+  v_episodio bigint;
+  v_tipo     text;
+begin
+  -- Um banco de teste limpo não tem execução nenhuma registrada.
+  delete from public.job_alert_episodes;
+  delete from public.job_runs where job = 'sla_alerts';
+
+  -- 1. NUNCA RODOU não é incidente. Numa instalação nova o agendador ainda não
+  --    foi ligado, e gritar no primeiro minuto ensina a ignorar o alerta.
+  perform app.assert(
+    (select situacao from public.vw_job_alerts where job = 'sla_alerts') = 'nunca_rodou',
+    'sem execução nenhuma, a situação é "nunca rodou" — e não "parou"');
+  perform app.sincronizar_episodios_de_alerta();
+  perform app.assert(
+    (select count(*) from public.job_alert_episodes) = 0,
+    'e "nunca rodou" NÃO abre episódio: instalação nova não acorda ninguém');
+
+  -- 2. Acabou de rodar: nada a avisar.
+  insert into public.job_runs (job, started_at, finished_at, ok, affected)
+  values ('sla_alerts', now(), now(), true, 3);
+  perform app.assert(
+    (select situacao from public.vw_job_alerts where job = 'sla_alerts') = 'ok',
+    'execução recente e bem-sucedida é "ok"');
+
+  -- 3. A execução envelhece além da tolerância (30 min para sla_alerts).
+  update public.job_runs set started_at = now() - interval '2 hours' where job = 'sla_alerts';
+  perform app.assert(
+    (select situacao from public.vw_job_alerts where job = 'sla_alerts') = 'parou',
+    'passada a tolerância, a AUSÊNCIA de execução vira "parou"');
+
+  perform app.assert(app.sincronizar_episodios_de_alerta() = 1, 'e abre um episódio');
+  select id, tipo into v_episodio, v_tipo
+    from public.job_alert_episodes where job = 'sla_alerts';
+  perform app.assert(v_tipo = 'parou', 'o episódio sabe que foi ausência, não erro');
+  perform app.assert(
+    (select detalhe from public.job_alert_episodes where id = v_episodio) like '%tolerância%',
+    'e o detalhe diz há quanto tempo e qual era a tolerância');
+
+  -- 4. ESTA É A ASSERÇÃO QUE IMPORTA: sincronizar de novo não abre um segundo.
+  perform app.assert(app.sincronizar_episodios_de_alerta() = 0,
+    'sincronizar de novo não muda nada');
+  perform app.assert(
+    (select count(*) from public.job_alert_episodes where job = 'sla_alerts') = 1,
+    'um episódio aberto por trabalho — é o que evita 288 e-mails por dia');
+
+  -- 5. E o índice recusa o segundo mesmo por inserção direta.
+  begin
+    insert into public.job_alert_episodes (job, tipo) values ('sla_alerts', 'falhou');
+    perform app.assert(false, 'um segundo episódio aberto deveria ser recusado');
+  exception when unique_violation then
+    perform app.assert(true, 'o índice parcial recusa o segundo episódio aberto');
+  end;
+
+  -- 6. O trabalho volta: o episódio fecha.
+  insert into public.job_runs (job, started_at, finished_at, ok, affected)
+  values ('sla_alerts', now(), now(), true, 1);
+  perform app.assert(app.sincronizar_episodios_de_alerta() = 1, 'voltar também é mudança');
+  perform app.assert(
+    (select fechado_em from public.job_alert_episodes where id = v_episodio) is not null,
+    'o episódio fecha quando o trabalho volta');
+
+  -- 7. "Falhou" é outro defeito: há execução, e ela terminou mal.
+  insert into public.job_runs (job, started_at, finished_at, ok, affected, detail)
+  values ('sla_alerts', now() + interval '1 second', now() + interval '1 second', false, 0,
+          'relation "x" does not exist');
+  perform app.assert(
+    (select situacao from public.vw_job_alerts where job = 'sla_alerts') = 'falhou',
+    'execução que terminou com erro é "falhou", e não "parou"');
+  perform app.sincronizar_episodios_de_alerta();
+  perform app.assert(
+    (select tipo from public.job_alert_episodes
+      where job = 'sla_alerts' and fechado_em is null) = 'falhou',
+    'e abre um episódio do tipo certo, com a mensagem do banco por detalhe');
+  perform app.assert(
+    (select detalhe from public.job_alert_episodes
+      where job = 'sla_alerts' and fechado_em is null) like '%relation%',
+    'o detalhe do "falhou" é o erro que o banco devolveu, não um texto genérico');
+
+  -- 8. A volta só é anunciável para quem teve a quebra anunciada. Um episódio
+  --    que abriu e fechou entre duas execuções nunca avisou ninguém — dizer que
+  --    ele "voltou ao normal" confundiria quem lê.
+  begin
+    update public.job_alert_episodes
+       set volta_avisada_em = now()
+     where id = v_episodio;  -- fechado, mas nunca avisado
+    perform app.assert(false, 'anunciar volta sem ter anunciado quebra deveria ser recusado');
+  exception when check_violation then
+    perform app.assert(true, 'não se anuncia a volta de um problema que nunca foi anunciado');
+  end;
+
+  delete from public.job_alert_episodes;
+  delete from public.job_runs where job = 'sla_alerts';
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- O desempate de `vw_job_health` (regressão)
+-- -----------------------------------------------------------------------------
+-- A 0036 ordenava só por `started_at`, sem desempate. Com duas execuções do
+-- mesmo trabalho no mesmo instante — o que acontece quando o registro vem da
+-- aplicação, cuja precisão é o milissegundo — o Postgres escolhia uma qualquer,
+-- e na prática escolheu a MAIS ANTIGA: `ultimo_ok` vinha `true` com a linha mais
+-- nova dizendo `false`.
+--
+-- Enquanto a view só pintava uma tela, isso era um detalhe. Agora `vw_job_alerts`
+-- decide abrir episódio a partir desse valor, e um empate mal desempatado é um
+-- alerta que simplesmente não toca.
+do $$
+begin
+  delete from public.job_runs where job = 'teste_0055_empate';
+
+  insert into public.job_runs (job, started_at, ok, detail)
+  values ('teste_0055_empate', '2026-01-01 03:00:00+00', true, 'a primeira');
+  insert into public.job_runs (job, started_at, ok, detail)
+  values ('teste_0055_empate', '2026-01-01 03:00:00+00', false, 'a última, que falhou');
+
+  perform app.assert(
+    (select ultimo_ok from public.vw_job_health where job = 'teste_0055_empate') is false,
+    'no empate de horário, "última execução" é a de id maior — a que entrou depois');
+  perform app.assert(
+    (select ultimo_detalhe from public.vw_job_health where job = 'teste_0055_empate')
+      = 'a última, que falhou',
+    'e o detalhe vem da mesma linha que o ok, e não de outra do empate');
+
+  delete from public.job_runs where job = 'teste_0055_empate';
+end
+$$;
+
+-- E o acesso: as duas tabelas não têm tenant, mas também não são de todo mundo.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"00000000-0000-4000-8000-00000000dead","role":"authenticated","app_metadata":{"tenant_id":"00000000-0000-4000-8000-0000000000ff"}}';
+do $$
+begin
+  perform app.assert(
+    (select count(*) from public.job_expectations) = 0,
+    'quem não administra a plataforma não vê a cadência esperada dos trabalhos');
+  perform app.assert(
+    (select count(*) from public.job_alert_episodes) = 0,
+    'nem os episódios, que descrevem o estado da infraestrutura');
+end
+$$;
+reset role;
+reset request.jwt.claims;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

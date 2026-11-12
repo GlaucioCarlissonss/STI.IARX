@@ -1,0 +1,108 @@
+# =============================================================================
+# A imagem de PRODUÇÃO. O `Dockerfile` ao lado é a de desenvolvimento.
+#
+# São dois arquivos, e não um com `--target`, por um motivo que não é estético:
+# o de desenvolvimento existe para quem quer abrir um terminal dentro do
+# contêiner e rodar a suíte; este existe para rodar o mínimo possível, sem
+# ferramenta de build, sem código-fonte e sem root. Misturá-los faria o caminho
+# de produção compartilhar camadas com o de brincar, e a flag errada colocaria
+# `npm`, `tsc` e os `.ts` originais num servidor exposto à internet.
+#
+#     docker build -f Dockerfile.producao -t sti-iarx:producao .
+#
+# O QUE ESTA IMAGEM NÃO TEM
+# -------------------------
+# `node_modules` de desenvolvimento, o código TypeScript, o `.git`, a suíte de
+# testes e o `npm`. O que sobra é o servidor, as dependências que ele de fato
+# carrega em tempo de execução, e os arquivos estáticos.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Dependências
+# -----------------------------------------------------------------------------
+FROM node:22-slim AS dependencias
+WORKDIR /app
+COPY package.json package-lock.json ./
+# `npm ci` e não `npm install`: respeita o lockfile à risca e falha se ele
+# estiver dessincronizado do package.json, em vez de "resolver" silenciosamente
+# para outra versão. Numa imagem de produção, resolver em silêncio é o problema.
+RUN npm ci
+
+# -----------------------------------------------------------------------------
+# 2. Build
+# -----------------------------------------------------------------------------
+FROM node:22-slim AS construcao
+WORKDIR /app
+COPY --from=dependencias /app/node_modules ./node_modules
+COPY . .
+
+# As `NEXT_PUBLIC_*` são lidas em tempo de BUILD: o Next as escreve DENTRO do
+# pacote .js que o navegador baixa. Passá-las só no `docker run` não teria
+# efeito nenhum sobre o que o navegador recebe.
+#
+# Aqui elas ficam como placeholder porque a VPS roda sobre PostgreSQL próprio
+# (docs/22), não sobre Supabase — e é a AUSÊNCIA de uma URL de Supabase de
+# verdade que liga esse modo. Quem for implantar sobre Supabase passa
+# `--build-arg` com os valores reais, e o modo local não liga de jeito nenhum.
+ARG NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder
+ARG NEXT_PUBLIC_SITE_URL=
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+
+# A guarda ANTES do build, e esta ordem é o ponto.
+#
+# Depois do build seria tarde: o valor já estaria escrito dentro dos `.js` da
+# camada, e a camada já existiria no cache e possivelmente no registro. Uma
+# imagem com segredo dentro não se conserta apagando o arquivo numa camada
+# seguinte — a anterior continua lá, e `docker history` a entrega.
+RUN node --experimental-strip-types scripts/conferir-segredos.ts
+
+ENV BUILD_STANDALONE=1
+RUN npm run build
+
+# -----------------------------------------------------------------------------
+# 3. A imagem que roda
+# -----------------------------------------------------------------------------
+FROM node:22-slim AS producao
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+
+# Nada é instalado aqui — nem `curl`.
+#
+# O healthcheck lá embaixo usaria `curl`, e instalá-lo custaria uma camada de
+# apt e um binário a mais numa imagem que vai para a internet. O Node 22 já tem
+# `fetch` embutido, e o Node já está na imagem porque É a aplicação. Cada
+# binário a mais aqui é algo que alguém com execução de comando no contêiner
+# pode usar; este dá para não ter.
+
+# O usuário não-root.
+#
+# A imagem `node` já traz um usuário `node` (uid 1000), e é ele que usamos. Rodar
+# como root num contêiner não é "seguro porque está isolado": uma falha de
+# execução remota no processo Node vira root dentro do contêiner, e daí qualquer
+# escape de namespace é root na VPS. O custo de evitar isso é esta linha.
+USER node
+
+# A saída autocontida do Next. `--chown` aqui e não `chown -R` depois: o
+# segundo duplicaria o tamanho da camada por mudar o dono de cada arquivo.
+COPY --from=construcao --chown=node:node /app/.next/standalone ./
+COPY --from=construcao --chown=node:node /app/.next/static ./.next/static
+COPY --from=construcao --chown=node:node /app/public ./public
+
+EXPOSE 3000
+
+# O healthcheck bate em `/api/health`, que responde 503 enquanto o Supabase (ou
+# o banco) não estiver configurado. Um contêiner que subiu mas não alcança o
+# banco fica marcado `unhealthy` em vez de aceitar requisição e devolver erro
+# para o usuário.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+# `server.js`, e não `next start`: na saída autocontida é este o servidor, e o
+# `npm`/`next` nem estão na imagem.
+CMD ["node", "server.js"]

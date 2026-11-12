@@ -28,6 +28,21 @@ jobs:
       - name: Testes unitários
         run: npm test
 
+      # ANTES do build, e a ordem é o ponto.
+      #
+      # Tudo que começa com `NEXT_PUBLIC_` é escrito DENTRO do pacote .js que o
+      # visitante baixa. Depois do build já seria tarde: o valor estaria nos
+      # artefatos, e apagar a variável não o tiraria de lá.
+      #
+      # O teste unitário prova que a função ACUSA; este passo é a função apontada
+      # para o ambiente de verdade. São coisas diferentes — uma guarda que
+      # funciona e uma guarda que está montada na porta.
+      - name: Nenhum segredo indo para o navegador
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+        run: node --experimental-strip-types scripts/conferir-segredos.ts
+
       - name: Build de produção
         # Valores de placeholder: nenhuma rota é pré-renderizada com dados reais
         # (todas dependem de cookies ou são force-dynamic), então o build não
@@ -72,3 +87,42 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: npm run db:validate
+
+      # Backup que nunca foi restaurado é esperança, não backup.
+      #
+      # O ensaio monta um banco próprio a partir das migrações e do seed, faz o
+      # backup, SUJA o banco depois do dump, restaura por cima e confere três
+      # coisas: as contagens batem, a linha criada depois do backup sumiu (prova
+      # que o banco foi mesmo substituído, e não que o `pg_restore` não fez nada)
+      # e as policies de RLS voltaram.
+      #
+      # Aqui e não num cron anual de sábado: um backup só é confiável enquanto
+      # alguém continua provando que ele volta, e o único lugar que não esquece
+      # é o CI.
+      - name: Ensaio de restauração
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ensaio-de-restauracao.sh
+
+      # E as migrações pelo caminho de PRODUÇÃO, que é outro código: aquele
+      # recria o banco do zero, este aplica só o que falta, com livro-razão.
+      # Rodá-lo duas vezes prova o que importa — a segunda não pode aplicar nada,
+      # senão uma implantação repetida quebraria no primeiro `create table`.
+      - name: Migrações pelo caminho de produção, duas vezes
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: sti_iarx_ci_producao
+        run: |
+          bash scripts/migrar.sh
+          echo "--- segunda vez: nada pode ser aplicado ---"
+          bash scripts/migrar.sh | tee /tmp/segunda.txt
+          grep -q '^==> 0 aplicada' /tmp/segunda.txt || {
+            echo "ERRO: a segunda execução aplicou migração — o livro-razão não segurou." >&2
+            exit 1
+          }

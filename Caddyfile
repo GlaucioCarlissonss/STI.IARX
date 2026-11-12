@@ -1,0 +1,54 @@
+# =============================================================================
+# O Caddy: TLS automático e o único serviço que fala com a internet.
+#
+# POR QUE CADDY E NÃO NGINX
+# -------------------------
+# Pelo certificado. Com nginx, HTTPS é nginx + certbot + um cron de renovação +
+# um recarregamento depois da renovação — quatro peças, e a que falha calada é a
+# última: o certificado renova, o nginx continua servindo o antigo, e o site cai
+# no dia do vencimento. O Caddy pede, renova e recarrega sozinho, e a
+# configuração disso são as duas palavras do endereço abaixo.
+#
+# O domínio vem de `SITE_URL` no .env.producao. Ele precisa já apontar para o IP
+# desta VPS ANTES de subir: a Let's Encrypt confere o domínio fazendo uma
+# requisição de volta, e sem DNS isso falha — com um limite de tentativas por
+# semana que, estourado, deixa o site sem HTTPS por dias.
+# =============================================================================
+
+{$SITE_URL} {
+	# O app não publica porta: `app` é o nome dele na rede interna do compose.
+	reverse_proxy app:3000
+
+	encode zstd gzip
+
+	header {
+		# HSTS. Um ano, e só depois de o site estar comprovadamente de pé em
+		# HTTPS: uma vez enviado, o navegador RECUSA http:// para este domínio
+		# pelo tempo declarado, e não há como voltar atrás no cache de quem já
+		# recebeu. É proteção real contra downgrade, e é irreversível — por isso
+		# não vem com `preload`, que é a versão sem volta nenhuma.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+		# O Next já emite boa parte dos cabeçalhos de segurança. Estes três são
+		# do proxy porque valem para TUDO que sai daqui, inclusive o que não
+		# passa pelo Next (erro do próprio Caddy, arquivo estático).
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+
+		# Quem roda o servidor não é informação que ajude quem visita, e é
+		# informação que ajuda quem procura uma versão com falha conhecida.
+		-Server
+	}
+
+	# O log em JSON, com rotação. "Observabilidade mínima" da docs/23 §4.6 é
+	# isto mais a tela de trabalhos: sem retenção declarada, o log cresce até o
+	# disco encher — e disco cheio derruba o banco junto.
+	log {
+		output file /data/acesso.log {
+			roll_size 50MiB
+			roll_keep 10
+			roll_keep_for 720h
+		}
+		format json
+	}
+}

@@ -206,9 +206,18 @@ há um driver próprio sobre `pg` que aplica RLS com `set local role` e
 `request.jwt.claims`, igual ao PostgREST. Isso é o que torna a VPS viável sem
 reescrever o acesso a dados. O que falta, e não é pouco:
 
-1. **Migrações em banco limpo, do zero ao fim**, sem passo manual — hoje são 46,
-   e a unificação acrescenta mais. `scripts/validate-migrations.sh` já confere a
-   ordem; falta o ensaio completo em banco vazio, em CI.
+1. ~~**Migrações em banco limpo, do zero ao fim**, sem passo manual — hoje são
+   46, e a unificação acrescenta mais. `scripts/validate-migrations.sh` já
+   confere a ordem; falta o ensaio completo em banco vazio, em CI.~~
+   **Correção:** isto já existia quando o plano foi escrito. O job `database` do
+   `.github/workflows/ci.yml` sobe um PostgreSQL limpo, aplica todas as
+   migrações em ordem, roda o seed e executa as asserções de RLS com um papel
+   sem `bypassrls` — a cada push. O que faltava de verdade era outra coisa, e
+   só apareceu ao montar a VPS: **o caminho de atualização.** Aplicar tudo num
+   banco vazio é o primeiro dia; o segundo dia é aplicar só o que falta num
+   banco com dados, e as migrações não são idempotentes. Isso agora é
+   `scripts/migrar.sh`, com livro-razão e soma de verificação, e o CI o roda
+   **duas vezes** — a segunda não pode aplicar nada.
 2. **Segredos fora do código**: chave de serviço, `JOBS_SECRET`, `RESEND_API_KEY`
    e provedores vivem na configuração do ambiente. A `SUPABASE_SERVICE_ROLE_KEY`
    **nunca** recebe o prefixo `NEXT_PUBLIC_` — ele publica o valor no pacote do
@@ -221,6 +230,26 @@ reescrever o acesso a dados. O que falta, e não é pouco:
    atrás do proxy reverso.
 6. **Observabilidade mínima**: log de erro com retenção, e um alerta quando um
    trabalho agendado falha — hoje isso só aparece na tela de trabalhos.
+
+### Situação dos seis (Fase 8)
+
+Os seis estão fechados, e o runbook é a [docs/24](24-producao-na-vps.md).
+
+| # | Onde ficou |
+|---|---|
+| 1 | já existia (job `database`); o que faltava era o caminho de **atualização**: `scripts/migrar.sh` |
+| 2 | `src/lib/segredos.ts` + passo de CI **antes** do build, que é a única ordem que serve |
+| 3 | `scripts/backup.sh`, `scripts/restaurar.sh` e o **ensaio** em CI, que suja o banco depois do dump para que restaurar tenha o que desfazer |
+| 4 | serviço `agendador` no `compose.producao.yml` |
+| 5 | `Caddyfile` — TLS automático, HSTS, e o log com rotação declarada |
+| 6 | migração 0055: distingue **parou** de **falhou**, avisa uma vez por episódio por e-mail e webhook |
+
+Uma ressalva do item 6 que vale estar aqui e não só na docs/24: o alerta é
+disparado pela própria rota de trabalhos agendados. Se o agendador morrer por
+inteiro, ninguém o chama e nenhum aviso sai. Ele cobre "um trabalho parou
+enquanto os outros rodam" — o caso comum e o mais difícil de notar. O outro caso
+exige um vigia de fora, e por isso a docs/24 manda apontar o monitor de
+disponibilidade para `/api/health`.
 
 ---
 

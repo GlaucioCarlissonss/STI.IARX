@@ -4,6 +4,12 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { provedorConfigurado } from '@/lib/mail/provedor'
 import { drenarCaixaDeSaida, type ClienteDaCaixa } from '@/lib/mail/caixa-de-saida'
 import { drenarSaidaDosCanais, type ClienteDaSaida } from '@/lib/canais/saida'
+import {
+  avisarEpisodios,
+  destinoConfigurado,
+  registrarFalhaDeTrabalho,
+  type ClienteDeAlerta,
+} from '@/lib/jobs/alerta'
 
 /**
  * O disparador dos trabalhos agendados.
@@ -110,10 +116,50 @@ export async function POST(request: Request) {
     if (error) {
       console.error('[jobs]', job, error.message)
       resultados[job] = 'falhou'
+      /*
+       * E agora o erro vai para `job_runs`, não só para o console.
+       *
+       * Cada `app.job_*` insere a linha de execução no começo e a completa no
+       * fim. Quando ela levanta exceção, a chamada inteira é UMA transação — e o
+       * insert do começo volta atrás junto com tudo. O registro da execução que
+       * falhou desaparece exatamente no caso em que ele importa, e o que sobra é
+       * um buraco: do lado de fora, "falhou" e "nunca rodou" ficam idênticos.
+       *
+       * Esta rota é o único ponto do sistema que sobrevive à exceção e conhece a
+       * mensagem. Gravá-la aqui é o que dá sentido à distinção que a 0055 faz
+       * entre "falhou" (sabemos o que quebrou) e "parou" (nem sabemos se rodou).
+       *
+       * O nome gravado é o de `job_runs`, SEM o prefixo `job_`: o prefixo é do
+       * nome da função. Trocá-los faria o alerta olhar para um trabalho que não
+       * existe e nunca ver nada.
+       */
+      await registrarFalhaDeTrabalho(
+        supabase as unknown as ClienteDeAlerta,
+        job.replace(/^job_/, ''),
+        error.message,
+      )
       continue
     }
     resultados[job] = Number(data ?? 0)
   }
+
+  /*
+   * O alerta roda DEPOIS dos trabalhos e ANTES das drenagens, e a ordem importa
+   * nos dois lados: depois, para que a falha registrada logo acima já esteja
+   * visível e vire episódio neste mesmo ciclo; antes, porque a drenagem é a parte
+   * mais demorada da execução e um aviso de infraestrutura não deve ficar atrás
+   * de cinquenta e-mails de pesquisa de satisfação na fila.
+   */
+  const { data: mudancas, error: erroDaSincronia } = await supabase
+    .schema('app')
+    .rpc('sincronizar_episodios_de_alerta')
+  if (erroDaSincronia) console.error('[jobs] sincronizar_episodios_de_alerta', erroDaSincronia.message)
+
+  const alerta = await avisarEpisodios(
+    supabase as unknown as ClienteDeAlerta,
+    provedorConfigurado(),
+    destinoConfigurado(),
+  )
 
   const origem = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(request.url).origin
   const envio = await drenarCaixaDeSaida(
@@ -136,5 +182,6 @@ export async function POST(request: Request) {
     ...resultados,
     email: envio,
     canais,
+    alerta: { ...alerta, episodios_mudados: Number(mudancas ?? 0) },
   })
 }

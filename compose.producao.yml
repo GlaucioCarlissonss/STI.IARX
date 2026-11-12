@@ -1,0 +1,196 @@
+# =============================================================================
+# A PRODUÇÃO, numa VPS.
+#
+#     cp .env.producao.example .env.producao   # e preencha
+#     docker compose -f compose.producao.yml --env-file .env.producao up -d
+#
+# O runbook completo — subir, atualizar, restaurar, girar segredo — está em
+# docs/24. Este arquivo é a descrição do que roda; aquele é o que fazer quando
+# algo der errado às três da manhã.
+#
+# POR QUE É UM ARQUIVO SEPARADO DO `docker-compose.yml`
+# -----------------------------------------------------
+# Porque `docker compose up` sem argumento nenhum tem de ser SEMPRE o ambiente
+# de desenvolvimento, com dado de exemplo e senha em claro. Se produção e
+# desenvolvimento morassem no mesmo arquivo atrás de perfis, o comando curto
+# seria ambíguo — e o dia em que alguém errasse o perfil seria o dia em que o
+# `preparacao` apagaria o banco de produção.
+#
+# Aqui, produção exige ser nomeada: `-f compose.producao.yml`. É digitação a
+# mais, de propósito.
+#
+# O QUE É DIFERENTE DO AMBIENTE DE DESENVOLVIMENTO
+# ------------------------------------------------
+#  · O banco NÃO publica porta. Ele existe só para os contêineres desta rede.
+#  · O app NÃO publica porta. Quem fala com a internet é o Caddy.
+#  · Nenhum seed, nenhuma senha de exemplo, nenhum usuário de demonstração.
+#  · Um agendador de verdade chama os trabalhos — não a aba aberta de alguém.
+# =============================================================================
+services:
+  # ---------------------------------------------------------------------------
+  # O banco
+  # ---------------------------------------------------------------------------
+  banco:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env.producao}
+      POSTGRES_DB: ${POSTGRES_DB:-sti_iarx}
+    # SEM `ports`. É a linha mais importante deste arquivo, e ela é uma ausência.
+    #
+    # Publicar 5432 numa VPS expõe o PostgreSQL à internet inteira, e o que
+    # protege passa a ser só a senha. Os outros serviços o alcançam pelo nome
+    # `banco` na rede interna do compose, que é tudo de que precisam. Para abrir
+    # um `psql` de fora, o caminho é um túnel SSH — está em docs/24.
+    volumes:
+      - banco:/var/lib/postgresql/data
+      # Os backups saem para um diretório do HOST, e não para um volume: backup
+      # que só existe dentro do Docker some junto com um `docker compose down -v`
+      # digitado com pressa.
+      - ${BACKUP_DIR:-./backups}:/backups
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [interna]
+
+  # ---------------------------------------------------------------------------
+  # As migrações, uma vez por implantação
+  # ---------------------------------------------------------------------------
+  migracoes:
+    image: postgres:16
+    depends_on:
+      banco:
+        condition: service_healthy
+    environment:
+      PGHOST: banco
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      PGDATABASE: ${POSTGRES_DB:-sti_iarx}
+    volumes:
+      # Somente leitura: este serviço aplica SQL, não altera o repositório.
+      - ./scripts:/repo/scripts:ro
+      - ./supabase:/repo/supabase:ro
+    # `migrar.sh` tem livro-razão: aplica só o que falta e recusa migração
+    # editada depois de aplicada. Rodar este serviço de novo é seguro.
+    command: ['bash', '/repo/scripts/migrar.sh']
+    networks: [interna]
+    restart: 'no'
+
+  # ---------------------------------------------------------------------------
+  # A aplicação
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.producao
+      args:
+        # Entra no pacote do navegador em tempo de BUILD — por isso é `args` e
+        # não `environment`. Define o domínio dos links de e-mail (recuperação
+        # de senha, pesquisa de satisfação).
+        NEXT_PUBLIC_SITE_URL: ${SITE_URL:?defina SITE_URL no .env.producao}
+    restart: unless-stopped
+    depends_on:
+      migracoes:
+        # `service_completed_successfully`: o app precisa do schema APLICADO. Com
+        # `service_started`, a primeira tela abriria num erro de tabela que não
+        # existe ainda.
+        condition: service_completed_successfully
+      banco:
+        condition: service_healthy
+    environment:
+      # A AUSÊNCIA de uma URL de Supabase de verdade é o que liga o modo local
+      # (src/lib/db/modo.ts). Não é descuido: é o interruptor.
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+      NEXT_PUBLIC_SITE_URL: ${SITE_URL}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@banco:5432/${POSTGRES_DB:-sti_iarx}
+      LOCAL_AUTH_SECRET: ${LOCAL_AUTH_SECRET:?defina LOCAL_AUTH_SECRET no .env.producao}
+      LOCAL_STORAGE_DIR: /dados/arquivos
+      JOBS_SECRET: ${JOBS_SECRET:?defina JOBS_SECRET no .env.producao}
+      # Opcionais. Sem eles o sistema roda e não manda e-mail: a caixa de saída
+      # acumula e nada se perde.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      ALERTA_OPERACAO_EMAIL: ${ALERTA_OPERACAO_EMAIL:-}
+      ALERTA_OPERACAO_WEBHOOK: ${ALERTA_OPERACAO_WEBHOOK:-}
+    volumes:
+      # Anexos de chamado e fotos de ativo. Em volume, e não na imagem: um
+      # `docker compose build` apagaria o que foi enviado.
+      - arquivos:/dados/arquivos
+    # SEM `ports`. Quem atende a internet é o Caddy; o app só é alcançável pela
+    # rede interna. Publicar 3000 aqui deixaria a aplicação acessível por HTTP
+    # puro no IP da VPS, contornando o TLS que o Caddy acabou de configurar.
+    networks: [interna]
+
+  # ---------------------------------------------------------------------------
+  # O agendador
+  # ---------------------------------------------------------------------------
+  agendador:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      JOBS_SECRET: ${JOBS_SECRET:?}
+      INTERVALO_SEG: ${JOBS_INTERVALO_SEG:-300}
+    # Um laço de shell, e não `cron`.
+    #
+    # `cron` numa imagem precisa de um processo de init, de um arquivo de
+    # crontab montado e de uma forma de ver a saída — três coisas para um
+    # `curl` a cada cinco minutos. O laço é visível em `docker compose logs
+    # agendador`, e `restart: unless-stopped` o levanta de volta se morrer.
+    #
+    # `-fsS` para que erro de HTTP vire código de saída e apareça no log em vez
+    # de passar como sucesso silencioso; `--max-time` para que uma execução
+    # travada não impeça para sempre a próxima.
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        echo "agendador: chamando /api/jobs/run a cada ${INTERVALO_SEG}s"
+        while true; do
+          curl -fsS --max-time 300 -X POST http://app:3000/api/jobs/run \
+            -H "Authorization: Bearer $$JOBS_SECRET" \
+            || echo "agendador: a execução falhou ($$(date -u +%FT%TZ))"
+          sleep "$$INTERVALO_SEG"
+        done
+    networks: [interna]
+
+  # ---------------------------------------------------------------------------
+  # O proxy e o TLS
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      SITE_URL: ${SITE_URL:?}
+    ports:
+      - '80:80'
+      - '443:443'
+      # HTTP/3. Sem ele o site funciona igual; com ele, a primeira conexão de
+      # quem está em rede ruim é bem mais rápida.
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Os certificados. Em volume nomeado porque perdê-los faz o Caddy pedir
+      # tudo de novo à Let's Encrypt — que tem limite por semana, e estourá-lo
+      # deixa o site sem HTTPS por dias.
+      - caddy_dados:/data
+      - caddy_config:/config
+    networks: [interna]
+
+networks:
+  interna:
+    driver: bridge
+
+volumes:
+  banco:
+  arquivos:
+  caddy_dados:
+  caddy_config:

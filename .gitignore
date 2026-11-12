@@ -8,6 +8,21 @@ dist/
 .env.local
 .env*.local
 
+# Os segredos de produção. `.env*.local` acima NÃO pega `.env.producao`, e a
+# diferença custaria caro: a senha do banco, o segredo que assina as sessões e o
+# JOBS_SECRET num commit ficam no histórico para sempre, mesmo depois de
+# apagados do arquivo. A linha de exemplo versionada é `.env.producao.example`,
+# com os valores em branco.
+.env.producao
+.env.producao.*
+!.env.producao.example
+
+# Os backups do banco. Um dump carrega os dados de TODOS os tenants em claro —
+# chamados, clientes, contratos. É o arquivo que menos pode entrar num
+# repositório, e o `BACKUP_DIR` padrão do compose de produção aponta para cá.
+backups/
+*.dump
+
 .DS_Store
 *.pem
 npm-debug.log*
