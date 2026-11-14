@@ -9686,5 +9686,101 @@ $$;
 reset role;
 reset request.jwt.claims;
 
+-- =============================================================================
+-- 54. Refaturar uma competência cancelada (0056)
+-- =============================================================================
+-- A 0050 escreveu dois índices únicos que discordavam entre si: o de
+-- competência libera a refatura depois do cancelamento (`status <> 'cancelled'`)
+-- e o de número não liberava — e, como o número era derivado de contrato e
+-- competência, a cancelada continuava segurando exatamente o texto que a
+-- refeita precisava.
+--
+-- O usuário via `duplicate key value violates unique constraint
+-- "rental_invoices_number_uk"` ao tentar uma operação que o modelo autoriza.
+--
+-- Estas asserções prendem as duas metades da correção: a refatura PASSA, e o
+-- número da cancelada NÃO é reciclado.
+
+\echo ''
+\echo '=== 54. Refaturar uma competência cancelada (0056) ==='
+
+do $$
+declare
+  v_tenant   uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_contrato record;
+  v_primeira uuid;
+  v_segunda  uuid;
+  v_terceira uuid;
+  v_mes      date := date '2031-07-01';   -- longe do exemplo, para não disputar
+  v_n1 text; v_n2 text; v_n3 text;
+begin
+  select id, client_id, code into v_contrato
+    from public.rental_contracts where tenant_id = v_tenant limit 1;
+
+  -- 1. A primeira fatura da competência: número derivado, sem sufixo.
+  insert into public.rental_invoices (tenant_id, contract_id, client_id, competence, status, due_on)
+  values (v_tenant, v_contrato.id, v_contrato.client_id, v_mes, 'draft', v_mes)
+  returning id, number into v_primeira, v_n1;
+
+  perform app.assert(
+    v_n1 = v_contrato.code || '/203107',
+    format('a fatura nasce numerada pelo contrato e pela competência (%s)', v_n1));
+
+  -- 2. Enquanto ela vive, a competência está tomada — esta é a regra que
+  --    protege o cliente de receber duas cobranças do mesmo mês.
+  begin
+    insert into public.rental_invoices (tenant_id, contract_id, client_id, competence, status, due_on)
+    values (v_tenant, v_contrato.id, v_contrato.client_id, v_mes, 'draft', v_mes);
+    perform app.assert(false, 'duas faturas vivas da mesma competência deveriam ser recusadas');
+  exception when unique_violation then
+    perform app.assert(true, 'com a fatura viva, a competência não aceita outra');
+  end;
+
+  -- 3. Cancelada, a competência volta a ser faturável. ESTE era o caso que a
+  --    0050 autorizava num índice e proibia no outro.
+  update public.rental_invoices set status = 'cancelled' where id = v_primeira;
+
+  insert into public.rental_invoices (tenant_id, contract_id, client_id, competence, status, due_on)
+  values (v_tenant, v_contrato.id, v_contrato.client_id, v_mes, 'draft', v_mes)
+  returning id, number into v_segunda, v_n2;
+
+  perform app.assert(true, 'cancelada a fatura, a mesma competência pode ser refeita');
+
+  -- 4. E o número da cancelada NÃO é reciclado: dois documentos com o mesmo
+  --    número — um cancelado e um válido — tornariam ambígua justamente a
+  --    conversa em que alguém contesta a cobrança.
+  perform app.assert(
+    v_n2 = v_contrato.code || '/203107-2',
+    format('a refeita ganha sufixo em vez de herdar o número (%s)', v_n2));
+  perform app.assert(
+    (select number from public.rental_invoices where id = v_primeira) = v_n1,
+    'e a cancelada continua com o número que teve — documento cancelado não troca de número');
+
+  -- 5. Cancelar de novo continua funcionando: o sufixo anda para frente.
+  update public.rental_invoices set status = 'cancelled' where id = v_segunda;
+  insert into public.rental_invoices (tenant_id, contract_id, client_id, competence, status, due_on)
+  values (v_tenant, v_contrato.id, v_contrato.client_id, v_mes, 'draft', v_mes)
+  returning id, number into v_terceira, v_n3;
+
+  perform app.assert(
+    v_n3 = v_contrato.code || '/203107-3',
+    format('o sufixo avança a cada reemissão (%s)', v_n3));
+
+  -- 6. Número explícito é respeitado: importar histórico não pode renomear o
+  --    documento que a empresa emitiu.
+  declare v_import uuid; v_ni text;
+  begin
+    insert into public.rental_invoices (tenant_id, contract_id, client_id, number, competence, status, due_on)
+    values (v_tenant, v_contrato.id, v_contrato.client_id, 'HISTORICO-0001', date '2019-03-01', 'issued', date '2019-04-01')
+    returning id, number into v_import, v_ni;
+    perform app.assert(v_ni = 'HISTORICO-0001',
+      'número informado é mantido — importação de histórico não reescreve o passado');
+    delete from public.rental_invoices where id = v_import;
+  end;
+
+  delete from public.rental_invoices where id in (v_primeira, v_segunda, v_terceira);
+end
+$$;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

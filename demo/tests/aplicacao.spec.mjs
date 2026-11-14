@@ -91,9 +91,22 @@ async function esperarSubir(tentativas = 40) {
 
 try {
   await esperarSubir()
-  const b = await chromium.launch({
-    executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-  })
+  /*
+   * Sem `executablePath`.
+   *
+   * Aqui havia o caminho de um build específico do Chromium cravado à mão
+   * (`/opt/pw-browsers/chromium-1194/...`). O número faz parte do caminho, e o
+   * ambiente atualiza o Playwright sem avisar: o 1194 virou 1243, e esta suíte
+   * — e só ela, entre dezoito — parou com "executable doesn't exist".
+   *
+   * O erro é pior que a falha: ele parece defeito de ambiente, leva a procurar
+   * navegador faltando, e esconde que as asserções nunca chegaram a rodar.
+   *
+   * As outras dezessete suítes chamam `chromium.launch()` e deixam o Playwright
+   * resolver o próprio navegador. Esta passa a fazer o mesmo, e deixa de ter um
+   * número de versão para envelhecer.
+   */
+  const b = await chromium.launch()
 
   // ---------------------------------------------------------------------------
   console.log('\n=== 1. Rotas públicas abrem sem erro de página ===')

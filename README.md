@@ -186,27 +186,44 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 546 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação cronograma de projetos e rateio do orçamento
-npm run db:validate   # migrações + seed + 1039 asserções em PostgreSQL real
+npm test              # 776 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
+npm run db:validate   # migrações + seed + 1119 asserções em PostgreSQL real
 ```
 
-Mais duas suítes em navegador de verdade, que rodam à parte porque precisam de
-Chromium e, no caso da segunda, de um build:
+Mais as suítes em navegador de verdade, que rodam à parte porque precisam de
+Chromium e, fora a primeira, de um build:
 
 ```bash
-node demo/tests/prototipo.spec.mjs   # 44 asserções de permissão no protótipo
+node demo/tests/prototipo.spec.mjs   # 51 asserções de permissão no protótipo
 node demo/tests/aplicacao.spec.mjs   # 61 asserções na aplicação: tema, fontes, foco, 360px, peso do JS, rotas do agente, dos canais e da exportação
 
 # E, com o modo local de pé (docs/22), as telas AUTENTICADAS — que até esta
 # entrega nunca tinham sido abertas com dado real:
 bash scripts/preparar-banco-local.sh
-node demo/tests/local/telas.spec.mjs      # 37 telas autenticadas, uma a uma
+
+# ATENÇÃO: as suítes de `demo/tests/local/` falam com a porta 3177, e esperam um
+# servidor de PRODUÇÃO ali. Não use `npm run dev`.
+npm run build && npx next start -p 3177 &
+
+node demo/tests/local/telas.spec.mjs      # 47 telas autenticadas, uma a uma
 node demo/tests/local/aprovacao.spec.mjs  # o fluxo de aprovação com três pessoas
 node demo/tests/local/menu.spec.mjs       # o menu que abre e fecha, e lembra
+# … e as outras catorze em demo/tests/local/
 ```
 
-A segunda cobre só as rotas públicas: `src/proxy.ts` guarda toda rota, e sem um
-Supabase de verdade não há sessão para exercitar as telas internas.
+**Por que produção e não `npm run dev`**, dito aqui porque custa caro descobrir
+sozinho: num ambiente onde o WebSocket de recarga a quente do Next não conecta,
+o React **não hidrata** — e o sintoma não é um erro, é um conjunto de asserções
+falhando de um jeito convincente. O que é nativo do HTML continua funcionando
+(`<details>` abre ao clique), o que depende de JavaScript não (o irmão não
+fecha, a escolha não sobrevive ao recarregar). Parece defeito do produto, e não
+é. Rodando contra `next start`, as dezessete suítes passam.
+
+`aplicacao.spec.mjs` cobre só as rotas públicas: `src/proxy.ts` guarda toda
+rota, e sem sessão não há como exercitar as telas internas — é para isso que
+existem as suítes de `demo/tests/local/`, que entram com um usuário do seed.
+Ela sobe o próprio servidor na 3177 e **recusa** rodar se a porta estiver
+ocupada, então encerre o `next start` das locais antes (`fuser -k 3177/tcp`).
 
 E uma conferência que não roda código da aplicação: os números de schema que
 esta documentação afirma, medidos contra o banco.

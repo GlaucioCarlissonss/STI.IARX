@@ -50,9 +50,12 @@ export async function gerarFatura(_prev: ActionState, formData: FormData): Promi
 
   const { data: contrato } = await supabase
     .from('rental_contracts')
-    .select('id, client_id, code, status, billing_day')
+    /* Sem `code`: ele só servia para montar o número da fatura, e quem numera
+       agora é o gatilho da 0056. Campo buscado e não lido vira peso morto que o
+       próximo leitor tenta entender. */
+    .select('id, client_id, status, billing_day')
     .eq('id', parsed.data.contract_id)
-    .maybeSingle<{ id: string; client_id: string; code: string; status: string; billing_day: number }>()
+    .maybeSingle<{ id: string; client_id: string; status: string; billing_day: number }>()
   if (!contrato) return { error: NAO_AFETADO }
 
   if (contrato.status === 'draft' || contrato.status === 'cancelled') {
@@ -137,17 +140,28 @@ export async function gerarFatura(_prev: ActionState, formData: FormData): Promi
     }
   }
 
-  const numero = `${contrato.code}/${parsed.data.competencia.replace('-', '')}`
   const vencimento = new Date(fim)
   vencimento.setDate(vencimento.getDate() + contrato.billing_day)
 
+  /*
+   * O número NÃO é montado aqui — quem numera é o gatilho da migração 0056.
+   *
+   * Aqui havia `${contrato.code}/${competencia}`, e o número derivado assim
+   * colidia ao refaturar uma competência cancelada: a cancelada continua viva e
+   * continua segurando aquele texto. O índice de competência libera a refeita
+   * (ele exclui `cancelled`), o índice de número não liberava, e a pessoa levava
+   * um erro de chave duplicada numa operação que o modelo autoriza.
+   *
+   * O gatilho resolve dando sufixo à reemissão (`.../202610-2`) em vez de
+   * reciclar o número da cancelada. Ele fica encostado no índice que o obriga, e
+   * não a um `insert` de distância dele.
+   */
   const { data: fatura, error } = await supabase
     .from('rental_invoices')
     .insert({
       tenant_id: profile.tenant_id,
       contract_id: contrato.id,
       client_id: contrato.client_id,
-      number: numero,
       competence,
       status: 'draft',
       due_on: deDia(vencimento),
