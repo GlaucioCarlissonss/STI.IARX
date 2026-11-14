@@ -32,7 +32,7 @@ outro nome, a divergência está registrada explicitamente em vez de duplicada.
 ## O que já está implementado desta especificação
 
 A migração `0013_areas_anexos_links.sql` entrega **a camada de dados** do que é
-inequívoco, validada contra PostgreSQL real (eram 397 asserções à época; hoje são 1039). O
+inequívoco, validada contra PostgreSQL real (eram 397 asserções à época; hoje são 1119). O
 que falta em cada módulo é
 a **interface** — e, nos casos marcados, a decisão do operador.
 
@@ -42,12 +42,12 @@ a **interface** — e, nos casos marcados, a decisão do operador.
 | M2 — Área da Filial | ✅ `branch_areas`, FKs, trigger de coerência, `fn_seed_branch_areas` | ✅ painel de áreas em `/clientes`, chaves `clientes.areas.*` e botão de áreas padrão (0023) |
 | M3 — Anexos de Inventário | ✅ `asset_attachments`, foto principal por índice | ✅ upload e remoção pelo bucket privado `anexos` (0019) |
 | M4 — Custódia | ✅ campos `previous_*`, `reason`, trigger reescrita, view `asset_custody_history` | ✅ timeline e transferência com motivo em `/inventario` (0023); **exportação CSV (0036, LG-11)** |
-| M5 — Anexos em Tickets | ✅ `kind` derivado do MIME, cota no banco, `scan_status` | ✅ upload e remoção (0019) · ⬜ player embutido de áudio e vídeo |
+| M5 — Anexos em Tickets | ✅ `kind` derivado do MIME, cota no banco, `scan_status` | ✅ upload e remoção (0019); **player embutido de áudio e vídeo** em `attachment-forms.tsx` |
 | M6 — Dashboard Telefonia | ✅ `vw_telecom_dashboard`, índices de filtro | ✅ filtros por filial/operadora/situação e leitura da view, com linha sem responsável e livre de fidelidade (0025); **exportação CSV (0036, LG-11)** |
 | M7 — Contrato da Linha | ✅ `telecom_line_attachments`, vigência | ✅ anexos na ficha da linha (0019) · ⬜ alerta de vigência vencendo (depende de LG-06) |
 | M8 — Links de Internet | ✅ `internet_links`, anexos, `link_availability_events`, dashboards, CRUD em `/conectividade/links`, chaves `conectividade.links.*` (0022) | ⬜ Edge Function do Zabbix — hoje a queda é registrada à mão, pelo mesmo evento que o webhook vai gravar |
 | M9 — Área na Telefonia | ✅ `company_area_id` + trigger | ✅ campo no formulário e coluna na tabela (0023) · ⬜ filtro por área |
-| M10 — Edição de Integrações | ✅ `integration_mapping_versions` + trigger, campos de rotação | ⬜ telas de configuração e dry run |
+| M10 — Edição de Integrações | ✅ `integration_mapping_versions` + trigger, campos de rotação | ✅ configuração em `/integracoes/[id]`, **com ensaio de payload** (`simulacao.tsx`): mostra o que produziria sem produzir nada |
 | M11 — Mapas | ✅ `latitude`/`longitude`, precisão do geocode, 5 views com semáforo | ✅ Google Maps em `/mapas`, geocodificação e coordenada colada do Maps |
 
 **A revisão de 2026 e as seis tabelas sem tela.** Uma varredura cruzando as tabelas de
@@ -1407,7 +1407,7 @@ decisão nova.
 
 ### O que a auditoria já resolve
 
-`audit_log` cobre por trigger 51 tabelas, incluindo `sla_definitions`, `queues`,
+`audit_log` cobre por trigger 62 tabelas, incluindo `sla_definitions`, `queues`,
 `integrations` e `integration_mappings`. Os requisitos de "histórico de alterações" de M1
 e M10 são, portanto, **de interface** — precisam de tela lendo `audit_log`, não de
 modelagem nova. Isso reduz o custo real desses dois módulos em relação ao que o escopo
