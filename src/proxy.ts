@@ -62,6 +62,16 @@ import { modoLocal } from '@/lib/db/modo'
 const PUBLIC_PREFIXES = [
   '/login',
   '/recuperar-senha',
+  /*
+   * `/nova-senha` é público por causa de `/nova-senha/<token>`, que é o link do
+   * e-mail no modo local — quem o abre não tem sessão, por definição.
+   *
+   * Isso também torna pública `/nova-senha` sem token, que é a tela do fluxo do
+   * Supabase e depende de sessão de recuperação. Ela não vaza nada: sem sessão,
+   * a ação dela recusa com "o link expirou". O que autoriza, nos dois caminhos,
+   * nunca foi o proxy — é a sessão num, o token no outro.
+   */
+  '/nova-senha',
   '/tv',
   '/avaliar',
   '/api/health',

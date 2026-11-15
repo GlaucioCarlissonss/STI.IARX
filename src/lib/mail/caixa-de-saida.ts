@@ -69,7 +69,16 @@ export const MAXIMO_DE_TENTATIVAS = 5
  */
 export function completarEnderecos(texto: string, origem: string): string {
   const base = origem.replace(/\/+$/, '')
-  return texto.replace(/(^|\s)\/(avaliar|tickets)\//g, `$1${base}/$2/`)
+  /*
+   * `nova-senha` e `confirmar-email` entraram com a migração 0057. Sem eles, o
+   * e-mail de redefinição sairia com `/nova-senha/<token>` em caminho relativo —
+   * que num cliente de e-mail não é link nenhum, e a pessoa receberia a
+   * mensagem certa com o caminho inutilizável.
+   */
+  return texto.replace(
+    /(^|\s)\/(avaliar|tickets|nova-senha|confirmar-email)\//g,
+    `$1${base}/$2/`,
+  )
 }
 
 /**

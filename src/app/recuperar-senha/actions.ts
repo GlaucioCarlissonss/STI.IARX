@@ -1,6 +1,8 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { modoLocal } from '@/lib/db/modo'
 import { recoveryEmailSchema } from '@/lib/schemas/auth'
 import type { AuthFormState } from '@/app/login/actions'
 
@@ -39,6 +41,45 @@ export async function requestPasswordReset(
       error:
         'A recuperação de senha ainda não foi configurada neste ambiente. Peça ao administrador para definir o endereço público do sistema.',
     }
+  }
+
+  /*
+   * MODO LOCAL: o fluxo é NOSSO, e até a migração 0057 ele não existia.
+   *
+   * O cliente local respondia a `resetPasswordForEmail` com sucesso e não
+   * enviava nada — decisão honesta enquanto a tela era só de desenvolvimento,
+   * porque inventar um link que "funciona" seria pior. Com a porta pública em
+   * `sti.iarx.com.br`, deixou de ser aceitável: clicar em "esqueci a senha" às
+   * onze da noite e não receber nada é o pior dos dois mundos.
+   *
+   * Agora o token é emitido e gravado como hash pelo banco (0057), e o e-mail
+   * sai pela mesma caixa de saída do aviso de SLA — que já drena no agendador e
+   * já tem nova tentativa com espera crescente.
+   *
+   * A chamada é com a chave de serviço porque quem pede não tem sessão: é uma
+   * tela pública, por definição anônima. O que contém o estrago é a própria
+   * função ser `security definer`, não aceitar o usuário como parâmetro (ela o
+   * descobre pelo e-mail) e devolver apenas o token — nunca dados da conta.
+   */
+  if (modoLocal()) {
+    try {
+      const admin = createAdminClient()
+      const { error } = await admin.schema('app').rpc('emitir_token_de_acesso', {
+        p_email: parsed.data.email,
+        p_purpose: 'password_reset',
+        p_minutos: 60,
+      })
+      if (error) console.error('[recuperar-senha] falha ao emitir token:', error.message)
+    } catch (e) {
+      console.error('[recuperar-senha] falha ao emitir token:', e)
+    }
+    /*
+     * `sent: true` mesmo quando a função devolveu null — e devolver null é o
+     * caso comum: e-mail sem conta, conta inativa, ou pedido repetido dentro de
+     * um minuto. Diferenciar aqui desfaria do lado de fora a proteção que o
+     * banco aplica do lado de dentro.
+     */
+    return { sent: true }
   }
 
   const supabase = await createClient()

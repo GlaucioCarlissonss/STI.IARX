@@ -9782,5 +9782,140 @@ begin
 end
 $$;
 
+-- =============================================================================
+-- 55. Token de acesso: uso único, e nada em claro (0057)
+-- =============================================================================
+-- No modo local a recuperação de senha era um no-op declarado: o cliente
+-- respondia sucesso e não enviava nada. Com a porta pública em
+-- `sti.iarx.com.br`, isso deixou de ser aceitável.
+--
+-- O que estas asserções prendem não é o envio — é o que torna o link seguro:
+-- ele não existe em claro no banco, serve UMA vez, morre no prazo, não abre
+-- para outra finalidade, e pedir de novo mata o anterior.
+
+\echo ''
+\echo '=== 55. Token de acesso: uso único, e nada em claro (0057) ==='
+
+do $$
+declare
+  v_t1 text; v_t2 text; v_u uuid; v_n int;
+  v_email text := 'admin@iaroffice.com.br';
+begin
+  delete from public.auth_tokens;
+
+  -- 1. E-mail sem conta não emite nada — e o silêncio é a proteção.
+  --    Responder "não cadastrado" daria a qualquer um um verificador de contas
+  --    de graça: com uma lista de e-mails vazados, descobre-se em minutos quais
+  --    têm conta aqui, e onde vale a pena tentar senha.
+  perform app.emitir_token_de_acesso('ninguem@lugar-nenhum.invalido', 'password_reset');
+  perform app.assert(
+    (select count(*) from public.auth_tokens) = 0,
+    'e-mail sem conta não emite token — e a tela responde a mesma coisa');
+
+  -- 2. E-mail real emite, e enfileira.
+  v_t1 := app.emitir_token_de_acesso(v_email, 'password_reset');
+  perform app.assert(v_t1 is not null and length(v_t1) = 64,
+    'e-mail com conta recebe token de 32 bytes');
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where kind = 'password_reset' and status = 'pending') >= 1,
+    'e o e-mail entra na caixa de saída, que já drena no agendador');
+
+  -- 3. O TOKEN NÃO EXISTE EM CLARO. Um dump que vaze não entrega conta nenhuma.
+  perform app.assert(
+    (select count(*) from public.auth_tokens where token_hash = v_t1) = 0,
+    'o token NÃO está em claro na tabela — o que fica é o sha256 dele');
+  perform app.assert(
+    (select count(*) from public.auth_tokens
+      where token_hash = encode(digest(v_t1, 'sha256'), 'hex')) = 1,
+    'e o hash dele está');
+
+  -- 4. O corpo do e-mail carrega o token; a tabela, não.
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where kind = 'password_reset' and body_text like '%' || v_t1 || '%') = 1,
+    'o link em claro existe só no corpo do e-mail, que é para onde ele vai');
+
+  -- 5. Pedir de novo MATA o anterior.
+  --    Sem isto, pedir três vezes deixaria três links vivos em três e-mails — e
+  --    o mais antigo, que pode ter vazado num encaminhamento, continuaria
+  --    abrindo a porta.
+  update public.auth_tokens set created_at = now() - interval '5 minutes';
+  v_t2 := app.emitir_token_de_acesso(v_email, 'password_reset');
+  perform app.assert(public.token_de_acesso_vale(v_t1, 'password_reset') is false,
+    'pedir um link novo invalida o anterior');
+  perform app.assert(public.token_de_acesso_vale(v_t2, 'password_reset') is true,
+    'e o novo vale');
+
+  -- 6. ESPERA ENTRE PEDIDOS: a tela pública não pode virar máquina de inundar
+  --    a caixa de outra pessoa — e o nosso domínio denunciado como spam
+  --    derrubaria todo o e-mail do sistema, inclusive o aviso de SLA.
+  perform app.assert(app.emitir_token_de_acesso(v_email, 'password_reset') is null,
+    'pedido repetido dentro de um minuto não emite nada');
+  perform app.assert(public.token_de_acesso_vale(v_t2, 'password_reset') is true,
+    'e não derruba o link que acabou de ser enviado');
+
+  -- 7. USO ÚNICO, garantido pelo próprio update.
+  v_u := public.consumir_token_de_acesso(v_t2, 'password_reset');
+  perform app.assert(v_u is not null, 'consumir devolve de quem é o token');
+  perform app.assert(public.consumir_token_de_acesso(v_t2, 'password_reset') is null,
+    'e a segunda vez não devolve nada — uso único');
+
+  -- 8. Finalidade não se confunde: token de senha não confirma e-mail.
+  update public.auth_tokens set created_at = now() - interval '5 minutes';
+  v_t1 := app.emitir_token_de_acesso(v_email, 'password_reset');
+  perform app.assert(public.consumir_token_de_acesso(v_t1, 'email_confirm') is null,
+    'token de redefinição não serve para confirmar e-mail');
+  perform app.assert(public.token_de_acesso_vale(v_t1, 'password_reset') is true,
+    'e a tentativa errada não gastou o token');
+
+  -- 9. Vencido não abre.
+  update public.auth_tokens set expires_at = now() - interval '1 minute';
+  perform app.assert(public.token_de_acesso_vale(v_t1, 'password_reset') is false,
+    'token vencido não abre');
+  perform app.assert(public.consumir_token_de_acesso(v_t1, 'password_reset') is null,
+    'e não pode ser consumido');
+
+  -- 10. A purga leva o que venceu há mais de uma semana, e só.
+  update public.auth_tokens set expires_at = now() - interval '8 days';
+  perform app.job_purge_auth_tokens();
+  perform app.assert((select count(*) from public.auth_tokens) = 0,
+    'a purga leva o token vencido há mais de sete dias');
+
+  delete from public.email_outbox where kind = 'password_reset';
+end
+$$;
+
+-- E o acesso: a tabela não é de ninguém pela aplicação, nem do administrador.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare v_n int;
+begin
+  /*
+   * Nem o administrador da empresa lê esta tabela. Ele não veria token nenhum
+   * (só hash), mas veria quem pediu redefinição e quando — informação sobre a
+   * vida de outra pessoa, sem função operacional. O que o suporte precisa
+   * saber, "o e-mail saiu?", está na caixa de saída, que tem tela.
+   *
+   * E a recusa vem do GRANT, não da policy: `authenticated` não tem `select`
+   * nesta tabela, então a consulta nem chega a ser filtrada. É mais forte que
+   * devolver zero linhas, e a asserção precisa dizer isso — escrevê-la
+   * esperando contagem zero descreveria uma proteção mais fraca do que a que
+   * existe, e passaria a valer como especificação se alguém um dia concedesse
+   * o `select`.
+   */
+  begin
+    select count(*) into v_n from public.auth_tokens;
+    perform app.assert(false, 'authenticated não deveria conseguir ler auth_tokens');
+  exception when insufficient_privilege then
+    perform app.assert(true,
+      'nem o administrador lê a tabela de tokens — recusa no GRANT, antes da policy');
+  end;
+end
+$$;
+reset role;
+reset request.jwt.claims;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

@@ -75,6 +75,31 @@ describe('completarEnderecos', () => {
     )
   })
 
+  it('completa também o link de redefinição de senha (0057)', () => {
+    /*
+     * Sem isto, o e-mail de "esqueci a senha" sairia com `/nova-senha/<token>`
+     * em caminho relativo — que num cliente de e-mail não é link nenhum. A
+     * pessoa receberia a mensagem certa, no momento certo, com o caminho
+     * inutilizável: o pior tipo de defeito, porque parece que funcionou.
+     */
+    expect(
+      completarEnderecos('Abra:\n/nova-senha/deadbeef\n', 'https://sti.iarx.com.br'),
+    ).toContain('https://sti.iarx.com.br/nova-senha/deadbeef')
+  })
+
+  it('completa o link de confirmação de e-mail', () => {
+    expect(
+      completarEnderecos('Confirme:\n/confirmar-email/abc\n', 'https://sti.iarx.com.br'),
+    ).toContain('https://sti.iarx.com.br/confirmar-email/abc')
+  })
+
+  it('não mexe num caminho que não é dos nossos', () => {
+    // Um `/conta/` no meio do texto não vira link absoluto por acidente.
+    expect(completarEnderecos('veja /conta/senha', 'https://sti.iarx.com.br')).toBe(
+      'veja /conta/senha',
+    )
+  })
+
   it('tolera barra sobrando no fim da origem', () => {
     // `NEXT_PUBLIC_SITE_URL` acaba com barra metade das vezes. Sem o corte,
     // o link sairia com `//avaliar` e alguns clientes de e-mail o quebram.
