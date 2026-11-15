@@ -39,16 +39,53 @@ falar com o banco errado em silêncio.
 
 ## 1. Subir pela primeira vez
 
-### Antes de começar
+### Antes de começar: o DNS
 
-O domínio precisa **já estar apontando para o IP da VPS**. A Let's Encrypt
-confere o domínio fazendo uma requisição de volta; sem DNS isso falha, e há um
-limite de tentativas por semana. Estourá-lo deixa o site sem HTTPS por dias.
+O sistema mora em **`sti.iarx.com.br`**, e não no apex. O apex `iarx.com.br` é o
+site institucional, que vive em outro lugar e tem um botão **Sistema** apontando
+para cá (§1.1).
+
+Separar os dois não é organização: é blindagem. O site institucional muda de
+hospedagem, troca de CMS e às vezes sai do ar por conta de marketing — e nada
+disso pode derrubar o sistema de quem está trabalhando. Com subdomínio próprio,
+o Caddy pede certificado só para ele, e o apex segue a vida dele.
+
+No painel de DNS do domínio, um registro só:
+
+| Tipo | Nome | Valor | TTL |
+|---|---|---|---|
+| `A` | `sti` | *(o IP da VPS)* | 300 |
+
+TTL baixo (300 s) **no começo**, de propósito: se o IP estiver errado, o conserto
+propaga em cinco minutos em vez de um dia. Suba para 3600 depois que estiver de
+pé.
+
+> **Não crie um CNAME para o apex nem um redirecionamento `iarx.com.br` →
+> `sti.iarx.com.br`.** Quem chega ao apex quer o site institucional; mandá-lo
+> para a tela de login é perder a visita de quem ainda está decidindo.
+
+O DNS precisa estar **propagado antes** do primeiro `up`: a Let's Encrypt confere
+o domínio fazendo uma requisição de volta, e sem DNS isso falha — com limite de
+tentativas por semana que, estourado, deixa o site sem HTTPS por dias.
 
 ```bash
-# confira do seu computador, não da VPS
-dig +short sti.suaempresa.com.br
+# confira do seu computador, não da VPS — a VPS pode ter cache próprio
+dig +short sti.iarx.com.br
+# tem de responder o IP da VPS, e mais nada
 ```
+
+### 1.1 O botão no site institucional
+
+No `iarx.com.br`, o botão que traz a pessoa para cá:
+
+```html
+<a href="https://sti.iarx.com.br" class="botao-sistema">Sistema</a>
+```
+
+Sem `target="_blank"`: quem vai trabalhar quer a aba, não mais uma. E sem
+`rel="noopener"` ser necessário justamente por isso — mas se um dia abrir em aba
+nova, `rel="noopener noreferrer"` passa a ser obrigatório, senão a página de
+destino ganha referência para a aba de origem.
 
 ### Os passos
 
@@ -74,9 +111,9 @@ existe usuário de exemplo, e isso é deliberado: um sistema que nasce com
 
 ```bash
 docker compose -f compose.producao.yml --env-file .env.producao run --rm \
-  -e EMPRESA="Minha Empresa" \
-  -e SLUG=minha-empresa \
-  -e EMAIL=admin@minhaempresa.com.br \
+  -e EMPRESA="IAR Office" \
+  -e SLUG=iarx \
+  -e EMAIL=admin@iarx.com.br \
   -e SENHA='uma-senha-longa-de-verdade' \
   -e ESFERAS=management,rental \
   migracoes bash /repo/scripts/primeiro-acesso.sh
@@ -263,7 +300,7 @@ Por isso aponte um monitor de disponibilidade externo (UptimeRobot, Better
 Stack, o que preferir) para:
 
 ```
-https://sti.suaempresa.com.br/api/health
+https://sti.iarx.com.br/api/health
 ```
 
 Esse endpoint não depende do agendador. Os dois juntos cobrem os dois casos: o
