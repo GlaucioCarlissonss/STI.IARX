@@ -1179,7 +1179,7 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 256,
+  perform app.assert((select count(*) from public.permission_catalog) = 258,
     'catálogo de permissões tem as 256 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 256,
+  perform app.assert((select count(*) from public.permission_catalog) = 258,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -9916,6 +9916,88 @@ end
 $$;
 reset role;
 reset request.jwt.claims;
+
+-- =============================================================================
+-- 56. Permissão nova chega a quem JÁ TEM banco (0058)
+-- =============================================================================
+-- A 0017 diz por que as concessões dos perfis de sistema são uma REGRA sobre o
+-- catálogo, e não uma lista: "listar ~108 chaves oito vezes garantiria que a
+-- próxima permissão nova entrasse em alguns perfis e fosse esquecida em
+-- outros."
+--
+-- A intenção estava certa e a execução tinha um buraco: a regra só rodava na
+-- CRIAÇÃO do tenant. Para uma empresa que já existe, chave nova entrava no
+-- catálogo e não chegava a perfil nenhum — a tela ficava escura para todos,
+-- inclusive para o administrador, e sem erro nenhum: o menu simplesmente não a
+-- mostrava.
+--
+-- Valia para toda chave criada desde a 0041. Em desenvolvimento ninguém notava,
+-- porque o banco é recriado do zero e lá o seed roda depois das migrações; num
+-- banco de produção atualizado por `scripts/migrar.sh`, as telas de locação e o
+-- ciclo de planilha estariam invisíveis.
+
+\echo ''
+\echo '=== 56. Permissão nova chega a quem já tem banco (0058) ==='
+
+do $$
+declare
+  v_tenant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_perfil uuid;
+  v_antes  int;
+begin
+  -- 1. Toda chave do catálogo que o teto do "Admin do Cliente" alcança precisa
+  --    estar concedida a ele. É a regra da 0017, conferida como propriedade em
+  --    vez de confiada ao momento em que a função rodou.
+  select id into v_perfil from public.access_profiles
+   where tenant_id = v_tenant and system_key = 'admin_cliente';
+
+  perform app.assert(v_perfil is not null, 'o perfil de sistema "Admin do Cliente" existe');
+
+  perform app.assert(
+    not exists (
+      select 1 from public.permission_catalog c
+       where app.role_rank(c.min_base_role) <= app.role_rank('admin')
+         and not exists (
+           select 1 from public.permission_grants g
+            where g.profile_id = v_perfil and g.permission_key = c.key)),
+    'nenhuma chave do catálogo ficou sem concessão no perfil de sistema');
+
+  -- 2. E o conserto é idempotente: aplicar de novo não duplica nada.
+  select count(*) into v_antes from public.permission_grants where profile_id = v_perfil;
+  perform app.seed_system_access_profiles(v_tenant);
+  perform app.assert(
+    (select count(*) from public.permission_grants where profile_id = v_perfil) = v_antes,
+    'reaplicar a regra não duplica concessão — ela é idempotente');
+
+  -- 3. A SIMULAÇÃO DO DEFEITO: tirar uma concessão e reaplicar a regra devolve.
+  --    É isto que uma migração futura, ao acrescentar chave, vai depender.
+  delete from public.permission_grants
+   where profile_id = v_perfil and permission_key = 'auditoria.avisos.ver';
+  perform app.assert(
+    not exists (select 1 from public.permission_grants
+                 where profile_id = v_perfil and permission_key = 'auditoria.avisos.ver'),
+    'cenário montado: a chave está no catálogo e sem concessão');
+
+  perform app.seed_system_access_profiles(v_tenant);
+  perform app.assert(
+    exists (select 1 from public.permission_grants
+             where profile_id = v_perfil and permission_key = 'auditoria.avisos.ver'),
+    'reaplicar a regra devolve a chave — é o que toda migração que add permissão precisa fazer');
+
+  -- 4. Perfil montado À MÃO não é tocado: injetar chave nele desfaria uma
+  --    decisão que alguém tomou de propósito.
+  insert into public.access_profiles (tenant_id, name, description, base_role, is_system)
+  values (v_tenant, 'Perfil de teste 0058', 'montado à mão', 'admin', false)
+  returning id into v_perfil;
+
+  perform app.seed_system_access_profiles(v_tenant);
+  perform app.assert(
+    (select count(*) from public.permission_grants where profile_id = v_perfil) = 0,
+    'perfil fora do sistema continua vazio — a regra só governa os de sistema');
+
+  delete from public.access_profiles where id = v_perfil;
+end
+$$;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

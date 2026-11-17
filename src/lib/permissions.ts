@@ -306,6 +306,13 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
      operador da plataforma: o agendador é infraestrutura compartilhada, sem
      `tenant_id`. A tela diz isso em vez de parecer vazia por defeito. */
   act('auditoria', 'trabalhos', 'ver', 'Acompanhar os trabalhos agendados', 'admin'),
+  scr('auditoria', 'avisos', 'Avisos enviados', 'admin'),
+  /* Mesmo teto da policy de `email_outbox` (0029): `can_manage_config()`, que é
+     `admin`. E o teto é justificado pelo conteúdo — o corpo da mensagem carrega
+     o link de redefinição de senha de outra pessoa (0057) e o token da pesquisa
+     de satisfação. Quem lê esta tela consegue, por um momento, entrar na conta
+     alheia. */
+  act('auditoria', 'avisos', 'ver', 'Ver a fila de e-mails e por que algum não saiu', 'admin'),
 
   /* --- Projetos ----------------------------------------------------------- */
   /* Primeiro módulo trazido do GSTI.IARX. Esta base não tinha nada de projeto —

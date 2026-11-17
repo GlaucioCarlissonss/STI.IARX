@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados
 
-120 tabelas e 35 views em `public`, com 269 policies de RLS, mais 3 policies em
+120 tabelas e 36 views em `public`, com 269 policies de RLS, mais 3 policies em
 `storage.objects` para o bucket de anexos. Nomenclatura conforme
 [ADR-012](03-arquitetura.md#adr-012).
 

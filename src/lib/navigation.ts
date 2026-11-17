@@ -338,6 +338,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       /* A docs/13 mandava rodar SQL à mão para saber se o agendador parou — e
          quem precisa da resposta não tem psql. */
       { href: '/auditoria/trabalhos', label: 'Trabalhos agendados', permission: 'auditoria.trabalhos.ver' },
+      /* Ao lado de "Trabalhos agendados" de propósito: as duas respondem a mesma
+         pergunta por ângulos diferentes. "O e-mail não saiu" é quase sempre ou
+         falta de provedor, ou o agendador parado — e as telas se apontam. */
+      { href: '/auditoria/avisos', label: 'Avisos enviados', permission: 'auditoria.avisos.ver' },
       { href: '/perfis', label: 'Perfis de acesso', permission: 'usuarios.perfis.ver' },
       { href: '/tv', label: 'Painéis de TV', permission: 'tv.tokens.ver' },
       /* O ciclo de planilha fica em Administração, e não dentro de cada

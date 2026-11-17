@@ -218,7 +218,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 779 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
-npm run db:validate   # migrações + seed + 1137 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 1143 asserções em PostgreSQL real
 ```
 
 Mais as suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -306,7 +306,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 57 migrações
+  migrations/         # 58 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -321,6 +321,14 @@ Cada uma tem justificativa e alternativas rejeitadas em
 
 - **O banco é a fronteira de segurança.** RLS em 100% das tabelas, com teste que
   falha se alguém criar uma tabela sem policy. A aplicação nunca é a única guarda.
+- **Migração que acrescenta permissão precisa reaplicar a regra dos perfis.** As
+  concessões dos perfis de sistema são uma regra sobre o catálogo, não uma
+  lista — mas ela só rodava na criação do tenant. Numa empresa que já existe, a
+  chave nova entrava no catálogo e não chegava a perfil nenhum: a tela ficava
+  escura para todos, inclusive para o administrador, e **sem erro**. Valia para
+  toda chave desde a `0041`. Agora toda migração que acrescenta permissão termina
+  chamando `app.seed_system_access_profiles` para cada tenant, e há asserção que
+  cobra isso — ver a `0058`.
 - **Regras críticas ficam no banco.** Máquina de estados, auditoria e cálculo de
   SLA vivem em triggers e funções — porque tickets chegam por UI, por API e por
   integração, e validar só na UI garante que a integração grave lixo.
@@ -338,7 +346,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 
 Verificado na última entrega: build de produção limpo, `tsc` sem apontamentos,
 `eslint` com 4 avisos de variável não usada em teste, **779 testes unitários** e
-**1137 asserções de banco** passando, mais 51 asserções no protótipo e 61 na
+**1143 asserções de banco** passando, mais 51 asserções no protótipo e 61 na
 aplicação, em navegador — incluindo a aritmética de horário útil conferida
 contra 8 cenários (almoço, fim de semana, feriado, fora de expediente).
 
@@ -391,11 +399,10 @@ próprio com armazenamento em disco:
   exercitado em `demo/tests/local/senha.spec.mjs`, do pedido até entrar com a
   senha nova.
 
-E uma pendência que apareceu ao construir a `0057`:
-
-- **A caixa de saída não tem tela.** `email_outbox` guarda situação, tentativas e
-  último erro de cada mensagem, e responder "o e-mail saiu?" hoje exige `psql`.
-  É a pergunta que o suporte faz toda vez que alguém diz que não recebeu o link.
+*(A caixa de saída não tinha tela, e isso apareceu ao construir a `0057`.
+Fechado na `0058`: `/auditoria/avisos` mostra o que saiu, o que está esperando e
+o que falhou — com o motivo, e sem o corpo da mensagem, que carrega o link de
+redefinição de senha de outra pessoa.)*
 
 **Fora de escopo**, registrado em [docs/01-requisitos.md](docs/01-requisitos.md#4-fora-de-escopo-v1):
 gestão de mudanças e problemas, billing, app móvel, chat e telefonia embarcada,
