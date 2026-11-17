@@ -53,6 +53,20 @@ export const getSessionContext = cache(async (): Promise<SessionContext | null> 
 
   if (!profile) return null
 
+  /*
+   * A SEGUNDA TRANCA: conta desativada não tem sessão.
+   *
+   * O login já recusa (`src/app/login/actions.ts`), e essa é a tranca que dá
+   * mensagem útil. Esta aqui é a que vale para quem **já estava dentro** quando
+   * foi desativado: sem ela, a pessoa continuaria navegando com o cookie que
+   * tem na mão até ele vencer — e desativar alguém num incidente é exatamente o
+   * momento em que isso não pode acontecer.
+   *
+   * Devolver `null` é o mesmo que "não há sessão": o proxy manda para o login,
+   * e lá a mensagem explica.
+   */
+  if (!profile.is_active) return null
+
   const [{ data: tenant }, { data: grants }] = await Promise.all([
     profile.tenant_id
       ? supabase
@@ -101,7 +115,23 @@ function permissionsFromRole(role: UserRole): ReadonlySet<string> {
 /** Igual ao anterior, mas redireciona para o login em vez de devolver null. */
 export async function requireSession(): Promise<SessionContext> {
   const ctx = await getSessionContext()
-  if (!ctx) redirect('/login')
+  if (!ctx) {
+    /*
+     * `/auth/encerrar` e não `/login`, e a diferença não é estilo.
+     *
+     * Quem chega aqui pode estar nos dois casos: sem cookie nenhum (e aí o
+     * proxy já teria mandado para o login antes), ou **com cookie válido e
+     * conta desativada**. No segundo, mandar para `/login` produz laço: o proxy
+     * vê o cookie, acredita que há sessão e devolve para `/painel`, que cai
+     * aqui de novo. Foi o que aconteceu ao escrever esta guarda, e o navegador
+     * terminou em ERR_TOO_MANY_REDIRECTS — uma tela de erro que não explica
+     * nada.
+     *
+     * A rota apaga o cookie antes de devolver à entrada. Sem cookie, o proxy
+     * deixa a tela de login aparecer, e ela diz o que houve.
+     */
+    redirect('/auth/encerrar')
+  }
   return ctx
 }
 

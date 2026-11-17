@@ -7,9 +7,9 @@ export const metadata: Metadata = { title: 'Entrar' }
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ proxima?: string }>
+  searchParams: Promise<{ proxima?: string; motivo?: string }>
 }) {
-  const { proxima } = await searchParams
+  const { proxima, motivo } = await searchParams
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-surface-2)] px-4 py-12">
@@ -23,6 +23,24 @@ export default async function LoginPage({
             Entre com suas credenciais para continuar.
           </p>
         </div>
+
+        {/*
+          * Por que a pessoa foi parar aqui.
+          *
+          * Quem é desativado no meio do trabalho é devolvido para esta tela por
+          * `/auth/encerrar`, que apaga o cookie. Sem esta explicação, o que ela
+          * veria é um formulário em branco no lugar do que estava fazendo — e
+          * concluiria que o sistema caiu.
+          */}
+        {motivo === 'inativa' && (
+          <div
+            role="status"
+            className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-warn-soft)] px-4 py-3 text-sm text-[var(--color-warn-ink)]"
+          >
+            A sua sessão foi encerrada porque esta conta está desativada. Procure o administrador
+            da sua empresa para reativá-la.
+          </div>
+        )}
 
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
           <LoginForm proxima={proxima} />

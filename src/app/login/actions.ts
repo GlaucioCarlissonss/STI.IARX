@@ -34,6 +34,36 @@ export async function signIn(_prev: AuthFormState, formData: FormData): Promise<
     return { error: 'E-mail ou senha incorretos.' }
   }
 
+  /*
+   * CONTA DESATIVADA NÃO ENTRA — e até aqui entrava.
+   *
+   * A tela de usuários oferece inativar alguém desde que existe, e `is_active`
+   * era lido em `getSessionContext` e nunca aplicado: quem fosse desativado
+   * continuava entrando e usando o sistema normalmente. Medi antes de afirmar —
+   * desativei uma conta do exemplo e ela chegou ao painel.
+   *
+   * É a diferença entre "tirei o acesso dessa pessoa" e "mudei um campo que não
+   * faz nada", e quem desativa acredita na primeira.
+   *
+   * A mensagem aqui é específica, e isso é seguro: neste ponto a senha JÁ foi
+   * conferida. Quem chegou aqui provou ser o dono da conta, então dizer-lhe que
+   * ela está desativada não informa estranho nenhum — e a alternativa,
+   * "e-mail ou senha incorretos", mandaria a pessoa tentar de novo para sempre.
+   */
+  const { data: perfil } = await supabase
+    .from('profiles')
+    .select('is_active')
+    .eq('id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle<{ is_active: boolean }>()
+
+  if (perfil && !perfil.is_active) {
+    await supabase.auth.signOut()
+    return {
+      error:
+        'Esta conta está desativada. Procure o administrador da sua empresa para reativá-la.',
+    }
+  }
+
   // Só aceitamos caminho relativo iniciado por "/" e sem "//": um destino como
   // "//site-malicioso.com" seria tratado pelo navegador como URL absoluta,
   // transformando o login em um redirecionador aberto.

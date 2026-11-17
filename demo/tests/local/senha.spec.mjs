@@ -70,7 +70,19 @@ await p.click('button[type="submit"]')
 await p.waitForTimeout(2500)
 
 const respostaComConta = (await p.locator('body').innerText()).replace(/\s+/g, ' ').trim()
-ok(/enviamos|verifique|e-mail/i.test(respostaComConta), 'a tela confirma o envio')
+/*
+ * A frase EXATA da confirmação, e não um `/e-mail/i` genérico.
+ *
+ * A primeira versão desta asserção procurava `/enviamos|verifique|e-mail/i` —
+ * e o rótulo "E-mail" do próprio formulário faz isso casar SEMPRE. Ela passou
+ * verde enquanto a ação devolvia erro de configuração e nada era enviado, e o
+ * defeito só apareceu duas asserções adiante. Asserção que não consegue falhar
+ * é pior que asserção ausente: ela dá garantia onde não há nenhuma.
+ */
+ok(
+  /link de redefini[çc][ãa]o j[áa] est[áa] a caminho/i.test(respostaComConta),
+  'a tela confirma o envio com a frase da confirmação, e não com o rótulo do campo',
+)
 ok(
   psql(`select count(*) from public.email_outbox where kind='password_reset'`) === '1',
   'e o e-mail entra na caixa de saída, que já drena no agendador',

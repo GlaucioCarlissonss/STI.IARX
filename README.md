@@ -239,7 +239,7 @@ npm run build && npx next start -p 3177 &
 node demo/tests/local/telas.spec.mjs      # 47 telas autenticadas, uma a uma
 node demo/tests/local/aprovacao.spec.mjs  # o fluxo de aprovação com três pessoas
 node demo/tests/local/menu.spec.mjs       # o menu que abre e fecha, e lembra
-# … e as outras quinze em demo/tests/local/
+# … e as outras dezesseis em demo/tests/local/
 ```
 
 > **`playwright` não está no `package.json`.** As suítes o importam, e ele vem do
@@ -255,7 +255,7 @@ o React **não hidrata** — e o sintoma não é um erro, é um conjunto de asse
 falhando de um jeito convincente. O que é nativo do HTML continua funcionando
 (`<details>` abre ao clique), o que depende de JavaScript não (o irmão não
 fecha, a escolha não sobrevive ao recarregar). Parece defeito do produto, e não
-é. Rodando contra `next start`, as dezoito suítes passam.
+é. Rodando contra `next start`, as dezenove suítes passam.
 
 `aplicacao.spec.mjs` cobre só as rotas públicas: `src/proxy.ts` guarda toda
 rota, e sem sessão não há como exercitar as telas internas — é para isso que
@@ -321,6 +321,14 @@ Cada uma tem justificativa e alternativas rejeitadas em
 
 - **O banco é a fronteira de segurança.** RLS em 100% das tabelas, com teste que
   falha se alguém criar uma tabela sem policy. A aplicação nunca é a única guarda.
+- **Conta desativada não entra, e perde a sessão que já tinha.** `is_active`
+  existia desde o começo, era lido e **nunca aplicado**: quem fosse desativado
+  continuava entrando e trabalhando. A tela de usuários oferecia inativar e isso
+  não impedia nada — a diferença entre "tirei o acesso" e "mudei um campo". São
+  duas trancas: o login recusa com mensagem útil, e a sessão recusa para quem já
+  estava dentro, por `/auth/encerrar`, que apaga o cookie antes de devolver à
+  entrada. Sem apagar, o cookie válido fazia o proxy insistir que havia sessão —
+  e o resultado era um laço de redirecionamento.
 - **Tela pública tem freio por origem, e ele lê o ÚLTIMO `X-Forwarded-For`.**
   O cabeçalho é uma lista que cada proxy *acrescenta*: se o visitante mandá-lo
   preenchido, o primeiro item é o que **ele** escreveu. Pegar o primeiro — o
@@ -357,7 +365,7 @@ Verificado na última entrega: build de produção limpo, `tsc` sem apontamentos
 aplicação, em navegador — incluindo a aritmética de horário útil conferida
 contra 8 cenários (almoço, fim de semana, feriado, fora de expediente).
 
-As **18 suítes de navegador autenticadas** passam duas vezes seguidas no mesmo
+As **19 suítes de navegador autenticadas** passam duas vezes seguidas no mesmo
 banco. A segunda passada não é zelo: é a que pega suíte que consome estado e só
 funciona uma vez — foi assim que apareceu o defeito de refaturamento corrigido
 na migração 0056, em que cancelar uma fatura e refazer a competência era
