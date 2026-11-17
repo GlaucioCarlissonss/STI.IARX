@@ -1,8 +1,10 @@
 'use server'
 
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { modoLocal } from '@/lib/db/modo'
+import { ipDoCliente, origemHasheada, permitirRequisicao } from '@/lib/limite'
 import { recoveryEmailSchema } from '@/lib/schemas/auth'
 import type { AuthFormState } from '@/app/login/actions'
 
@@ -64,6 +66,33 @@ export async function requestPasswordReset(
   if (modoLocal()) {
     try {
       const admin = createAdminClient()
+
+      /*
+       * O FREIO POR ORIGEM, antes de emitir (migração 0059).
+       *
+       * A espera de 60 segundos da 0057 é por CONTA: protege a caixa de uma
+       * pessoa de receber trinta links. Não protege de quem varre uma lista de
+       * e-mails vazados — ali cada endereço com conta recebe uma mensagem
+       * legítima, nenhuma conta passa do limite dela, e o que sobra é o nosso
+       * domínio denunciado como remetente de spam. Isso derrubaria TODO o
+       * e-mail do sistema, inclusive o aviso de SLA.
+       *
+       * A recusa é SILENCIOSA — `sent: true`, como todo o resto desta ação.
+       * Responder "muitas tentativas" confirmaria que o limite existe e qual é,
+       * e daria a quem está varrendo a informação de quando voltar.
+       */
+      const cabecalhos = await headers()
+      const origem = origemHasheada(
+        ipDoCliente({
+          xForwardedFor: cabecalhos.get('x-forwarded-for'),
+          xRealIp: cabecalhos.get('x-real-ip'),
+        }),
+      )
+
+      if (!(await permitirRequisicao(admin, 'password_reset', origem))) {
+        return { sent: true }
+      }
+
       const { error } = await admin.schema('app').rpc('emitir_token_de_acesso', {
         p_email: parsed.data.email,
         p_purpose: 'password_reset',

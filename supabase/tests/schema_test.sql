@@ -9999,5 +9999,94 @@ begin
 end
 $$;
 
+-- =============================================================================
+-- 57. Limite por origem nas telas públicas (0059)
+-- =============================================================================
+-- A espera da 0057 é por CONTA: protege a caixa de uma pessoa. Não protege de
+-- quem varre uma lista de e-mails vazados — ali cada endereço com conta recebe
+-- uma mensagem legítima, nenhuma conta passa do limite dela, e o que sobra é o
+-- nosso domínio denunciado como remetente de spam, o que derruba TODO o e-mail
+-- do sistema.
+--
+-- Este é o freio que faltava, e ele precisa existir ANTES da Fase 2, que abre
+-- cadastro público. Mas não é só preparação: `/recuperar-senha` já está no ar.
+
+\echo ''
+\echo '=== 57. Limite por origem nas telas públicas (0059) ==='
+
+do $$
+declare
+  v_passou int := 0; v_barrado int := 0;
+begin
+  delete from public.request_throttle;
+
+  -- 1. Conta e barra no limite.
+  for i in 1..8 loop
+    if app.permitir_requisicao('teste_0059', 'origem-A', 5, 3600)
+      then v_passou := v_passou + 1;
+      else v_barrado := v_barrado + 1;
+    end if;
+  end loop;
+  perform app.assert(v_passou = 5 and v_barrado = 3,
+    format('oito tentativas com limite cinco: %s passam, %s barradas', v_passou, v_barrado));
+
+  -- 2. Cada origem tem contador próprio — senão o primeiro visitante trancaria
+  --    o sistema para todos os outros.
+  perform app.assert(app.permitir_requisicao('teste_0059', 'origem-B', 5, 3600),
+    'outra origem tem contador próprio');
+
+  -- 3. E cada balde também: estourar a redefinição de senha não pode fechar o
+  --    cadastro, que é outra tela e outro risco.
+  perform app.assert(app.permitir_requisicao('outro_0059', 'origem-A', 5, 3600),
+    'outro balde tem contador próprio');
+
+  -- 4. Passada a janela, recomeça do zero.
+  update public.request_throttle
+     set janela_inicio = now() - interval '2 hours'
+   where balde = 'teste_0059' and origem = 'origem-A';
+  perform app.assert(app.permitir_requisicao('teste_0059', 'origem-A', 5, 3600),
+    'passada a janela, a origem volta a ser atendida');
+  perform app.assert(
+    (select contagem from public.request_throttle
+      where balde = 'teste_0059' and origem = 'origem-A') = 1,
+    'e o contador recomeça do um, não continua de onde parou');
+
+  -- 5. SEM ORIGEM, deixa passar.
+  --    Bloquear seria mais seguro no papel e trancaria todo mundo para fora no
+  --    dia em que o proxy parasse de mandar o cabeçalho. O limite por conta da
+  --    0057 continua valendo nesse caso.
+  perform app.assert(app.permitir_requisicao('teste_0059', null, 1, 3600),
+    'sem origem identificável, não bloqueia — falha de proxy não tranca o sistema');
+
+  -- 6. O IP NÃO é guardado: o que entra é hash, calculado na aplicação.
+  perform app.assert(
+    not exists (select 1 from public.request_throttle where origem ~ '^[0-9]{1,3}\.[0-9]{1,3}\.'),
+    'nenhuma linha guarda algo com cara de IP — o banco nunca vê o endereço');
+
+  -- 7. A purga leva o contador vencido.
+  update public.request_throttle set janela_inicio = now() - interval '2 days';
+  perform app.job_purge_throttle();
+  perform app.assert((select count(*) from public.request_throttle) = 0,
+    'a purga leva o contador de janela vencida');
+end
+$$;
+
+-- E o acesso: ninguém lê pela aplicação, pela mesma razão da 0057.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+declare v_n int;
+begin
+  begin
+    select count(*) into v_n from public.request_throttle;
+    perform app.assert(false, 'authenticated não deveria ler request_throttle');
+  exception when insufficient_privilege then
+    perform app.assert(true, 'nem o administrador lê os contadores de limite');
+  end;
+end
+$$;
+reset role;
+reset request.jwt.claims;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

@@ -166,7 +166,84 @@ await p.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 30000 }).
 ok(!p.url().includes('/login'), `entra com a senha nova (${new URL(p.url()).pathname})`)
 
 // ---------------------------------------------------------------------------
-console.log('\n=== 7. Devolver o exemplo ao estado em que estava ===')
+console.log('\n=== 7. O limite por origem, e o cabeçalho forjado (0059) ===')
+// ---------------------------------------------------------------------------
+/*
+ * A espera da 0057 é por CONTA. Esta parte prova o freio que faltava: por
+ * ORIGEM — e, principalmente, que ele não se contorna.
+ *
+ * As requisições acima não têm `X-Forwarded-For`, então a origem é nula e nada
+ * é limitado; aqui o cabeçalho é posto de propósito, imitando o Caddy.
+ */
+psql(`delete from public.request_throttle`)
+psql(`delete from public.email_outbox where kind = 'password_reset'`)
+psql(`delete from public.auth_tokens`)
+
+const CONTAS = [
+  'admin@iaroffice.com.br',
+  'gestor@iaroffice.com.br',
+  'ana.atendente@iaroffice.com.br',
+  'bruno.atendente@iaroffice.com.br',
+  'diego.financeiro@iaroffice.com.br',
+  'elis.aprovadora@iaroffice.com.br',
+  'carla.solicitante@meridiano.com.br',
+]
+
+/* O Caddy ACRESCENTA ao cabeçalho: o que o cliente mandou vem primeiro, o que
+   ele próprio viu vem por último. `forjado` imita um visitante que tenta
+   escolher a própria chave de limite. */
+async function pedirDe(ipReal, email, forjado = null) {
+  const c = await b.newContext({
+    extraHTTPHeaders: { 'x-forwarded-for': forjado ? `${forjado}, ${ipReal}` : ipReal },
+  })
+  const pg = await c.newPage()
+  await pg.goto(`${BASE}/recuperar-senha`, { waitUntil: 'networkidle' })
+  await pg.fill('input[name="email"]', email)
+  await pg.click('button[type="submit"]')
+  await pg.waitForTimeout(800)
+  await c.close()
+}
+
+const naFila = () =>
+  Number(psql(`select count(*) from public.email_outbox where kind='password_reset'`))
+
+for (const conta of CONTAS) await pedirDe('203.0.113.7', conta)
+ok(
+  naFila() === 5,
+  `sete contas da mesma origem, cinco e-mails: o limite conta por ORIGEM (saíram ${naFila()})`,
+)
+
+psql(`delete from public.email_outbox where kind='password_reset'`)
+psql(`delete from public.auth_tokens`)
+await pedirDe('198.51.100.22', CONTAS[0])
+ok(naFila() === 1, 'visitante de outra origem não herda o bloqueio')
+
+/*
+ * A ASSERÇÃO QUE JUSTIFICA O MÓDULO `src/lib/limite.ts`.
+ *
+ * `X-Forwarded-For` é lista, e pegar o PRIMEIRO item — o que quase toda
+ * biblioteca faz por padrão, e o que parece certo — entregaria a chave do
+ * limite a quem está sendo limitado: bastaria um valor novo por requisição.
+ * A origem real aqui já estourou o limite acima.
+ */
+psql(`delete from public.email_outbox where kind='password_reset'`)
+psql(`delete from public.auth_tokens`)
+for (let i = 0; i < 6; i++) await pedirDe('203.0.113.7', CONTAS[i], `9.9.9.${i}`)
+ok(
+  naFila() === 0,
+  `forjar o X-Forwarded-For NÃO contorna o limite (saíram ${naFila()}, esperado 0)`,
+)
+
+ok(
+  psql(`select count(*) from public.request_throttle where origem ~ '^[0-9]{1,3}[.]'`) === '0',
+  'e nenhum contador guarda algo com cara de IP — o banco nunca vê o endereço',
+)
+
+psql(`delete from public.request_throttle`)
+psql(`delete from public.email_outbox where kind = 'password_reset'`)
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 8. Devolver o exemplo ao estado em que estava ===')
 // ---------------------------------------------------------------------------
 /*
  * A conta do seed volta à senha de desenvolvimento. Sem isto, as outras suítes

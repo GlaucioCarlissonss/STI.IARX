@@ -217,8 +217,8 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 779 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
-npm run db:validate   # migrações + seed + 1143 asserções em PostgreSQL real
+npm test              # 796 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
+npm run db:validate   # migrações + seed + 1152 asserções em PostgreSQL real
 ```
 
 Mais as suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -306,7 +306,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 58 migrações
+  migrations/         # 59 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -321,6 +321,13 @@ Cada uma tem justificativa e alternativas rejeitadas em
 
 - **O banco é a fronteira de segurança.** RLS em 100% das tabelas, com teste que
   falha se alguém criar uma tabela sem policy. A aplicação nunca é a única guarda.
+- **Tela pública tem freio por origem, e ele lê o ÚLTIMO `X-Forwarded-For`.**
+  O cabeçalho é uma lista que cada proxy *acrescenta*: se o visitante mandá-lo
+  preenchido, o primeiro item é o que **ele** escreveu. Pegar o primeiro — o
+  padrão de quase toda biblioteca, e o que parece certo — entregaria a chave do
+  limite a quem está sendo limitado, e bastaria um valor novo por requisição.
+  Com um proxy confiável, o real é o último. O IP nunca chega ao banco: o que
+  se grava é hash com segredo. Ver `src/lib/limite.ts` e a migração `0059`.
 - **Migração que acrescenta permissão precisa reaplicar a regra dos perfis.** As
   concessões dos perfis de sistema são uma regra sobre o catálogo, não uma
   lista — mas ela só rodava na criação do tenant. Numa empresa que já existe, a
@@ -345,8 +352,8 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado na última entrega: build de produção limpo, `tsc` sem apontamentos,
-`eslint` com 4 avisos de variável não usada em teste, **779 testes unitários** e
-**1143 asserções de banco** passando, mais 51 asserções no protótipo e 61 na
+`eslint` com 4 avisos de variável não usada em teste, **796 testes unitários** e
+**1152 asserções de banco** passando, mais 51 asserções no protótipo e 61 na
 aplicação, em navegador — incluindo a aritmética de horário útil conferida
 contra 8 cenários (almoço, fim de semana, feriado, fora de expediente).
 
@@ -452,7 +459,7 @@ compilado e as dependências que ele carrega em tempo de execução.
 | [01 — Requisitos](docs/01-requisitos.md) | Requisitos rastreáveis, matriz de permissões, lacunas e decisões por padrão |
 | [02 — Benchmarking](docs/02-benchmarking.md) | Freshservice, Jira SM, Zendesk, GLPI, ManageEngine — padrões adotados e 10 antipatterns evitados |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Visão geral e 12 ADRs com alternativas rejeitadas |
-| [04 — Modelo de dados](docs/04-modelo-dados.md) | 120 tabelas, funções, triggers, views e estratégia de índices |
+| [04 — Modelo de dados](docs/04-modelo-dados.md) | 121 tabelas, funções, triggers, views e estratégia de índices |
 | [05 — Bitrix24](docs/05-integracao-bitrix24.md) | Estudo da API, mapeamento, configuração passo a passo e limitações |
 | [06 — Lacunas e Roadmap](docs/06-lacunas-e-roadmap.md) | Especificação dos 11 módulos pendentes, cronograma em lotes e 14 lacunas globais |
 | [07 — Financeiro e Permissões](docs/07-financeiro-e-permissoes.md) | Permissões granulares, financeiro (contas a pagar/receber, fluxo de caixa) e controle de despesas: 9 módulos no template, matriz de permissões e 15 lacunas |
