@@ -76,6 +76,19 @@ falar com o banco errado em silêncio.
 | **Visão de resultado** | Custo, prazo e entrega do cliente numa tela só, sob o mesmo recorte — porque o gestor de TI não responde por três módulos, responde por um resultado. **A soma de cada detalhamento é conferida contra o indicador na própria tela**, e a divergência aparece ali, não numa reunião. Vindo do GSTI.IARX |
 | **Preferências do ambiente** | Os onze parâmetros que governam quando o sistema age sozinho — prazos de SLA, fechamento automático, cota de anexo, alertas do agente, aviso de contrato e de link. Estavam todos só como coluna no banco: mudá-los exigia um `update` à mão, e por isso ninguém mudou |
 
+### Entrada pública, em `sti.iarx.com.br`
+
+O sistema mora no subdomínio; o apex é o site institucional, com um botão
+**Sistema** apontando para cá. Ver [docs/24](docs/24-producao-na-vps.md).
+
+| Módulo | Situação |
+|---|---|
+| **Criar conta** | Cadastro público cria a empresa **em avaliação** (90 dias, parâmetro da plataforma) e o primeiro administrador. A conta nasce inativa: existir não é poder entrar |
+| **Confirmar e-mail** | Link de uso único, válido por 48 h. Confirmar é ativar — não há um estado a mais dizendo a mesma coisa que `is_active` |
+| **Redefinir senha** | Token guardado como hash, e-mail pela caixa de saída. **No modo local isso não existia**: a tela confirmava o envio e nada saía |
+| **O que a tela não conta** | E-mail novo e e-mail que já tem conta recebem a **mesma** resposta. Quem é dono do endereço descobre pelo e-mail — único canal onde a diferença pode aparecer sem informar estranho nenhum. E esse aviso não leva token: link de senha para quem não pediu seria a arma que ele deveria impedir |
+| **Freio por origem** | Cinco redefinições e três cadastros por hora, por origem. O IP não é guardado — o banco só vê um hash com segredo |
+
 ### Locação de equipamentos
 
 Absorvida do IARX/LTI em seis fases ([docs/23](docs/23-unificacao-lti-gsti.md)).
@@ -218,7 +231,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 796 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
-npm run db:validate   # migrações + seed + 1152 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 1173 asserções em PostgreSQL real
 ```
 
 Mais as suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -239,7 +252,7 @@ npm run build && npx next start -p 3177 &
 node demo/tests/local/telas.spec.mjs      # 47 telas autenticadas, uma a uma
 node demo/tests/local/aprovacao.spec.mjs  # o fluxo de aprovação com três pessoas
 node demo/tests/local/menu.spec.mjs       # o menu que abre e fecha, e lembra
-# … e as outras dezesseis em demo/tests/local/
+# … e as outras dezessete em demo/tests/local/
 ```
 
 > **`playwright` não está no `package.json`.** As suítes o importam, e ele vem do
@@ -255,7 +268,7 @@ o React **não hidrata** — e o sintoma não é um erro, é um conjunto de asse
 falhando de um jeito convincente. O que é nativo do HTML continua funcionando
 (`<details>` abre ao clique), o que depende de JavaScript não (o irmão não
 fecha, a escolha não sobrevive ao recarregar). Parece defeito do produto, e não
-é. Rodando contra `next start`, as dezenove suítes passam.
+é. Rodando contra `next start`, as vinte suítes passam.
 
 `aplicacao.spec.mjs` cobre só as rotas públicas: `src/proxy.ts` guarda toda
 rota, e sem sessão não há como exercitar as telas internas — é para isso que
@@ -306,7 +319,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 59 migrações
+  migrations/         # 60 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -361,11 +374,11 @@ Cada uma tem justificativa e alternativas rejeitadas em
 
 Verificado na última entrega: build de produção limpo, `tsc` sem apontamentos,
 `eslint` com 4 avisos de variável não usada em teste, **796 testes unitários** e
-**1152 asserções de banco** passando, mais 51 asserções no protótipo e 61 na
+**1173 asserções de banco** passando, mais 51 asserções no protótipo e 61 na
 aplicação, em navegador — incluindo a aritmética de horário útil conferida
 contra 8 cenários (almoço, fim de semana, feriado, fora de expediente).
 
-As **19 suítes de navegador autenticadas** passam duas vezes seguidas no mesmo
+As **20 suítes de navegador autenticadas** passam duas vezes seguidas no mesmo
 banco. A segunda passada não é zelo: é a que pega suíte que consome estado e só
 funciona uma vez — foi assim que apareceu o defeito de refaturamento corrigido
 na migração 0056, em que cancelar uma fatura e refazer a competência era
@@ -467,7 +480,7 @@ compilado e as dependências que ele carrega em tempo de execução.
 | [01 — Requisitos](docs/01-requisitos.md) | Requisitos rastreáveis, matriz de permissões, lacunas e decisões por padrão |
 | [02 — Benchmarking](docs/02-benchmarking.md) | Freshservice, Jira SM, Zendesk, GLPI, ManageEngine — padrões adotados e 10 antipatterns evitados |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Visão geral e 12 ADRs com alternativas rejeitadas |
-| [04 — Modelo de dados](docs/04-modelo-dados.md) | 121 tabelas, funções, triggers, views e estratégia de índices |
+| [04 — Modelo de dados](docs/04-modelo-dados.md) | 122 tabelas, funções, triggers, views e estratégia de índices |
 | [05 — Bitrix24](docs/05-integracao-bitrix24.md) | Estudo da API, mapeamento, configuração passo a passo e limitações |
 | [06 — Lacunas e Roadmap](docs/06-lacunas-e-roadmap.md) | Especificação dos 11 módulos pendentes, cronograma em lotes e 14 lacunas globais |
 | [07 — Financeiro e Permissões](docs/07-financeiro-e-permissoes.md) | Permissões granulares, financeiro (contas a pagar/receber, fluxo de caixa) e controle de despesas: 9 módulos no template, matriz de permissões e 15 lacunas |

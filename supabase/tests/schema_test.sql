@@ -10088,5 +10088,135 @@ $$;
 reset role;
 reset request.jwt.claims;
 
+-- =============================================================================
+-- 58. Cadastro público: avaliação e confirmação (0060)
+-- =============================================================================
+-- A primeira porta que escreve no banco sem ninguém autenticado. O que ela faz
+-- de errado é feito por estranhos, em escala, sem ninguém olhando — e por isso
+-- ela só veio depois do freio por origem (0059), do token de uso único (0057) e
+-- de `is_active` passar a valer de verdade.
+
+\echo ''
+\echo '=== 58. Cadastro público: avaliação e confirmação (0060) ==='
+
+do $$
+declare
+  v_u uuid; v_tn uuid; v_t text; v_email text := 'teste0060@exemplo.invalido';
+begin
+  delete from public.email_outbox where to_email = v_email;
+
+  -- 1. O prazo é PARÂMETRO, com padrão no código para o caso de a linha sumir.
+  perform app.assert(app.parametro_numerico('trial_days', 0) = 90,
+    'o prazo de avaliação vem de platform_settings, e são 90 dias');
+  perform app.assert(app.parametro_numerico('nao_existe_essa_chave', 7) = 7,
+    'parâmetro ausente cai no padrão — apagar a linha não derruba o cadastro');
+
+  -- 2. A empresa nasce em avaliação, com prazo, e a conta nasce INATIVA.
+  v_u := app.criar_empresa_em_avaliacao(v_email, 'Fulana', 'Padaria 0060', 'senha-longa-de-teste');
+  select tenant_id into v_tn from public.profiles where id = v_u;
+
+  perform app.assert(
+    (select status from public.tenants where id = v_tn) = 'trial',
+    'a empresa nasce em avaliação');
+  perform app.assert(
+    (select trial_ends_on from public.tenants where id = v_tn) = current_date + 90,
+    'com o prazo que o parâmetro diz');
+  perform app.assert(
+    (select not is_active from public.profiles where id = v_u),
+    'e a conta nasce INATIVA: existir não é poder entrar');
+  perform app.assert(
+    (select role from public.profiles where id = v_u) = 'admin',
+    'quem se cadastra é administrador da própria empresa');
+
+  -- 3. A empresa já nasce com os perfis de sistema e as concessões — senão o
+  --    primeiro administrador entraria num menu vazio.
+  perform app.assert(
+    (select count(*) from public.access_profiles where tenant_id = v_tn) >= 8,
+    'a empresa nova já tem os perfis de sistema');
+  perform app.assert(
+    (select count(*) from public.permission_grants where tenant_id = v_tn) > 100,
+    'e as concessões, pela regra do catálogo');
+
+  -- 4. AVALIAÇÃO SEM FIM é produto de graça para sempre. O banco recusa.
+  begin
+    update public.tenants set trial_ends_on = null where id = v_tn;
+    perform app.assert(false, 'avaliação sem prazo deveria ser recusada');
+  exception when check_violation then
+    perform app.assert(true, 'empresa em avaliação sem prazo é recusada pelo banco');
+  end;
+
+  -- 5. Confirmação: token emitido para conta INATIVA (o contrário da
+  --    redefinição de senha, que o recusa).
+  v_t := app.emitir_token_de_acesso(v_email, 'email_confirm');
+  perform app.assert(v_t is not null, 'conta não confirmada RECEBE token de confirmação');
+  perform app.assert(
+    app.emitir_token_de_acesso(v_email, 'password_reset') is null,
+    'e NÃO recebe token de redefinição — o mesmo campo, finalidades opostas');
+
+  perform app.assert(public.conta_aguarda_confirmacao(v_u),
+    'o sistema sabe distinguir "não confirmou" de "foi desativada"');
+
+  perform app.assert(public.confirmar_email_com_token(v_t), 'o link confirma');
+  perform app.assert((select is_active from public.profiles where id = v_u),
+    'e a conta fica ativa');
+  perform app.assert(not public.confirmar_email_com_token(v_t),
+    'o mesmo link não confirma duas vezes');
+  perform app.assert(not public.conta_aguarda_confirmacao(v_u),
+    'e a conta deixa de estar aguardando confirmação');
+
+  -- 6. Confirmada, a conta volta a poder redefinir senha.
+  update public.auth_tokens set created_at = now() - interval '5 minutes' where user_id = v_u;
+  perform app.assert(app.emitir_token_de_acesso(v_email, 'password_reset') is not null,
+    'conta confirmada volta a poder redefinir a senha');
+
+  -- 7. E-mail repetido é recusado pelo banco, que é a última tranca depois da
+  --    verificação da aplicação.
+  begin
+    perform app.criar_empresa_em_avaliacao(v_email, 'X', 'Y', 'senha-longa-de-teste');
+    perform app.assert(false, 'e-mail repetido deveria ser recusado');
+  exception when unique_violation then
+    perform app.assert(true, 'e-mail já cadastrado é recusado pelo banco');
+  end;
+
+  -- 8. O aviso de "você já tem conta" NÃO leva token.
+  --    Mandar caminho de troca de senha a quem não pediu transformaria esta
+  --    mensagem na ferramenta que ela deveria impedir.
+  perform app.avisar_conta_existente(v_email);
+  perform app.assert(
+    (select body_text !~ '[a-f0-9]{64}' from public.email_outbox
+      where kind = 'signup_existing' and to_email = v_email),
+    'o aviso de conta existente não carrega token nenhum');
+
+  -- 9. O parâmetro fecha o cadastro sem derrubar o resto.
+  update public.platform_settings set valor = 'false' where chave = 'signup_aberto';
+  begin
+    perform app.criar_empresa_em_avaliacao('outro0060@exemplo.invalido', 'X', 'Y', 'senha-longa-de-teste');
+    perform app.assert(false, 'com o cadastro fechado, criar deveria ser recusado');
+  exception when check_violation then
+    perform app.assert(true, 'o parâmetro fecha o cadastro público');
+  end;
+  update public.platform_settings set valor = 'true' where chave = 'signup_aberto';
+
+  -- Limpeza.
+  delete from public.email_outbox where to_email = v_email;
+  delete from public.tenants where id = v_tn;
+  delete from auth.users where id = v_u;
+end
+$$;
+
+-- E os parâmetros da plataforma não são de qualquer administrador: quem
+-- administra UMA empresa não decide por quanto tempo as OUTRAS avaliam.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert(
+    (select count(*) from public.platform_settings) = 0,
+    'administrador de empresa não lê os parâmetros da plataforma');
+end
+$$;
+reset role;
+reset request.jwt.claims;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

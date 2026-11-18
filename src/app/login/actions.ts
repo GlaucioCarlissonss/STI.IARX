@@ -50,17 +50,35 @@ export async function signIn(_prev: AuthFormState, formData: FormData): Promise<
    * ela está desativada não informa estranho nenhum — e a alternativa,
    * "e-mail ou senha incorretos", mandaria a pessoa tentar de novo para sempre.
    */
+  const { data: { user: usuario } } = await supabase.auth.getUser()
+
   const { data: perfil } = await supabase
     .from('profiles')
     .select('is_active')
-    .eq('id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .eq('id', usuario?.id ?? '')
     .maybeSingle<{ is_active: boolean }>()
 
   if (perfil && !perfil.is_active) {
+    /*
+     * Dois motivos, o mesmo campo, conselhos OPOSTOS.
+     *
+     * Quem acabou de se cadastrar e ainda não clicou no link precisa ouvir
+     * "abra o seu e-mail". Mandá-lo procurar o administrador o tranca no
+     * primeiro minuto de uso, atrás de um administrador que é ele mesmo.
+     *
+     * A diferença está nos fatos — conta não confirmada tem token de
+     * confirmação vivo —, e não num campo novo que diria o mesmo.
+     */
+    const { data: aguardando } = await supabase.rpc('conta_aguarda_confirmacao', {
+      p_user: usuario?.id ?? '',
+    })
+
     await supabase.auth.signOut()
+
     return {
-      error:
-        'Esta conta está desativada. Procure o administrador da sua empresa para reativá-la.',
+      error: aguardando
+        ? 'Confirme o seu e-mail para ativar a conta. O link foi enviado no cadastro e vale por 48 horas.'
+        : 'Esta conta está desativada. Procure o administrador da sua empresa para reativá-la.',
     }
   }
 

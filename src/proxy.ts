@@ -72,6 +72,11 @@ const PUBLIC_PREFIXES = [
    * nunca foi o proxy — é a sessão num, o token no outro.
    */
   '/nova-senha',
+  /* As duas portas da Fase 2. `/criar-conta` escreve no banco sem ninguém
+     autenticado — é a primeira que faz isso —, e por isso só entrou depois do
+     freio por origem (0059) e do token de uso único (0057). */
+  '/criar-conta',
+  '/confirmar-email',
   '/tv',
   '/avaliar',
   '/api/health',

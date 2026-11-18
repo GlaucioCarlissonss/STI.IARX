@@ -55,6 +55,13 @@ export default async function LoginPage({
           </Link>
         </p>
 
+        <p className="mt-2 text-center text-sm text-[var(--color-ink-2)]">
+          Ainda não tem conta?{' '}
+          <Link href="/criar-conta" className="font-medium text-[var(--color-brand-ink)] hover:underline">
+            Criar a conta da sua empresa
+          </Link>
+        </p>
+
         <p className="mt-6 text-center text-xs text-[var(--color-ink-3)]">
           Painéis de TV não usam esta tela — eles são acessados por token de exibição.
         </p>

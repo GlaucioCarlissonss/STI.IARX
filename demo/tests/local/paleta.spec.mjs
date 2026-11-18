@@ -51,10 +51,24 @@ async function entrar(email, viewport = { width: 1440, height: 900 }) {
  * verdade e a asserção seguinte reprova.
  */
 async function abrirPaleta(pagina) {
-  for (let tentativa = 0; tentativa < 2; tentativa++) {
+  /*
+   * Três tentativas e oito segundos cada, e não duas de três.
+   *
+   * A versão anterior falhava de vez em quando — sempre dentro da bateria
+   * completa, nunca sozinha. Não era corrida de hidratação: era o servidor
+   * atendendo vinte suítes seguidas e levando mais de três segundos para
+   * responder. Com a suíte isolada passando quatro vezes em quatro, o veredito
+   * "defeito da paleta" estaria errado.
+   *
+   * Prazo curto num teste de interface não torna o teste mais rigoroso — torna
+   * o resultado dependente de quanto a máquina estava ocupada, e um verde que
+   * depende disso não significa nada. O rigor está na asserção seguinte, que
+   * reprova se a paleta não abrir de jeito nenhum.
+   */
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
     await pagina.keyboard.press('Control+k')
     try {
-      await pagina.waitForSelector('[data-testid="paleta"]', { timeout: 3000 })
+      await pagina.waitForSelector('[data-testid="paleta"]', { timeout: 8000 })
       return true
     } catch {
       await pagina.waitForTimeout(600)
