@@ -77,6 +77,9 @@ const PUBLIC_PREFIXES = [
      freio por origem (0059) e do token de uso único (0057). */
   '/criar-conta',
   '/confirmar-email',
+  /* O convite (0061) é público pelo mesmo motivo: quem o abre ainda não tem
+     conta — é o link que a cria. */
+  '/convite',
   '/tv',
   '/avaliar',
   '/api/health',

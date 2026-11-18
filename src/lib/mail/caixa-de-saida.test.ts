@@ -1,6 +1,9 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { Provedor } from './provedor'
 import {
+  CAMINHOS_DE_EMAIL,
   completarEnderecos,
   drenarCaixaDeSaida,
   MAXIMO_DE_TENTATIVAS,
@@ -111,6 +114,46 @@ describe('completarEnderecos', () => {
   it('não mexe em endereço que já está completo', () => {
     const texto = 'veja https://outro.com/avaliar/x'
     expect(completarEnderecos(texto, 'https://sti.exemplo.com')).toBe(texto)
+  })
+
+  /*
+   * O TESTE QUE EXISTE PORQUE ISTO JÁ FALHOU DUAS VEZES.
+   *
+   * O caminho é escrito pela migração e completado aqui, e nada liga as duas
+   * pontas. A 0057 acrescentou `/nova-senha/` e `/confirmar-email/`; a 0061
+   * acrescentou `/convite/` e esqueceu desta lista — o e-mail saía com o
+   * caminho relativo, que num cliente de e-mail não é link nenhum. Erro que
+   * não quebra nada e só aparece na caixa de quem recebeu.
+   *
+   * Então o teste não confere uma lista escrita à mão: ele VARRE as migrações
+   * atrás de caminhos relativos dentro de corpo de e-mail e exige que cada um
+   * esteja em `CAMINHOS_DE_EMAIL`. A 0062 que esquecer fica vermelha aqui.
+   */
+  it('conhece todo caminho que as migrações escrevem em e-mail', () => {
+    const dir = join(process.cwd(), 'supabase', 'migrations')
+    const achados = new Set<string>()
+
+    for (const arquivo of readdirSync(dir).filter((f) => f.endsWith('.sql'))) {
+      const sql = readFileSync(join(dir, arquivo), 'utf8')
+
+      /* Só o que está perto de uma inserção na caixa de saída: o resto do SQL
+         é cheio de barras que não são caminho de e-mail. */
+      for (const trecho of sql.split(/insert into public\.email_outbox/i).slice(1)) {
+        const corpo = trecho.slice(0, 2000)
+        for (const m of corpo.matchAll(/(?:^|\\n|\s|')\/([a-z][a-z0-9-]{2,})\//g)) {
+          achados.add(m[1])
+        }
+      }
+    }
+
+    // Se a varredura não achar nada, ela parou de varrer — e um teste que não
+    // olha nada passa para sempre.
+    expect(achados.size).toBeGreaterThan(0)
+
+    const faltando = [...achados].filter(
+      (c) => !(CAMINHOS_DE_EMAIL as readonly string[]).includes(c),
+    )
+    expect(faltando, `caminhos em e-mail que completarEnderecos não conhece`).toEqual([])
   })
 })
 

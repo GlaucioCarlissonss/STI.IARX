@@ -343,6 +343,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
          falta de provedor, ou o agendador parado — e as telas se apontam. */
       { href: '/auditoria/avisos', label: 'Avisos enviados', permission: 'auditoria.avisos.ver' },
       { href: '/perfis', label: 'Perfis de acesso', permission: 'usuarios.perfis.ver' },
+      /* Ao lado de usuários e perfis: as três respondem "quem tem acesso a
+         quê". Convite é a porta por onde se entra nessa lista. */
+      { href: '/usuarios/convites', label: 'Convites', permission: 'usuarios.convites.ver' },
       { href: '/tv', label: 'Painéis de TV', permission: 'tv.tokens.ver' },
       /* O ciclo de planilha fica em Administração, e não dentro de cada
          cadastro: importar é operação rara e de escala, e espalhá-la por seis

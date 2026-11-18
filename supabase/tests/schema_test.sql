@@ -1179,7 +1179,7 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 258,
+  perform app.assert((select count(*) from public.permission_catalog) = 262,
     'catálogo de permissões tem as 256 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 258,
+  perform app.assert((select count(*) from public.permission_catalog) = 262,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -10217,6 +10217,246 @@ end
 $$;
 reset role;
 reset request.jwt.claims;
+
+-- -----------------------------------------------------------------------------
+-- 59. Convites: entrar numa empresa que já existe (0061)
+-- -----------------------------------------------------------------------------
+-- O outro caminho da fase 2. A 0060 cria empresa; esta põe gente numa que já
+-- tem dono — e por isso a pergunta central aqui não é "o fluxo funciona", é
+-- QUEM PODE ABRIR A PORTA.
+--
+-- Duas asserções carregam a seção:
+--
+--   * um `gestor` não convida para `admin`. Sem isso, auto-promoção fica a um
+--     passo: convide-se como administrador num endereço seu e escolha a senha.
+--     É a mesma regra que `trg_profiles_no_escalation` aplica na edição, e ela
+--     precisa valer também na porta por onde entram usuários novos.
+--
+--   * o token não existe em claro no banco. Quem lesse a tabela — por RLS
+--     furada, por dump, por engano — não montaria link nenhum.
+--
+-- E uma terceira, menos óbvia: ler o convite NÃO o gasta. A tela precisa dizer
+-- para qual empresa a pessoa está entrando antes de pedir senha, e se `ler`
+-- consumisse, abrir o link duas vezes queimaria o convite de quem não fez nada
+-- de errado.
+\echo '=== 59. Convites: entrar numa empresa que já existe (0061) ==='
+
+do $$
+declare
+  v_tenant uuid := 'a0000000-0000-4000-8000-000000000001';
+  v_admin  uuid := '22220000-0000-4000-8000-000000000001';
+  v_gestor uuid := '22220000-0000-4000-8000-000000000002';
+  v_email  text := 'convidada0061@exemplo.invalido';
+  v_token  text;
+  v_outro  text;
+  v_user   uuid;
+  v_row    record;
+begin
+  delete from public.invites;
+  delete from public.email_outbox where kind = 'invite';
+
+  -- 1. O prazo é parâmetro, e vale 7 dias.
+  perform app.assert(app.parametro_numerico('invite_days', 0) = 7,
+    'o prazo do convite vem de platform_settings, e são 7 dias');
+
+  -- 2. Convidar devolve o token, e o banco guarda só o hash.
+  v_token := app.convidar_para_empresa(v_tenant, v_email, 'atendente', v_admin);
+  perform app.assert(v_token is not null and length(v_token) = 64,
+    'convidar devolve um token de 32 bytes em hexadecimal');
+
+  perform app.assert(
+    (select count(*) from public.invites where token_hash = v_token) = 0,
+    'o token NÃO fica em claro na tabela');
+  perform app.assert(
+    (select count(*) from public.invites
+      where token_hash = encode(digest(v_token, 'sha256'), 'hex')) = 1,
+    'o que fica guardado é o hash dele');
+
+  -- 3. O prazo gravado é o do parâmetro, não um número escrito na função.
+  select * into v_row from public.invites where email = v_email;
+  perform app.assert(
+    v_row.expires_at between now() + interval '6 days' and now() + interval '7 days 1 minute',
+    'o convite vence conforme o parâmetro');
+  perform app.assert(v_row.role = 'atendente' and v_row.invited_by = v_admin,
+    'e guarda o papel e quem convidou');
+
+  -- 4. O e-mail entra na caixa de saída, com o link.
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where kind = 'invite' and to_email = v_email
+        and body_text like '%/convite/' || v_token || '%') = 1,
+    'o e-mail do convite sai com o link');
+
+  -- 5. Ler o convite NÃO o gasta.
+  perform app.assert(
+    (select empresa from public.convite_valido(v_token)) is not null,
+    'convite_valido devolve a empresa');
+  perform app.assert(
+    (select email from public.convite_valido(v_token)) = v_email,
+    'e o e-mail convidado, para a tela mostrar sem deixar trocar');
+  perform app.assert(
+    (select accepted_at from public.invites where email = v_email) is null,
+    'e ler NÃO marcou o convite como aceito');
+
+  -- 6. Convite vivo já existente: `null`, e segue existindo um só.
+  perform app.assert(
+    app.convidar_para_empresa(v_tenant, v_email, 'atendente', v_admin) is null,
+    'convidar de novo o mesmo endereço não emite segundo token');
+  perform app.assert(
+    (select count(*) from public.invites
+      where email = v_email and accepted_at is null and revoked_at is null) = 1,
+    'e continua havendo um convite vivo só');
+
+  -- 7. Endereço que JÁ TEM conta: `null`, e nada é criado.
+  perform app.assert(
+    app.convidar_para_empresa(v_tenant, 'admin@iaroffice.com.br', 'atendente', v_admin) is null,
+    'convidar quem já tem conta devolve null');
+  perform app.assert(
+    (select count(*) from public.invites where email = 'admin@iaroffice.com.br') = 0,
+    'e não deixa convite nenhum para trás');
+
+  -- 8. A TRAVA: gestor não convida para administrador.
+  begin
+    perform app.convidar_para_empresa(v_tenant, 'escalada0061@exemplo.invalido', 'admin', v_gestor);
+    perform app.assert(false, 'gestor NÃO deveria poder convidar como admin');
+  exception when insufficient_privilege then
+    perform app.assert(true, 'gestor é recusado ao convidar para um papel acima do seu');
+  end;
+  perform app.assert(
+    (select count(*) from public.invites where email = 'escalada0061@exemplo.invalido') = 0,
+    'e a tentativa recusada não deixa convite');
+
+  -- E o mesmo gestor convida, sim, para o próprio papel e abaixo dele: a trava
+  -- é sobre SUBIR, não sobre convidar.
+  v_outro := app.convidar_para_empresa(v_tenant, 'parg0061@exemplo.invalido', 'gestor', v_gestor);
+  perform app.assert(v_outro is not null, 'gestor convida para o próprio papel');
+  perform app.assert(
+    app.convidar_para_empresa(v_tenant, 'abaixo0061@exemplo.invalido', 'solicitante', v_gestor) is not null,
+    'e para abaixo dele');
+
+  -- 9. Aceitar cria conta ATIVA, no papel e na empresa do convite.
+  v_user := app.aceitar_convite(v_token, 'Convidada de Teste', 'senha-longa-de-teste');
+  perform app.assert(v_user is not null, 'aceitar o convite cria a conta');
+
+  select * into v_row from public.profiles where id = v_user;
+  perform app.assert(v_row.is_active, 'a conta nasce ATIVA: o link já chegou no e-mail convidado');
+  perform app.assert(v_row.role = 'atendente', 'com o papel que o convite dizia');
+  perform app.assert(v_row.tenant_id = v_tenant, 'e na empresa que convidou');
+  perform app.assert(v_row.email = v_email, 'e no endereço convidado, não em outro');
+
+  -- 10. Uso único, nos dois sentidos.
+  perform app.assert(app.aceitar_convite(v_token, 'Outra', 'senha-longa-de-teste') is null,
+    'o mesmo convite não serve duas vezes');
+  perform app.assert((select count(*) from public.convite_valido(v_token)) = 0,
+    'e depois de aceito ele nem é mais legível');
+
+  -- 11. Revogado e vencido não abrem porta.
+  update public.invites set revoked_at = now() where email = 'parg0061@exemplo.invalido';
+  perform app.assert((select count(*) from public.convite_valido(v_outro)) = 0,
+    'convite revogado não é legível');
+  perform app.assert(app.aceitar_convite(v_outro, 'X', 'senha-longa-de-teste') is null,
+    'nem aceitável');
+
+  v_outro := app.convidar_para_empresa(v_tenant, 'vencido0061@exemplo.invalido', 'atendente', v_admin);
+  update public.invites set expires_at = now() - interval '1 minute'
+   where email = 'vencido0061@exemplo.invalido';
+  perform app.assert((select count(*) from public.convite_valido(v_outro)) = 0,
+    'convite vencido não é legível');
+  perform app.assert(app.aceitar_convite(v_outro, 'X', 'senha-longa-de-teste') is null,
+    'nem aceitável');
+
+  -- 12. Um convite vivo por endereço e empresa — a garantia é do índice, e não
+  --     da função: quem inserir à mão esbarra no mesmo muro.
+  begin
+    insert into public.invites (tenant_id, email, role, token_hash, expires_at)
+    values (v_tenant, 'abaixo0061@exemplo.invalido', 'admin',
+            encode(digest('qualquer', 'sha256'), 'hex'), now() + interval '7 days');
+    perform app.assert(false, 'dois convites vivos para o mesmo endereço não deveriam caber');
+  exception when unique_violation then
+    perform app.assert(true, 'o índice barra o segundo convite vivo');
+  end;
+
+  -- 13. A faxina leva o que venceu há muito, e só isso.
+  update public.invites set expires_at = now() - interval '40 days'
+   where email = 'vencido0061@exemplo.invalido';
+  perform app.job_purge_convites();
+  perform app.assert(
+    (select count(*) from public.invites where email = 'vencido0061@exemplo.invalido') = 0,
+    'a faxina leva convite vencido há muito');
+  perform app.assert(
+    (select count(*) from public.invites where email = 'abaixo0061@exemplo.invalido') = 1,
+    'e não leva o que ainda vale');
+
+  -- 14. A 0061 reescreveu o CHECK de `email_outbox.kind` — e reescrever uma
+  --     lista é como a 0057 apagou quatro tipos sem querer. O que veio antes
+  --     tem de continuar cabendo.
+  insert into public.email_outbox (tenant_id, to_email, subject, body_text, kind)
+  values (v_tenant, 'x@exemplo.invalido', 'x', 'x', 'link_restored');
+  insert into public.email_outbox (tenant_id, to_email, subject, body_text, kind)
+  values (v_tenant, 'x@exemplo.invalido', 'x', 'x', 'agent_alert');
+  insert into public.email_outbox (tenant_id, to_email, subject, body_text, kind)
+  values (v_tenant, 'x@exemplo.invalido', 'x', 'x', 'signup_existing');
+  perform app.assert(true, 'os tipos de e-mail anteriores continuam aceitos');
+  delete from public.email_outbox where to_email = 'x@exemplo.invalido';
+
+  -- Limpeza.
+  delete from public.email_outbox where kind = 'invite';
+  delete from public.profiles where id = v_user;
+  delete from auth.users where id = v_user;
+  delete from public.invites;
+end
+$$;
+
+-- E o acesso. Convite é lista de endereços de e-mail de gente que ainda não
+-- entrou: quem não administra a empresa não tem o que fazer com ela.
+do $$
+begin
+  insert into public.invites (tenant_id, email, role, token_hash, expires_at) values
+    ('a0000000-0000-4000-8000-000000000001', 'rls1@exemplo.invalido', 'atendente',
+     encode(digest('rls-um', 'sha256'), 'hex'), now() + interval '7 days'),
+    ('a0000000-0000-4000-8000-000000000002', 'rls2@exemplo.invalido', 'atendente',
+     encode(digest('rls-dois', 'sha256'), 'hex'), now() + interval '7 days');
+end
+$$;
+
+set role rls_tester;
+
+-- O administrador da empresa 1 vê o convite dela, e só o dela.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.invites) = 1,
+    'o administrador vê o convite da própria empresa');
+  perform app.assert(
+    (select email from public.invites) = 'rls1@exemplo.invalido',
+    'e não o da outra empresa');
+end
+$$;
+
+-- O gestor não tem a chave `usuarios.convites.ver`, e por isso não vê nada —
+-- nem da própria empresa. A policy pergunta pela permissão, não pelo tenant.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000002","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.invites) = 0,
+    'sem a chave de convites, nem o gestor da própria empresa lê a lista');
+end
+$$;
+
+-- E o administrador da OUTRA empresa não alcança o convite da primeira.
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000099","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000002"}}';
+do $$
+begin
+  perform app.assert(
+    (select count(*) from public.invites where email = 'rls1@exemplo.invalido') = 0,
+    'o administrador de outra empresa não vê o convite desta');
+end
+$$;
+
+reset role;
+reset request.jwt.claims;
+
+do $$ begin delete from public.invites; end $$;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

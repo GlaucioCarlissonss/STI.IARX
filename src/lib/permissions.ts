@@ -489,6 +489,14 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('usuarios', 'perfis', 'criar', 'Criar perfil', 'admin'),
   act('usuarios', 'perfis', 'editar', 'Editar perfil e permissões', 'admin'),
   act('usuarios', 'perfis', 'inativar', 'Ativar/inativar perfil', 'admin'),
+  scr('usuarios', 'convites', 'Convites', 'admin'),
+  act('usuarios', 'convites', 'ver', 'Ver convites enviados', 'admin'),
+  /* Teto `admin` nas três: convidar é criar acesso, e quem cria acesso decide
+     quem entra na empresa. O banco ainda recusa convite para papel acima do de
+     quem convida (0061) — a chave diz quem pode usar a tela, a trava diz até
+     onde. */
+  act('usuarios', 'convites', 'criar', 'Convidar alguém para a empresa', 'admin'),
+  act('usuarios', 'convites', 'revogar', 'Revogar convite pendente', 'admin'),
 
   /* --- Integrações ------------------------------------------------------- */
   mod('integracoes', 'admin'),

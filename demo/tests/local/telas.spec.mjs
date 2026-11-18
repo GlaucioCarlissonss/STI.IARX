@@ -76,11 +76,18 @@ const ROTAS = [
   '/fornecedores',
   '/integracoes',
   '/usuarios',
+  /* Convites (0061). Tela nova entra na varredura no mesmo commit em que
+     nasce: é aqui que se descobre que ela quebra com a lista vazia, com o
+     driver local, ou com um erro de hidratação que nenhuma asserção de
+     comportamento olharia. */
+  '/usuarios/convites',
   '/perfis',
   '/tv',
   '/ia',
   '/auditoria',
   '/auditoria/trabalhos',
+  /* A caixa de saída (0058), pelo mesmo motivo. */
+  '/auditoria/avisos',
   '/ambiente',
   '/conta',
 ]

@@ -61,24 +61,52 @@ export function proximaTentativa(tentativas: number): Date {
 export const MAXIMO_DE_TENTATIVAS = 5
 
 /**
- * Completa o caminho relativo que o SQL escreveu com o endereço público.
+ * Os caminhos que o SQL escreve relativos, e que o envio completa.
  *
  * O banco escreve `/avaliar/<token>` porque ele não conhece o domínio — e
  * inventar uma coluna para guardá-lo seria a terceira cópia de uma configuração
  * que já vive em `NEXT_PUBLIC_SITE_URL`. Quem completa é quem envia.
  */
+export const CAMINHOS_DE_EMAIL = [
+  'avaliar',
+  'tickets',
+  /* Entraram com a 0057: sem eles, o e-mail de redefinição sairia com
+     `/nova-senha/<token>` em caminho relativo — que num cliente de e-mail não é
+     link nenhum, e a pessoa receberia a mensagem certa com o caminho
+     inutilizável. */
+  'nova-senha',
+  'confirmar-email',
+  /* E `convite` com a 0061, que repetiu o mesmo esquecimento: a migração
+     escreveu `/convite/<token>` e esta lista não sabia do caminho. O teste
+     abaixo da lista existe para que a 0062 não possa repeti-lo. */
+  'convite',
+  /*
+   * `inventario` é da 0032, e ninguém tinha percebido: o alerta do agente manda
+   * "Veja a máquina em /inventario/agentes/<id>" desde aquela entrega, e o
+   * caminho nunca foi completado. Foi o teste de varredura que o encontrou —
+   * não eu, procurando.
+   */
+  'inventario',
+] as const
+
+/**
+ * Completa o caminho relativo que o SQL escreveu com o endereço público.
+ *
+ * ## Esta lista é a terceira cópia de uma informação, e já falhou duas vezes
+ *
+ * Quem escreve o caminho é a migração; quem o completa é esta função; e nada
+ * liga uma coisa à outra. Aconteceu na 0057 e de novo na 0061 — nos dois casos
+ * o e-mail saía certo, com um caminho que não é link.
+ *
+ * O conserto não foi acrescentar mais um item: foi `caixa-de-saida.test.ts`
+ * varrer as migrações atrás de caminhos relativos em corpo de e-mail e exigir
+ * que cada um esteja aqui. A terceira cópia continua existindo, mas agora ela
+ * acusa quando diverge.
+ */
 export function completarEnderecos(texto: string, origem: string): string {
   const base = origem.replace(/\/+$/, '')
-  /*
-   * `nova-senha` e `confirmar-email` entraram com a migração 0057. Sem eles, o
-   * e-mail de redefinição sairia com `/nova-senha/<token>` em caminho relativo —
-   * que num cliente de e-mail não é link nenhum, e a pessoa receberia a
-   * mensagem certa com o caminho inutilizável.
-   */
-  return texto.replace(
-    /(^|\s)\/(avaliar|tickets|nova-senha|confirmar-email)\//g,
-    `$1${base}/$2/`,
-  )
+  const caminhos = CAMINHOS_DE_EMAIL.join('|')
+  return texto.replace(new RegExp(`(^|\\s)/(${caminhos})/`, 'g'), `$1${base}/$2/`)
 }
 
 /**
