@@ -201,7 +201,6 @@ console.log('\n=== 3. Saldo negativo é recusado, com o número no erro ===')
 console.log('\n=== 4. Lançar movimento muda o saldo — e o razão explica a mudança ===')
 // ---------------------------------------------------------------------------
 {
-  const antesDoLancamento = await p.locator('[data-testid="movimento-de-peca"]').count()
   await p.selectOption('#mv-dir', 'entrada')
   await p.fill('#mv-qtd', '10')
   await p.fill('#mv-custo', '200')

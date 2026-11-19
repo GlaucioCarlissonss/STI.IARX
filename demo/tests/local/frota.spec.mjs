@@ -159,7 +159,6 @@ console.log('\n=== 4. Mover o estado escreve o histórico sozinho ===')
   await p.waitForSelector('[data-testid="gaveta"]', { timeout: 20000 })
   await p.waitForTimeout(300)
 
-  const antesDoHistorico = await p.locator('[data-testid="gaveta"] ul li').count()
   await p.locator('[data-testid="gaveta"] button:has-text("Em manutenção")').first().click()
 
   const mudou = await ate(async () => {
@@ -168,10 +167,33 @@ console.log('\n=== 4. Mover o estado escreve o histórico sozinho ===')
   })
   ok(mudou !== null, `o estado virou "Em manutenção" (${mudou}ms)`)
 
-  const depoisDoHistorico = await p.locator('[data-testid="gaveta"] ul li').count()
+  /*
+   * CONTAR A LISTA NÃO PROVA NADA AQUI, e reprovou numa varredura completa.
+   *
+   * O histórico da gaveta mostra os 20 mais recentes (`.limit(20)`). Esta suíte
+   * acrescenta linhas a cada execução, então a lista chegou ao teto: a partir
+   * dali uma linha nova entra e a mais antiga sai, e a contagem fica em 20 com
+   * o gatilho funcionando perfeitamente. "20 → 20".
+   *
+   * O que a asserção quer provar é que o histórico foi escrito PELO GATILHO, e
+   * não pela aplicação — ninguém mandou gravar a linha. Isso se prova olhando a
+   * linha mais recente, que tem de ser a transição que acabou de acontecer.
+   */
+  /* `ate()` devolve o TEMPO até a condição valer, não o valor dela — então a
+     linha é lida à parte, para a mensagem dizer o que foi medido em vez de um
+     número de milissegundos disfarçado de texto. */
+  const achou = await ate(async () => {
+    const l = await p.locator('[data-testid="gaveta"] ul li').first().innerText().catch(() => '')
+    return /→/.test(l) && /manuten/i.test(l)
+  })
+  const linha = await p
+    .locator('[data-testid="gaveta"] ul li')
+    .first()
+    .innerText()
+    .catch(() => '')
   ok(
-    depoisDoHistorico > antesDoHistorico,
-    `e o histórico ganhou a linha sozinho, pelo gatilho (${antesDoHistorico} → ${depoisDoHistorico})`,
+    achou !== null,
+    `e o histórico ganhou a linha sozinho, pelo gatilho ("${linha.replace(/\n+/g, ' · ').slice(0, 45)}")`,
   )
 
   /* Devolve o exemplo ao estado em que estava: suíte que suja o banco faz a
@@ -197,7 +219,6 @@ console.log('\n=== 5. Medidor não anda para trás ===')
     ok(true, 'este equipamento não tem medidor — a seção some, em vez de pedir número inútil')
   } else {
     const atual = Number(await campo.inputValue())
-    const historicoAntes = await p.locator('[data-testid="gaveta"] ul li').count()
     await campo.fill(String(atual + 25))
     await p.locator('[data-testid="gaveta"] button:has-text("Registrar leitura")').click()
 
@@ -210,13 +231,38 @@ console.log('\n=== 5. Medidor não anda para trás ===')
      * aceitou. Foi assim que esta asserção nasceu verde por engano e teve de
      * ser reescrita.
      */
+    /*
+     * ESPERAR A LISTA CRESCER NÃO FUNCIONA, e reprovou numa varredura completa.
+     *
+     * O histórico da gaveta mostra os 20 mais recentes (`.limit(20)`), e a
+     * asserção anterior desta mesma suíte já tinha levado a lista de 19 para
+     * 20 — ou seja, ao teto. Daí em diante uma linha nova entra e a mais antiga
+     * sai: a contagem fica em 20 com o registro gravado corretamente.
+     *
+     * A prova continua sendo o HISTÓRICO e não o campo — conferir o campo não
+     * prova nada, porque ele tem o número que a suíte acabou de digitar e
+     * passaria mesmo com o servidor recusando. O que muda é COMO se lê o
+     * histórico: em vez de contar, cobra-se que a LINHA MAIS RECENTE seja a
+     * leitura que acabou de ser registrada, com o valor que a suíte mandou.
+     *
+     * É propriedade mais forte que a contagem, e não envelhece com a base.
+     */
     const registrou = await ate(async () => {
-      const linhas = await p.locator('[data-testid="gaveta"] ul li').count().catch(() => 0)
-      if (linhas <= historicoAntes) return false
-      const texto = await p.locator('[data-testid="gaveta"] ul').innerText().catch(() => '')
-      return /Leitura registrada/i.test(texto)
+      const primeira = await p
+        .locator('[data-testid="gaveta"] ul li')
+        .first()
+        .innerText()
+        .catch(() => '')
+      /* `12.155`, e não `12155`: a tela formata em pt-BR. Comparar com o número
+         cru fazia a asserção reprovar com a leitura gravada certa — foi assim
+         que a primeira tentativa de consertar esta linha falhou. */
+      const soDigitos = primeira.replace(/[.\s]/g, '')
+      return /Leitura registrada/i.test(primeira) && soDigitos.includes(String(atual + 25))
     })
-    ok(registrou !== null, `leitura maior é aceita e vira histórico (${atual} → ${atual + 25})`)
+    ok(
+      registrou !== null,
+      `leitura maior é aceita e vira a linha mais recente do histórico (${atual} → ${atual + 25})`,
+    )
 
     /* E o campo passa a recusar o retrocesso: o `min` acompanha a leitura nova,
        que é a tela repetindo a regra do banco em vez de substituí-la. */
