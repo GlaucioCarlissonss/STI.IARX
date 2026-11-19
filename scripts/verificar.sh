@@ -57,14 +57,39 @@ for arg in "$@"; do
 done
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"; [ -n "${SERVIDOR:-}" ] && kill "$SERVIDOR" 2>/dev/null' EXIT
+trap 'rm -rf "$TMP"; fuser -k "${PORTA:-3177}/tcp" >/dev/null 2>&1' EXIT
 
 falhas=0
 mortes=0
 linhas=()
 
 marcar() { # nome resultado detalhe
-  linhas+=("$(printf '%-28s %-10s %s' "$1" "$2" "${3:-}")")
+  local linha; linha="$(printf '%-28s %-10s %s' "$1" "$2" "${3:-}")"
+  linhas+=("$linha")
+  # Impresso NA HORA, e não só no resumo: uma varredura que fica quarenta
+  # minutos muda é difícil de confiar e impossível de depurar — não dá para
+  # saber se ela está trabalhando, em qual suíte está, nem se já falhou.
+  printf '  %s\n' "$linha"
+}
+
+# A porta REALMENTE livre, e não "mandei matar".
+#
+# `npx next start` é um invólucro: ele cria um filho que é quem abre o socket.
+# Matar o `$!` derruba o invólucro e deixa o filho com a porta — foi assim que
+# `aplicacao.spec.mjs` reprovou numa varredura completa, recusando-se a subir
+# o próprio servidor, e o relatório não disse por quê.
+#
+# Mata por PORTA, e depois ESPERA a porta cair de verdade: `kill` é um pedido,
+# não um fato, e seguir adiante sem conferir é medir o resultado do servidor
+# anterior.
+liberar_porta() {
+  fuser -k "$PORTA/tcp" > /dev/null 2>&1 || true
+  for _ in $(seq 1 30); do
+    if ! (exec 3<>/dev/tcp/127.0.0.1/"$PORTA") 2>/dev/null; then return 0; fi
+    exec 3<&- 2>/dev/null
+    sleep 1
+  done
+  return 1
 }
 
 titulo() { printf '\n\033[1m%s\033[0m\n' "$1"; }
@@ -212,7 +237,10 @@ titulo '5. Navegador, contra o build que acabou de sair'
     done
 
     kill "$SERVIDOR" 2>/dev/null; SERVIDOR=''
-    sleep 1
+    if ! liberar_porta; then
+      marcar 'liberar porta' 'ABORTOU' "porta $PORTA não caiu em 30s"
+      falhas=$((falhas+1))
+    fi
   fi
 
   # `aplicacao.spec.mjs` sobe o PRÓPRIO servidor na mesma porta e recusa rodar

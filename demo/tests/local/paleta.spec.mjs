@@ -125,11 +125,21 @@ console.log('\n=== 2. Telas, ações e registros na mesma caixa ===')
 // ---------------------------------------------------------------------------
 {
   await abrirPaleta(p)
-  const r = await buscar(p, 'fluxo')
-  ok(
-    r.some((x) => /Fluxo de caixa/.test(x) && /Financeiro/.test(x)),
-    'acha a tela pelo nome, com o grupo ao lado para dar contexto',
-  )
+  /*
+   * A CONDIÇÃO DA ESPERA É A MESMA DA ASSERÇÃO, e isso não é zelo.
+   *
+   * Aqui estava a condição padrão (`r.length > 0`), que devolve assim que
+   * QUALQUER resultado aparece. A asserção, porém, cobra um resultado
+   * específico — a tela com o grupo ao lado. Sob carga, um render intermediário
+   * satisfazia a espera antes de a linha certa chegar, e a asserção reprovava
+   * com a paleta funcionando perfeitamente.
+   *
+   * Foi assim que esta suíte reprovou numa varredura completa e passou sozinha:
+   * o sintoma de uma espera que mede outra coisa, e não o de um defeito.
+   */
+  const temATela = (r) => r.some((x) => /Fluxo de caixa/.test(x) && /Financeiro/.test(x))
+  const r = await buscar(p, 'fluxo', temATela)
+  ok(temATela(r), 'acha a tela pelo nome, com o grupo ao lado para dar contexto')
 
   await p.fill('[data-testid="paleta"] input', '')
   const comRegistro = await buscar(p, 'servidor', (r) => r.some((x) => /#\d+\s+Servidor/.test(x)))
