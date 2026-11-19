@@ -31,7 +31,18 @@ p.on('console', m => { if (m.type()==='error') erros.push('CONSOLE: ' + m.text()
 const ARQUIVO = 'file:///home/user/STI.IARX/demo/sti-tool.html'
 await p.goto(ARQUIVO)
 await p.waitForSelector('.side button')
-const ok = (c,m) => console.log(`${c?'  ok ':'  FALHOU '} ${m}`)
+/*
+ * `falhas` existe porque esta suíte SAÍA COM ZERO mesmo imprimindo FALHOU.
+ *
+ * Ela foi a única das 23 sem `process.exit`, e isso a tornava invisível para
+ * qualquer runner: o relatório mostrava a falha na tela e o código de saída
+ * dizia que estava tudo bem. Num CI, ela passaria para sempre.
+ *
+ * O erro de página entra na conta pelo mesmo motivo: a seção "Erros de página"
+ * era impressa e ignorada.
+ */
+let falhas = 0
+const ok = (c,m) => { if (!c) falhas++; console.log(`${c?'  ok ':'  FALHOU '} ${m}`) }
 const fechar = async () => {
   await p.evaluate(() => document.querySelector('.modal-head [data-close-modal]')?.click())
   await p.evaluate(() => document.querySelector('#drawer-root [data-close]')?.click())
@@ -462,5 +473,20 @@ await p.waitForTimeout(150)
 
 console.log('\n=== Erros de página ===')
 console.log(erros.length ? erros.join('\n') : '  nenhum')
-await p.screenshot({ path:'/tmp/claude-0/-home-user-STI-IARX/eb021f6b-0a70-55f9-a2c8-13bdbb4bd983/scratchpad/titulos.png' })
+if (erros.length) falhas += erros.length
+/*
+ * A captura é opcional, e o caminho vem de fora.
+ *
+ * Aqui havia um caminho FIXO dentro do diretório temporário de uma sessão
+ * específica. Ele existia na máquina de quem escreveu e em nenhuma outra: fora
+ * dali o `screenshot` estoura com ENOENT e **mata a suíte** — que é o pior
+ * desfecho possível, porque uma morte não diz o que estava errado e some com
+ * todas as asserções que viriam depois.
+ *
+ *   CAPTURA=/tmp/prototipo.png node demo/tests/prototipo.spec.mjs
+ */
+if (process.env.CAPTURA) await p.screenshot({ path: process.env.CAPTURA })
 await b.close()
+
+console.log(falhas ? `\n${falhas} FALHA(S)` : '\nTODAS AS ASSERÇÕES PASSARAM')
+process.exit(falhas ? 1 : 0)

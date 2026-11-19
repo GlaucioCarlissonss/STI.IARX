@@ -10458,5 +10458,152 @@ reset request.jwt.claims;
 
 do $$ begin delete from public.invites; end $$;
 
+-- -----------------------------------------------------------------------------
+-- 60. O invariante dos DERIVADOS mantidos por gatilho
+-- -----------------------------------------------------------------------------
+-- Esta seção existe por causa de uma divergência declarada em `CLAUDE.md`.
+--
+-- O padrão de engenharia do projeto diz: **derivado nunca é armazenado** —
+-- guarde a fonte, derive na leitura, porque derivado gravado diverge da fonte no
+-- primeiro recálculo que ninguém rodou.
+--
+-- Este banco diverge de propósito em três lugares: `rental_invoices.total`,
+-- `part_balances.quantity` e `rental_invoices.number`. A defesa escrita é que o
+-- gatilho roda dentro da mesma transação da fonte, e que não há caminho de
+-- escrita que escape dele.
+--
+-- Defesa escrita é história. Esta seção é a prova — e ela é diferente das
+-- asserções que já existiam: aquelas conferiam o saldo contra um número
+-- esperado (2, 1, v_antes-1), o que prova que o gatilho somou CERTO naquele
+-- cenário. Esta confere o saldo contra a SOMA DOS MOVIMENTOS, em toda linha do
+-- banco, o que prova que ele não deixou nenhuma para trás.
+--
+-- É a diferença entre "a conta que eu fiz bateu" e "não existe linha em que a
+-- conta não bata".
+\echo '=== 60. O invariante dos derivados mantidos por gatilho ==='
+
+do $$
+declare
+  v_divergentes integer;
+  v_linha record;
+begin
+  -- 1. SALDO DE PEÇA = soma dos movimentos daquela peça naquele depósito.
+  select count(*) into v_divergentes
+    from public.part_balances b
+   where b.quantity is distinct from (
+     select coalesce(sum(m.quantity), 0)
+       from public.part_movements m
+      where m.part_id = b.part_id and m.depot_id = b.depot_id);
+
+  if v_divergentes > 0 then
+    for v_linha in
+      select b.part_id, b.depot_id, b.quantity as saldo,
+             (select coalesce(sum(m.quantity),0) from public.part_movements m
+               where m.part_id = b.part_id and m.depot_id = b.depot_id) as soma
+        from public.part_balances b
+       where b.quantity is distinct from (
+         select coalesce(sum(m.quantity),0) from public.part_movements m
+          where m.part_id = b.part_id and m.depot_id = b.depot_id)
+       limit 3
+    loop
+      raise notice '  saldo % <> soma % (peça %, depósito %)',
+        v_linha.saldo, v_linha.soma, v_linha.part_id, v_linha.depot_id;
+    end loop;
+  end if;
+
+  perform app.assert(v_divergentes = 0,
+    'todo saldo de peça é exatamente a soma dos seus movimentos');
+
+  -- 2. TOTAL DA FATURA = soma dos itens dela.
+  --
+  -- Não existia asserção nenhuma para isto, e o total é o número que o cliente
+  -- confere. Uma fatura cujo total não fecha com os itens é uma conversa que o
+  -- sistema perde.
+  select count(*) into v_divergentes
+    from public.rental_invoices f
+   where f.total is distinct from (
+     select coalesce(sum(i.amount), 0)
+       from public.rental_invoice_items i where i.invoice_id = f.id);
+
+  perform app.assert(v_divergentes = 0,
+    'todo total de fatura é exatamente a soma dos seus itens');
+
+  -- 3. E o invariante continua valendo DEPOIS de mexer na fonte — que é o
+  --    momento em que um derivado gravado costuma se soltar dela.
+  declare
+    v_fatura   uuid;
+    v_antes    numeric;
+    v_tenant   uuid;
+    v_contrato uuid;
+    v_cliente  uuid;
+  begin
+    /*
+     * A suíte CRIA a fatura que vai medir, em vez de procurar uma.
+     *
+     * A primeira versão desta asserção procurava `status = 'draft'` com itens,
+     * e envolvia tudo num `if ... is not null`. Não havia fatura assim na
+     * semente: o bloco inteiro passou SEM EXECUTAR UMA ASSERÇÃO, e o relatório
+     * saiu verde. É a armadilha do "estado vazio suposto" — a conferência media
+     * um retrato que deixou de existir, e o silêncio dela era indistinguível de
+     * aprovação.
+     *
+     * Criar o estado custa seis linhas e vale para sempre; procurá-lo depende
+     * de a semente continuar tendo o que tinha no dia em que a asserção foi
+     * escrita.
+     */
+    select c.id, c.tenant_id, c.client_id into v_contrato, v_tenant, v_cliente
+      from public.rental_contracts c limit 1;
+
+    perform app.assert(v_contrato is not null,
+      'o preparo achou um contrato de locação — sem ele, nada abaixo mede nada');
+
+    insert into public.rental_invoices
+      (tenant_id, contract_id, client_id, number, competence, status, total)
+    values (v_tenant, v_contrato, v_cliente, 'PROVA-INVARIANTE/209901',
+            date_trunc('month', current_date)::date, 'draft', 0)
+    returning id, total into v_fatura, v_antes;
+
+    perform app.assert(v_antes = 0, 'fatura nova nasce com total zero');
+
+    insert into public.rental_invoice_items
+      (tenant_id, invoice_id, kind, description, quantity, unit_price, amount)
+    values (v_tenant, v_fatura, 'service', 'Item de prova do invariante', 1, 100, 100);
+
+    perform app.assert(
+      (select total from public.rental_invoices where id = v_fatura) = 100,
+      'acrescentar item move o total na mesma transação');
+
+    /* Dois itens, para que a conta seja uma SOMA e não uma cópia do último
+       valor — um gatilho que atribuísse em vez de somar passaria no teste de
+       um item só. */
+    insert into public.rental_invoice_items
+      (tenant_id, invoice_id, kind, description, quantity, unit_price, amount)
+    values (v_tenant, v_fatura, 'service', 'Segundo item de prova', 1, 45.50, 45.50);
+
+    perform app.assert(
+      (select total from public.rental_invoices where id = v_fatura) = 145.50,
+      'e o total é a SOMA dos itens, não o último deles');
+
+    delete from public.rental_invoice_items where invoice_id = v_fatura;
+
+    perform app.assert(
+      (select total from public.rental_invoices where id = v_fatura) = 0,
+      'remover todos os itens devolve o total a zero');
+
+    delete from public.rental_invoices where id = v_fatura;
+  end;
+
+  -- 4. O NÚMERO DA FATURA é único por tenant — o derivado mais silencioso dos
+  --    três, porque um número repetido só aparece quando dois clientes
+  --    comparam a mesma cobrança.
+  select count(*) into v_divergentes from (
+    select tenant_id, number from public.rental_invoices
+     group by tenant_id, number having count(*) > 1) d;
+
+  perform app.assert(v_divergentes = 0,
+    'nenhum número de fatura se repete dentro da mesma empresa');
+end
+$$;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

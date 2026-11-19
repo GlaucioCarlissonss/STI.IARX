@@ -246,11 +246,38 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 
 ## Verificação
 
+**Tudo de uma vez, na ordem que não mente:**
+
+```bash
+bash scripts/verificar.sh            # a varredura inteira
+bash scripts/verificar.sh --rapido   # sem as suítes autenticadas (sem build)
+bash scripts/verificar.sh --duas     # as de navegador duas vezes, para idempotência
+```
+
+Ele existe por causa de dois defeitos de **medição** que entraram num relatório,
+os dois na mesma varredura:
+
+- o laço que eu usava decidia "passou" procurando a frase `TODAS AS ASSERÇÕES
+  PASSARAM`. `telas.spec.mjs` não imprime essa frase — termina com `0 rota(s)
+  com problema`. A suíte estava verde e foi relatada como vermelha; e uma suíte
+  que **morresse** antes da primeira asserção seria relatada igual, sem
+  distinção;
+- rodei `npm run build` com o servidor de pé servindo a varredura, reescrevendo
+  `.next` debaixo dele — as últimas telas tomaram 500 por minha causa.
+
+Por isso o runner constrói **uma vez** antes da primeira suíte e aborta se a
+construção falhar, nunca remonta no meio, recusa começar com a porta ocupada,
+decide o desfecho pelo **código de saída** (nunca por frase), e distingue
+**MORREU** de **FALHOU** pelo rodapé que o Node imprime ao estourar — porque uma
+morte não é uma falha, é ausência de medição.
+
+As partes, se quiser rodar separado:
+
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 800 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
-npm run db:validate   # migrações + seed + 1210 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 1218 asserções em PostgreSQL real
 ```
 
 Mais as suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -393,7 +420,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 
 Verificado na última entrega: build de produção limpo, `tsc` sem apontamentos,
 `eslint` com 4 avisos de variável não usada em teste, **800 testes unitários** e
-**1210 asserções de banco** passando, mais 56 asserções no protótipo e 61 na
+**1218 asserções de banco** passando, mais 56 asserções no protótipo e 61 na
 aplicação, em navegador — incluindo a aritmética de horário útil conferida
 contra 8 cenários (almoço, fim de semana, feriado, fora de expediente).
 
@@ -505,6 +532,7 @@ compilado e as dependências que ele carrega em tempo de execução.
 
 | Documento | Conteúdo |
 |---|---|
+| [Padrões de engenharia](docs/padroes-de-engenharia.md) | O que cada regra deste projeto existe para evitar, com o defeito que a originou. O resumo acionável está em [`CLAUDE.md`](CLAUDE.md), junto com as **divergências declaradas** — onde o STI.IARX não segue o padrão, e por quê |
 | [01 — Requisitos](docs/01-requisitos.md) | Requisitos rastreáveis, matriz de permissões, lacunas e decisões por padrão |
 | [02 — Benchmarking](docs/02-benchmarking.md) | Freshservice, Jira SM, Zendesk, GLPI, ManageEngine — padrões adotados e 10 antipatterns evitados |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Visão geral e 12 ADRs com alternativas rejeitadas |
