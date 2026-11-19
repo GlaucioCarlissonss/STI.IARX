@@ -90,6 +90,25 @@ const itens = (p) =>
  * por defeito: ensina a ignorar a suíte.
  */
 async function buscar(pagina, texto, condicao = (r) => r.length > 0, limite = 8000) {
+  /*
+   * O FOCO, ANTES DE DIGITAR — e foi isto que reprovou na varredura completa.
+   *
+   * `abrirPaleta()` espera o CONTÊINER aparecer, não o campo receber foco. O
+   * foco é posto depois da montagem, e numa varredura inteira o `type()`
+   * disparava antes disso: as teclas iam para lugar nenhum e a paleta ficava
+   * mostrando a lista PADRÃO.
+   *
+   * A reprovação dizia "não achou Fluxo de caixa", o que parecia busca lenta ou
+   * recorte errado. O diagnóstico que a suíte passou a imprimir mostrou os 12
+   * itens da lista de campo vazio — Visão geral, Portal, Tickets… —, e aí ficou
+   * claro que a busca nunca tinha rodado.
+   *
+   * Clicar no campo é o que garante o foco sem depender de quando o autofoco
+   * acontece. Esperar um tempo fixo trocaria uma corrida por outra.
+   */
+  const campo = pagina.locator('[data-testid="paleta"] input')
+  await campo.waitFor({ state: 'visible', timeout: 8000 })
+  await campo.click()
   await pagina.keyboard.type(texto)
   const t0 = Date.now()
   let r = []

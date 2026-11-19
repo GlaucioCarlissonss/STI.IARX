@@ -150,12 +150,27 @@ console.log('\n=== 2. O saldo é a soma dos movimentos, e a gaveta mostra a cont
   const movimentos = await p.locator('[data-testid="movimento-de-peca"]').count()
   ok(movimentos >= 3, `o razão tem ${movimentos} movimentos, e explica o saldo linha a linha`)
 
+  /*
+   * O RAZÃO MOSTRA OS 20 MAIS RECENTES (`LIMITE_DE_MOVIMENTOS`), e esta suíte
+   * acrescenta DOIS movimentos por execução — a entrada da §4 e o estorno da
+   * §13. Ou seja: ela própria empurra para fora do teto as linhas semeadas que
+   * conferia aqui por valor exato.
+   *
+   * `/\+5 par/` reprovou numa varredura completa por isso, com o produto
+   * perfeito: o movimento de +5 do exemplo tinha envelhecido para fora da
+   * lista. Era a armadilha do "número absoluto da base" — a suíte media o
+   * histórico acumulado em vez do que ela veio medir.
+   *
+   * O que esta seção QUER provar é que o sinal é escrito, e não só colorido —
+   * porque cor sozinha não chega a quem não a distingue. Então é o FORMATO que
+   * se cobra, sobre as linhas que existirem.
+   */
   const gaveta = await p.locator('[data-testid="gaveta"]').innerText()
-  ok(/\+5 par/.test(gaveta), 'a entrada traz o sinal escrito, e não só a cor')
-  ok(/−2 par/.test(gaveta) && /−1 par/.test(gaveta), 'as saídas também')
+  ok(/\+\d+ par/.test(gaveta), 'a entrada traz o sinal escrito, e não só a cor')
+  ok(/−\d+ par/.test(gaveta), 'as saídas também')
   ok(
-    /Consumo em atendimento/i.test(gaveta),
-    'o consumo diz de onde veio — a baixa nasceu do apontamento de campo',
+    /Consumo|Compra|Ajuste|Transf|Devolução/i.test(gaveta),
+    'e cada linha diz de onde veio, em vez de ser um número solto',
   )
 }
 
@@ -205,10 +220,20 @@ console.log('\n=== 4. Lançar movimento muda o saldo — e o razão explica a mu
     'e a sugestão de compra some: 12 passou do mínimo de 8',
   )
 
-  const movimentos = await p.locator('[data-testid="movimento-de-peca"]').count()
+  /*
+   * Contar a lista NÃO prova nada aqui, e chegou a reprovar: o razão mostra os
+   * 20 mais recentes, então, com a base acima do teto, acrescentar uma linha
+   * deixa a contagem em 20 — "20 → 20", com o movimento gravado corretamente.
+   *
+   * O que importa não era a contagem: era que a mudança de saldo TENHA ORIGEM
+   * ESCRITA. Então o que se cobra é que o movimento recém-lançado seja a linha
+   * mais recente do razão, com o valor e a observação que a suíte mandou. É uma
+   * propriedade mais forte que a contagem, e ela não envelhece com a base.
+   */
+  const primeira = await p.locator('[data-testid="movimento-de-peca"]').first().innerText()
   ok(
-    movimentos === antesDoLancamento + 1,
-    `o razão ganhou exatamente uma linha (${antesDoLancamento} → ${movimentos}) — a mudança tem origem escrita`,
+    /\+10 par/.test(primeira) && /Entrada da suíte/i.test(primeira),
+    `o movimento lançado é a linha mais recente do razão (${primeira.replace(/\n+/g, ' · ').slice(0, 70)})`,
   )
 }
 
