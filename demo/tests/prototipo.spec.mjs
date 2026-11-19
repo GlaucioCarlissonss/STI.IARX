@@ -60,7 +60,40 @@ const grupos = await p.$$eval('.nav-group', (hs) =>
   hs.map((h) => h.textContent.replace(/[\u203a\s]+/, '').trim()),
 )
 console.log('  grupos:', grupos.join(' | '))
-ok(grupos.length >= 6 && grupos.length <= 7, `${grupos.length} grupos — dentro do teto de 7`)
+/*
+ * ESTA ASSERÇÃO MUDOU, E A MUDANÇA É UM ACHADO — não um teto afrouxado.
+ *
+ * Ela cobrava no máximo 7 grupos, pelo teto prático de uma barra que se lê de
+ * relance. Quando as 26 telas que faltavam entraram, o protótipo passou a 9 —
+ * e a aplicação TAMBÉM tem 9, desde que a locação chegou. Quem estourou o teto
+ * foi o produto, e o protótipo só parou de esconder isso.
+ *
+ * Continuar exigindo 7 aqui seria pedir ao artefato que mentisse sobre o menu
+ * que as pessoas vão usar. Então o que se cobra passou a ser o MECANISMO que
+ * existe para encurtar a barra — o foco de esfera — e não um número que já não
+ * descreve o produto.
+ *
+ * O que fica em aberto, e é decisão de produto e não de teste: com foco em
+ * Gestão de TI a barra ainda tem 8 grupos. "Autoatendimento" tem dois itens e
+ * caberia dentro de "Atendimento". Enquanto não houver essa decisão, o número
+ * honesto é 9, e ele está escrito aqui para quem for decidir.
+ */
+ok(grupos.length === 9, `${grupos.length} grupos com as duas esferas — o produto hoje tem 9`)
+{
+  const contar = async (v) => {
+    await p.selectOption('#sphere-focus', v)
+    await p.waitForTimeout(180)
+    return p.$$eval('.nav-group', (hs) => hs.length)
+  }
+  const locacao = await contar('rental')
+  const gestao = await contar('management')
+  await contar('')
+  /* O foco é o que encurta a barra, e é a razão de ele existir. Se ele deixar
+     de encurtar, ele virou enfeite — e esta é a asserção que percebe. */
+  ok(locacao < grupos.length && gestao < grupos.length,
+    `o foco encurta a barra: locação ${locacao}, gestão ${gestao}, de ${grupos.length}`)
+  ok(locacao <= 7, `com foco em locação a barra volta ao teto de 7 (${locacao})`)
+}
 ok(grupos.includes('Financeiro') && grupos.includes('Integrações'), 'Financeiro e Integrações presentes')
 const previstos = await p.$$eval('.nav-soon', ss => ss.map(s => s.textContent.replace('em breve','').trim()))
 console.log('  em breve:', previstos.join(' | '))
@@ -362,6 +395,70 @@ await p.evaluate(() => document.querySelector('[data-assettab="cust"]')?.click()
 await p.waitForTimeout(250)
 const temTimeline = await p.$$eval('#drawer-root .timeline', t => t.length)
 ok(temTimeline === 1, 'a timeline de custódia aparece na aba Custódia')
+
+/* ==========================================================================
+ * 15. As 26 telas que faltavam abrem, uma a uma
+ * ==========================================================================
+ * Esta varredura existe por causa de um defeito de mais da metade do produto: a
+ * aplicação chegou a 48 telas e o protótipo mostrava 25. Faltava a LOCAÇÃO
+ * INTEIRA — frota, contratos, medições, faturamento, manutenção, peças,
+ * compras, contagens — e mais dezessete de gestão.
+ *
+ * `navigation.demo.test.ts` passou a cobrar o MENU, e roda em milissegundos a
+ * cada `npm test`. Mas item de menu com `views[chave]` vazio cai no fallback e
+ * abre "Novidades" sem erro nenhum: o menu promete e a tela não existe. É esta
+ * varredura que pega isso, porque ela olha o que apareceu.
+ */
+console.log('\n=== 15. As telas de locação e gestão abrem ===')
+await trocar('u1')
+{
+  const NOVAS = [
+    ['frota','Frota'], ['loc-cadastros','Modelos e categorias'],
+    ['loc-contratos','Contratos'], ['medicoes','Medições e consumo'],
+    ['loc-faturamento','Faturamento'], ['manutencao','Manutenção em campo'],
+    ['pecas','Peças e estoque'], ['compras','Ordens de compra'],
+    ['contagens','Contagens de inventário'],
+    ['portal','Portal'], ['horarios','Expediente e feriados'],
+    ['conversas','Conversas'], ['base','Base de conhecimento'],
+    ['catalogo','Catálogo de serviços'], ['resultado','Visão de resultado'],
+    ['projetos','Projetos'], ['orcamento','Orçamento de TI'],
+    ['agentes','Agentes nas máquinas'], ['software','Software instalado'],
+    ['ia','Sugestões de IA'], ['ambiente','Preferências do ambiente'],
+    ['auditoria','Trilha de alterações'], ['trabalhos','Trabalhos agendados'],
+    ['avisos','Avisos enviados'], ['convites','Convites'], ['planilhas','Planilhas'],
+  ]
+  let abriram = 0
+  for (const [chave, titulo] of NOVAS) {
+    await fechar()
+    await p.evaluate((k) => { location.hash = k }, chave)
+    await p.waitForTimeout(140)
+    const texto = await p.$eval('#view', (v) => v.innerText)
+    /* O título precisa aparecer: sem ele, a tela caiu no fallback de
+       "Novidades", que é exatamente o modo como 26 telas sumiram sem erro. */
+    if (texto.includes(titulo) && texto.length > 300) abriram++
+    else console.log(`      ${chave} não abriu (${texto.length} chars)`)
+  }
+  ok(abriram === NOVAS.length, `as ${NOVAS.length} telas abrem com o próprio título`)
+}
+
+/* E a regra que mais importa nelas: o que a esfera esconde do MENU continua
+   alcançável pelo endereço. Esfera não é permissão — ela diz que a tela não
+   pertence àquele negócio, não que a pessoa não pode vê-la. Se o foco passasse
+   a barrar, ele teria virado uma permissão disfarçada, que é o defeito que
+   `lib/esferas.ts` existe para não cometer. */
+await p.selectOption('#sphere-focus', 'management')
+await p.waitForTimeout(180)
+{
+  const noMenu = await p.$$eval('.side button', (bs) =>
+    bs.some((x) => x.textContent.trim().startsWith('Frota')))
+  await p.evaluate(() => { location.hash = 'frota' })
+  await p.waitForTimeout(180)
+  const texto = await p.$eval('#view', (v) => v.innerText)
+  ok(!noMenu, 'com foco em gestão, Frota sai do menu')
+  ok(texto.includes('Frota'), 'e mesmo assim o endereço direto continua abrindo a tela')
+}
+await p.selectOption('#sphere-focus', '')
+await p.waitForTimeout(150)
 
 console.log('\n=== Erros de página ===')
 console.log(erros.length ? erros.join('\n') : '  nenhum')

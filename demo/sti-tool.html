@@ -451,6 +451,18 @@
     </div>
     <label class="whoami" for="acting-user">Vendo como
       <select id="acting-user" aria-label="Usuário da sessão"></select></label>
+    <!--
+      O FOCO DE ESFERA. Só aparece para quem tem as duas, e é a única coisa no
+      cabeçalho que NÃO muda permissão nenhuma: ele encurta o menu de quem está
+      num trabalho só. Quem tem uma esfera só não precisa escolher, e um seletor
+      com uma opção é ruído.
+    -->
+    <label class="whoami" for="sphere-focus" id="sphere-focus-wrap">Foco
+      <select id="sphere-focus" aria-label="Esfera em foco">
+        <option value="">Tudo</option>
+        <option value="management">Gestão de TI</option>
+        <option value="rental">Locação e serviços</option>
+      </select></label>
     <button type="button" class="icon-btn" id="theme-toggle">Tema</button>
     <button type="button" class="icon-btn" id="reset-btn">Restaurar exemplo</button>
   </div>
@@ -501,7 +513,7 @@
   // sem `clientes.areas.*` nem `inventario.ativos.custodiar` — o botão some e
   // nenhum erro aparece. Estado velho de permissão é pior que estado velho de
   // dado: o sintoma é botão faltando.
-  const KEY = 'sti.helpdesk.v9';
+  const KEY = 'sti.helpdesk.v10';
   const MIN = 60000;
 
   /* ===================== Catálogos ===================== */
@@ -1426,6 +1438,11 @@
     const approvalRequired = false;
 
     const dISO = d => new Date(now + d*864e5).toISOString().slice(0,10);
+    /* Competência é o PRIMEIRO DIA DO MÊS, por convenção já usada nesta base
+       (`app.eh_competencia`, migração 0050). Guardar o mês como data arbitrária
+       faria "outubro" ser 1/10 para quem gravou e 31/10 para quem leu. */
+    const compISO = m => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()+m);
+                           return d.toISOString().slice(0,10); };
     /* Títulos cobrindo os estados que a tela precisa mostrar: vencido, a vencer,
        aguardando aprovação, pago e parcelado. */
     const payables = [
@@ -1474,11 +1491,523 @@
         status:'received', receivedOn:dISO(-18), receivedAmount:21000, accountId:'ba1', notes:'' }
     ];
 
+
+    /* =====================================================================
+     * LOCAÇÃO (migrações 0048-0056)
+     *
+     * A esfera `rental`: o fornecedor que aluga equipamento próprio. O dinheiro
+     * ENTRA — contrato + medição → fatura → título a receber —, ao contrário da
+     * gestão de TI, onde ele sai.
+     *
+     * Os dados abaixo são pequenos de propósito, mas não são enfeite: eles
+     * exercitam o que tem regra. Um equipamento em cada estado do ciclo, um
+     * contrato em cada situação, uma fatura REEMITIDA (o sufixo `-2` da 0056),
+     * uma peça abaixo do mínimo e uma contagem com divergência. Semente que só
+     * mostra o caminho feliz ensina que o caminho feliz é o único.
+     * ===================================================================== */
+
+    const depots = [
+      { id:'d1', name:'Base São Paulo', code:'BASE-SP', kind:'warehouse', city:'São Paulo', state:'SP', active:true },
+      { id:'d2', name:'Oficina São Paulo', code:'OFIC-SP', kind:'workshop', city:'São Paulo', state:'SP', active:true },
+      { id:'d3', name:'Base Campinas', code:'BASE-CPS', kind:'warehouse', city:'Campinas', state:'SP', active:true }
+    ];
+
+    const equipManufacturers = [
+      { id:'em1', name:'Toyota', active:true },
+      { id:'em2', name:'Stemac', active:true },
+      { id:'em3', name:'JLG', active:true }
+    ];
+
+    /* `default_meter_kind` é `none` por padrão, e isso é decisão da 0048: a
+       maior parte do que se aluga é cobrada por TEMPO, não por uso. Medidor
+       obrigatório inventaria horímetro onde não existe. */
+    const equipCategories = [
+      { id:'ec-emp', code:'EMP', name:'Empilhadeiras', meterKind:'hours', usefulLifeMonths:120, active:true },
+      { id:'ec-ger', code:'GER', name:'Geradores', meterKind:'hours', usefulLifeMonths:180, active:true },
+      { id:'ec-pla', code:'PLA', name:'Plataformas elevatórias', meterKind:'none', usefulLifeMonths:144, active:true }
+    ];
+
+    const equipModels = [
+      { id:'mo1', manufacturerId:'em1', categoryId:'ec-emp', code:'8FGU25', name:'Empilhadeira a gás 2,5 t',
+        specs:{ 'Capacidade':'2.500 kg', 'Elevação':'4,5 m', 'Combustível':'GLP' },
+        monthlyPrice:4200, dailyPrice:320, active:true },
+      { id:'mo2', manufacturerId:'em1', categoryId:'ec-emp', code:'7FBMF16', name:'Empilhadeira elétrica 1,6 t',
+        specs:{ 'Capacidade':'1.600 kg', 'Elevação':'3,0 m', 'Bateria':'48 V' },
+        monthlyPrice:3600, dailyPrice:270, active:true },
+      { id:'mo3', manufacturerId:'em2', categoryId:'ec-ger', code:'GTA-180', name:'Gerador 180 kVA',
+        specs:{ 'Potência':'180 kVA', 'Tanque':'300 L', 'Cabine':'Silenciada' },
+        monthlyPrice:7800, dailyPrice:620, active:true },
+      { id:'mo4', manufacturerId:'em3', categoryId:'ec-pla', code:'E450AJ', name:'Plataforma articulada 15 m',
+        specs:{ 'Altura':'15,7 m', 'Alcance':'7,5 m', 'Tração':'Elétrica' },
+        monthlyPrice:5100, dailyPrice:410, active:false }
+    ];
+
+    /* Um equipamento em cada ponto do ciclo (0048). `written_off` e `lost` não
+       aparecem: são estados terminais, e a semente que começa num deles sugere
+       que é comum. */
+    const rentalEquipment = [
+      { id:'eq1', assetTag:'EMP-0001', serial:'8FGU25-4471', modelId:'mo1', depotId:'d1',
+        status:'rented', blocked:false, blockReason:null, meterKind:'hours', meter:1842.5,
+        meterReadAt:dISO(-3), acquiredOn:'2024-03-12', acquisitionCost:168000 },
+      { id:'eq2', assetTag:'EMP-0002', serial:'8FGU25-4472', modelId:'mo1', depotId:'d1',
+        status:'available', blocked:false, blockReason:null, meterKind:'hours', meter:902,
+        meterReadAt:dISO(-20), acquiredOn:'2024-03-12', acquisitionCost:168000 },
+      { id:'eq3', assetTag:'EMP-0003', serial:'7FBMF16-1190', modelId:'mo2', depotId:'d3',
+        status:'reserved', blocked:false, blockReason:null, meterKind:'hours', meter:430,
+        meterReadAt:dISO(-45), acquiredOn:'2025-01-20', acquisitionCost:142000 },
+      { id:'eq4', assetTag:'GER-0001', serial:'GTA180-7781', modelId:'mo3', depotId:'d1',
+        status:'in_transit_out', blocked:false, blockReason:null, meterKind:'hours', meter:3120,
+        meterReadAt:dISO(-2), acquiredOn:'2023-08-05', acquisitionCost:310000 },
+      { id:'eq5', assetTag:'GER-0002', serial:'GTA180-7782', modelId:'mo3', depotId:'d2',
+        status:'maintenance', blocked:false, blockReason:null, meterKind:'hours', meter:5410,
+        meterReadAt:dISO(-9), acquiredOn:'2023-08-05', acquisitionCost:310000 },
+      { id:'eq6', assetTag:'PLA-0001', serial:'E450AJ-2214', modelId:'mo4', depotId:'d1',
+        status:'inspection', blocked:false, blockReason:null, meterKind:'none', meter:0,
+        meterReadAt:null, acquiredOn:'2022-11-30', acquisitionCost:240000 },
+      /* Bloqueado é atributo, não estado: a 0048 separa os dois de propósito.
+         Uma peça bloqueada continua `available` para o inventário e sai da base
+         alocável sem mentir sobre onde ela está. */
+      { id:'eq7', assetTag:'PLA-0002', serial:'E450AJ-2215', modelId:'mo4', depotId:'d1',
+        status:'available', blocked:true, blockReason:'Laudo de inspeção vencido', blockUntil:dISO(20),
+        meterKind:'none', meter:0, meterReadAt:null, acquiredOn:'2022-11-30', acquisitionCost:240000 },
+      { id:'eq8', assetTag:'EMP-0004', serial:'7FBMF16-1191', modelId:'mo2', depotId:'d3',
+        status:'in_transit_back', blocked:false, blockReason:null, meterKind:'hours', meter:1288,
+        meterReadAt:dISO(-1), acquiredOn:'2025-01-20', acquisitionCost:142000 }
+    ];
+
+    const operationLocations = [
+      { id:'ol1', clientId:'c1', name:'CD Campinas — pátio 2', city:'Campinas', state:'SP', active:true },
+      { id:'ol2', clientId:'c1', name:'Matriz SP — doca', city:'São Paulo', state:'SP', active:true },
+      { id:'ol3', clientId:'c2', name:'Obra Vertex — Alphaville', city:'Barueri', state:'SP', active:true }
+    ];
+
+    const rentalContracts = [
+      { id:'rk1', clientId:'c1', code:'LOC-2026-001', status:'active', startsOn:dISO(-120), endsOn:dISO(240),
+        billingDay:5, defaultFranchise:200, defaultExcessPrice:38.5,
+        adjustmentIndex:'IPCA', adjustmentMonth:1, notes:'Renovação automática por 12 meses.' },
+      { id:'rk2', clientId:'c2', code:'LOC-2026-014', status:'draft', startsOn:dISO(10), endsOn:dISO(190),
+        billingDay:1, defaultFranchise:null, defaultExcessPrice:null,
+        adjustmentIndex:null, adjustmentMonth:null, notes:'Aguardando assinatura.' },
+      { id:'rk3', clientId:'c1', code:'LOC-2025-088', status:'suspended', startsOn:dISO(-400), endsOn:dISO(-10),
+        billingDay:10, defaultFranchise:160, defaultExcessPrice:42,
+        adjustmentIndex:'IGP-M', adjustmentMonth:7, notes:'Suspenso a pedido do cliente — obra parada.' }
+    ];
+
+    const rentalContractItems = [
+      { id:'ri1', contractId:'rk1', equipmentId:'eq1', locationId:'ol1', status:'delivered',
+        monthlyPrice:4200, franchise:200, excessPrice:38.5,
+        deliveredOn:dISO(-118), returnedOn:null, meterAtDelivery:1502, meterAtReturn:null },
+      { id:'ri2', contractId:'rk1', equipmentId:'eq4', locationId:'ol2', status:'reserved',
+        monthlyPrice:7800, franchise:null, excessPrice:null,
+        deliveredOn:null, returnedOn:null, meterAtDelivery:null, meterAtReturn:null },
+      { id:'ri3', contractId:'rk2', equipmentId:'eq3', locationId:'ol3', status:'reserved',
+        monthlyPrice:3600, franchise:null, excessPrice:null,
+        deliveredOn:null, returnedOn:null, meterAtDelivery:null, meterAtReturn:null },
+      /* Devolvido: o medidor da devolução fica CONGELADO no item, porque o do
+         equipamento segue andando no contrato seguinte (0049). */
+      { id:'ri4', contractId:'rk3', equipmentId:'eq8', locationId:'ol1', status:'returned',
+        monthlyPrice:3600, franchise:160, excessPrice:42,
+        deliveredOn:dISO(-395), returnedOn:dISO(-12), meterAtDelivery:210, meterAtReturn:1288 }
+    ];
+
+    const meterReadings = [
+      { id:'mr1', equipmentId:'eq1', contractItemId:'ri1', reading:1502, readOn:dISO(-118), source:'delivery', notes:'' },
+      { id:'mr2', equipmentId:'eq1', contractItemId:'ri1', reading:1690, readOn:dISO(-62), source:'manual', notes:'' },
+      { id:'mr3', equipmentId:'eq1', contractItemId:'ri1', reading:1842.5, readOn:dISO(-3), source:'manual', notes:'Leitura do mês.' },
+      { id:'mr4', equipmentId:'eq8', contractItemId:'ri4', reading:1288, readOn:dISO(-12), source:'return', notes:'Recolhimento.' },
+      /* Leitura sem contrato: manutenção também lê o medidor, e perder o número
+         por não haver contrato abriria um buraco justamente onde ele andou sem
+         faturar (0050). */
+      { id:'mr5', equipmentId:'eq5', contractItemId:null, reading:5410, readOn:dISO(-9), source:'manual', notes:'Entrada na oficina.' }
+    ];
+
+    /* A fatura REEMITIDA é o motivo de esta semente existir assim. A 0050 tinha
+       dois índices únicos contradizendo-se, e cancelar uma fatura para refazer a
+       competência era recusado com o nome de um índice. A 0056 resolveu com o
+       sufixo — e aqui ele aparece, para que a tela tenha de exibi-lo. */
+    const rentalInvoices = [
+      { id:'rf1', contractId:'rk1', clientId:'c1', number:'LOC-2026-001/202609', competence:compISO(-2),
+        status:'issued', issuedOn:dISO(-48), dueOn:dISO(-33), total:4200, receivableId:null, notes:'' },
+      { id:'rf2', contractId:'rk1', clientId:'c1', number:'LOC-2026-001/202610', competence:compISO(-1),
+        status:'cancelled', issuedOn:dISO(-18), dueOn:dISO(-3), total:4200, receivableId:null,
+        notes:'Cancelada: medição corrigida depois da emissão.' },
+      { id:'rf3', contractId:'rk1', clientId:'c1', number:'LOC-2026-001/202610-2', competence:compISO(-1),
+        status:'issued', issuedOn:dISO(-16), dueOn:dISO(-1), total:9050.25, receivableId:'tr1', notes:'Reemissão.' },
+      { id:'rf4', contractId:'rk1', clientId:'c1', number:'LOC-2026-001/202611', competence:compISO(0),
+        status:'draft', issuedOn:null, dueOn:null, total:4200, receivableId:null, notes:'' }
+    ];
+
+    const rentalInvoiceItems = [
+      { id:'rfi1', invoiceId:'rf1', contractItemId:'ri1', equipmentId:'eq1', kind:'rent',
+        description:'Locação EMP-0001 — setembro', quantity:1, unitPrice:4200, amount:4200,
+        meterFrom:null, meterTo:null, days:30 },
+      { id:'rfi2', invoiceId:'rf3', contractItemId:'ri1', equipmentId:'eq1', kind:'rent',
+        description:'Locação EMP-0001 — outubro', quantity:1, unitPrice:4200, amount:4200,
+        meterFrom:null, meterTo:null, days:30 },
+      { id:'rfi3', invoiceId:'rf3', contractItemId:'ri1', equipmentId:'eq1', kind:'excess',
+        description:'Excedente de horímetro — 152,5 h além da franquia de 200 h',
+        quantity:152.5, unitPrice:38.5, amount:5871.25, meterFrom:1690, meterTo:1842.5, days:null },
+      { id:'rfi4', invoiceId:'rf3', contractItemId:null, equipmentId:null, kind:'discount',
+        description:'Desconto comercial', quantity:1, unitPrice:-1021, amount:-1021,
+        meterFrom:null, meterTo:null, days:null },
+      { id:'rfi5', invoiceId:'rf4', contractItemId:'ri1', equipmentId:'eq1', kind:'rent',
+        description:'Locação EMP-0001 — novembro', quantity:1, unitPrice:4200, amount:4200,
+        meterFrom:null, meterTo:null, days:30 }
+    ];
+
+    /* Manutenção em campo (0051): o atendimento de campo NÃO é tabela própria —
+       é um chamado com ficha de campo. Quem vai até o cliente trocar uma peça
+       está atendendo um chamado, e duplicar a fila de trabalho em duas listas
+       faria o técnico ter de olhar as duas. */
+    const fieldService = [
+      { ticketId:1041, equipmentId:'eq1', contractItemId:'ri1', kind:'corrective',
+        costLimit:1200, approvedBy:null, approvedAt:null, approvalNote:null, billableTo:'provider' },
+      { ticketId:1042, equipmentId:'eq5', contractItemId:null, kind:'preventive',
+        costLimit:800, approvedBy:null, approvedAt:null, approvalNote:null, billableTo:'provider' },
+      /* Acima da alçada e aprovado: sem o registro de QUEM aprovou, "passou da
+         alçada" e "ninguém viu" ficam idênticos depois de fechado. */
+      { ticketId:1043, equipmentId:'eq4', contractItemId:'ri2', kind:'corrective',
+        costLimit:500, approvedBy:'u4', approvedAt:now-3*864e5,
+        approvalNote:'Bomba injetora — orçamento do fabricante.', billableTo:'client' }
+    ];
+
+    const laborEntries = [
+      { id:'lb1', ticketId:1041, technicianId:'u3', workedOn:dISO(-6), hours:3.5, hourlyRate:140, amount:490, notes:'Troca de mangueira hidráulica.' },
+      { id:'lb2', ticketId:1042, technicianId:'u3', workedOn:dISO(-9), hours:6, hourlyRate:140, amount:840, notes:'Revisão de 5.000 h.' },
+      { id:'lb3', ticketId:1043, technicianId:'u2', workedOn:dISO(-3), hours:8, hourlyRate:180, amount:1440, notes:'Diagnóstico e substituição.' }
+    ];
+
+    const partsUsed = [
+      { id:'pu1', ticketId:1041, partId:'pt2', description:'Mangueira hidráulica 3/8"', quantity:2, unitCost:95, amount:190 },
+      { id:'pu2', ticketId:1042, partId:'pt1', description:'Filtro de óleo', quantity:1, unitCost:62, amount:62 },
+      { id:'pu3', ticketId:1043, partId:'pt3', description:'Bomba injetora', quantity:1, unitCost:3850, amount:3850 }
+    ];
+
+    /* Peças e estoque (0053). O saldo NÃO é coluna digitada: ele é derivado das
+       movimentações por gatilho, como o total da fatura e o número dela. Saldo
+       que alguém edita é saldo que diverge do extrato em silêncio. */
+    const parts = [
+      { id:'pt1', sku:'FIL-OL-001', name:'Filtro de óleo — linha Stemac', manufacturerId:'em2',
+        unit:'un', category:'Filtros', averageCost:62, active:true },
+      { id:'pt2', sku:'MAN-HID-038', name:'Mangueira hidráulica 3/8"', manufacturerId:null,
+        unit:'m', category:'Hidráulica', averageCost:95, active:true },
+      { id:'pt3', sku:'BMB-INJ-180', name:'Bomba injetora GTA-180', manufacturerId:'em2',
+        unit:'un', category:'Motor', averageCost:3850, active:true },
+      { id:'pt4', sku:'PNE-700-12', name:'Pneu maciço 7.00-12', manufacturerId:null,
+        unit:'un', category:'Rodagem', averageCost:740, active:true }
+    ];
+
+    const stockPolicies = [
+      { id:'sp1', partId:'pt1', depotId:'d2', minQuantity:10, maxQuantity:40, leadTimeDays:7 },
+      { id:'sp2', partId:'pt2', depotId:'d2', minQuantity:20, maxQuantity:80, leadTimeDays:5 },
+      /* Abaixo do mínimo de propósito: é o que faz a tela ter o que alertar. */
+      { id:'sp3', partId:'pt3', depotId:'d2', minQuantity:2, maxQuantity:6, leadTimeDays:30 },
+      { id:'sp4', partId:'pt4', depotId:'d1', minQuantity:8, maxQuantity:24, leadTimeDays:10 }
+    ];
+
+    const partMovements = [
+      { id:'pm1', partId:'pt1', depotId:'d2', kind:'purchase', quantity:30, unitCost:62,
+        ticketId:null, orderId:'po1', countId:null, transferDepotId:null, at:dISO(-40), notes:'' },
+      { id:'pm2', partId:'pt2', depotId:'d2', kind:'purchase', quantity:60, unitCost:95,
+        ticketId:null, orderId:'po1', countId:null, transferDepotId:null, at:dISO(-40), notes:'' },
+      { id:'pm3', partId:'pt3', depotId:'d2', kind:'purchase', quantity:2, unitCost:3850,
+        ticketId:null, orderId:'po1', countId:null, transferDepotId:null, at:dISO(-40), notes:'' },
+      { id:'pm4', partId:'pt4', depotId:'d1', kind:'purchase', quantity:12, unitCost:740,
+        ticketId:null, orderId:'po2', countId:null, transferDepotId:null, at:dISO(-22), notes:'' },
+      { id:'pm5', partId:'pt1', depotId:'d2', kind:'consumption', quantity:-1, unitCost:62,
+        ticketId:1042, orderId:null, countId:null, transferDepotId:null, at:dISO(-9), notes:'Revisão GER-0002.' },
+      { id:'pm6', partId:'pt2', depotId:'d2', kind:'consumption', quantity:-2, unitCost:95,
+        ticketId:1041, orderId:null, countId:null, transferDepotId:null, at:dISO(-6), notes:'' },
+      { id:'pm7', partId:'pt3', depotId:'d2', kind:'consumption', quantity:-1, unitCost:3850,
+        ticketId:1043, orderId:null, countId:null, transferDepotId:null, at:dISO(-3), notes:'' },
+      /* Ajuste de contagem: a divergência vira movimentação, e não uma edição
+         de saldo. Assim o extrato continua explicando como se chegou ao número. */
+      { id:'pm8', partId:'pt1', depotId:'d2', kind:'adjustment', quantity:-2, unitCost:62,
+        ticketId:null, orderId:null, countId:'ct1', transferDepotId:null, at:dISO(-15), notes:'Contagem CT-2026-001.' },
+      { id:'pm9', partId:'pt4', depotId:'d1', kind:'transfer_out', quantity:-4, unitCost:740,
+        ticketId:null, orderId:null, countId:null, transferDepotId:'d3', at:dISO(-11), notes:'' },
+      { id:'pm10', partId:'pt4', depotId:'d3', kind:'transfer_in', quantity:4, unitCost:740,
+        ticketId:null, orderId:null, countId:null, transferDepotId:'d1', at:dISO(-11), notes:'' }
+    ];
+
+    const purchaseOrders = [
+      { id:'po1', supplierId:'s3', depotId:'d2', code:'OC-2026-001', status:'received',
+        expectedOn:dISO(-42), total:9470, invoiceRef:'NF 88120', payableId:null, notes:'' },
+      { id:'po2', supplierId:'s3', depotId:'d1', code:'OC-2026-002', status:'partial',
+        expectedOn:dISO(-20), total:17760, invoiceRef:null, payableId:null, notes:'Entrega parcial: 12 de 24.' },
+      { id:'po3', supplierId:'s3', depotId:'d2', code:'OC-2026-003', status:'sent',
+        expectedOn:dISO(14), total:7700, invoiceRef:null, payableId:null, notes:'Reposição da bomba.' },
+      { id:'po4', supplierId:'s1', depotId:'d2', code:'OC-2026-004', status:'draft',
+        expectedOn:null, total:0, invoiceRef:null, payableId:null, notes:'' }
+    ];
+
+    const purchaseOrderItems = [
+      { id:'poi1', orderId:'po1', partId:'pt1', quantity:30, unitPrice:62, amount:1860, receivedQuantity:30 },
+      { id:'poi2', orderId:'po1', partId:'pt2', quantity:60, unitPrice:95, amount:5700, receivedQuantity:60 },
+      { id:'poi3', orderId:'po1', partId:'pt3', quantity:2, unitPrice:955, amount:1910, receivedQuantity:2 },
+      { id:'poi4', orderId:'po2', partId:'pt4', quantity:24, unitPrice:740, amount:17760, receivedQuantity:12 },
+      { id:'poi5', orderId:'po3', partId:'pt3', quantity:2, unitPrice:3850, amount:7700, receivedQuantity:0 }
+    ];
+
+    const inventoryCounts = [
+      { id:'ct1', depotId:'d2', code:'CT-2026-001', status:'closed', countedOn:dISO(-15),
+        closedAt:now-15*864e5, closedBy:'u4', notes:'Contagem trimestral.' },
+      { id:'ct2', depotId:'d1', code:'CT-2026-002', status:'open', countedOn:dISO(-1),
+        closedAt:null, closedBy:null, notes:'Em andamento.' }
+    ];
+
+    const inventoryCountItems = [
+      /* Divergência de propósito: contagem que bate sempre não prova nada, e a
+         tela precisa ter o que mostrar em vermelho. */
+      { id:'cti1', countId:'ct1', partId:'pt1', expectedQuantity:29, countedQuantity:27 },
+      { id:'cti2', countId:'ct1', partId:'pt2', expectedQuantity:58, countedQuantity:58 },
+      { id:'cti3', countId:'ct1', partId:'pt3', expectedQuantity:1, countedQuantity:1 },
+      { id:'cti4', countId:'ct2', partId:'pt4', expectedQuantity:8, countedQuantity:null }
+    ];
+
+
+    /* =====================================================================
+     * GESTÃO — o que o protótipo ainda não mostrava
+     *
+     * Dezessete telas que a aplicação ganhou entre as migrações 0021 e 0061 e
+     * que nunca chegaram aqui. A ferramenta é o que se abre para mostrar o
+     * produto; mostrar menos da metade dele é demonstrar outro produto.
+     * ===================================================================== */
+
+    /* Expediente e feriados (0021). O SLA que conta hora corrida promete o que
+       não cumpre: um chamado aberto sexta às 17h vence no sábado. */
+    const businessHours = [
+      { day:1, label:'Segunda', from:'08:00', to:'18:00', lunchFrom:'12:00', lunchTo:'13:00', open:true },
+      { day:2, label:'Terça',   from:'08:00', to:'18:00', lunchFrom:'12:00', lunchTo:'13:00', open:true },
+      { day:3, label:'Quarta',  from:'08:00', to:'18:00', lunchFrom:'12:00', lunchTo:'13:00', open:true },
+      { day:4, label:'Quinta',  from:'08:00', to:'18:00', lunchFrom:'12:00', lunchTo:'13:00', open:true },
+      { day:5, label:'Sexta',   from:'08:00', to:'17:00', lunchFrom:'12:00', lunchTo:'13:00', open:true },
+      { day:6, label:'Sábado',  from:null, to:null, lunchFrom:null, lunchTo:null, open:false },
+      { day:0, label:'Domingo', from:null, to:null, lunchFrom:null, lunchTo:null, open:false }
+    ];
+    const holidays = [
+      { id:'h1', date:'2026-01-01', name:'Confraternização Universal', scope:'national' },
+      { id:'h2', date:'2026-04-21', name:'Tiradentes', scope:'national' },
+      { id:'h3', date:'2026-07-09', name:'Revolução Constitucionalista', scope:'state', state:'SP' },
+      { id:'h4', date:'2026-11-20', name:'Consciência Negra', scope:'national' },
+      { id:'h5', date:'2026-12-25', name:'Natal', scope:'national' }
+    ];
+
+    /* Conversas (0040-0042): WhatsApp, Telegram e Bitrix entram pelo mesmo
+       funil. O chamado continua sendo o registro; a conversa é como ele chegou. */
+    const channels = [
+      { id:'ch1', kind:'whatsapp', name:'WhatsApp Suporte', identifier:'+55 11 90000-0001', active:true },
+      { id:'ch2', kind:'telegram', name:'Telegram Plantão', identifier:'@sti_plantao', active:true },
+      { id:'ch3', kind:'bitrix',   name:'Bitrix24 — Meridiano', identifier:'meridiano.bitrix24.com.br', active:false }
+    ];
+    const conversations = [
+      { id:'cv1', channelId:'ch1', contact:'Carla Dias', contactRef:'+55 11 98800-1001',
+        ticketId:1051, status:'open', lastAt:dISO(0), unread:2,
+        messages:[
+          { at:dISO(0), dir:'in',  text:'Bom dia, a impressora da recepção parou de novo.' },
+          { at:dISO(0), dir:'out', text:'Bom dia, Carla. Abri o chamado #1051 e já estou olhando.' },
+          { at:dISO(0), dir:'in',  text:'Obrigada! É urgente, tem fila aqui.' }
+        ] },
+      { id:'cv2', channelId:'ch2', contact:'Plantão noturno', contactRef:'@plantao_noite',
+        ticketId:null, status:'open', lastAt:dISO(-1), unread:0,
+        messages:[ { at:dISO(-1), dir:'in', text:'Link da matriz oscilando desde as 23h.' } ] },
+      { id:'cv3', channelId:'ch1', contact:'Bruno Lima', contactRef:'+55 11 98800-1002',
+        ticketId:1048, status:'closed', lastAt:dISO(-6), unread:0,
+        messages:[ { at:dISO(-6), dir:'in', text:'Resolvido, obrigado.' } ] }
+    ];
+
+    /* Base de conhecimento e catálogo (0033). */
+    const kbArticles = [
+      { id:'kb1', title:'Como solicitar acesso a uma pasta de rede', category:'Acessos',
+        summary:'O caminho, quem aprova e o prazo.', views:184, helpful:41, status:'published',
+        updatedOn:dISO(-12) },
+      { id:'kb2', title:'Trocar o toner da impressora da recepção', category:'Impressão',
+        summary:'Passo a passo com foto, para resolver sem abrir chamado.', views:97, helpful:33,
+        status:'published', updatedOn:dISO(-30) },
+      { id:'kb3', title:'VPN: erro 809 no Windows', category:'Rede',
+        summary:'A causa quase sempre é o firewall do roteador de casa.', views:256, helpful:70,
+        status:'published', updatedOn:dISO(-3) },
+      { id:'kb4', title:'Política de senha e segundo fator', category:'Segurança',
+        summary:'Rascunho — aguardando revisão da diretoria.', views:0, helpful:0,
+        status:'draft', updatedOn:dISO(-1) }
+    ];
+    const serviceCatalog = [
+      { id:'sv1', name:'Acesso a pasta de rede', category:'Acessos', slaHours:8,
+        needsApproval:true, approverProfile:'Gestor de TI', active:true, requests:23 },
+      { id:'sv2', name:'Instalação de software', category:'Estação de trabalho', slaHours:16,
+        needsApproval:true, approverProfile:'Gestor de TI', active:true, requests:11 },
+      { id:'sv3', name:'Troca de toner', category:'Impressão', slaHours:4,
+        needsApproval:false, approverProfile:null, active:true, requests:38 },
+      { id:'sv4', name:'Novo colaborador — kit completo', category:'Onboarding', slaHours:40,
+        needsApproval:true, approverProfile:'Gestor de TI', active:true, requests:6 }
+    ];
+
+    /* Projetos (0035) e orçamento (0038). */
+    const projects = [
+      { id:'pj1', code:'PRJ-2026-01', name:'Troca do parque de notebooks', status:'running',
+        startsOn:dISO(-60), endsOn:dISO(40), budget:420000, spent:268000, ownerId:'u4', progress:62 },
+      { id:'pj2', code:'PRJ-2026-02', name:'Migração do e-mail para Microsoft 365', status:'running',
+        startsOn:dISO(-20), endsOn:dISO(70), budget:96000, spent:18500, ownerId:'u1', progress:18 },
+      { id:'pj3', code:'PRJ-2025-07', name:'Cabeamento do CD Campinas', status:'done',
+        startsOn:dISO(-220), endsOn:dISO(-40), budget:180000, spent:192400, ownerId:'u4', progress:100 }
+    ];
+    const projectTasks = [
+      { id:'pt-a', projectId:'pj1', name:'Levantamento do parque', done:true,  dueOn:dISO(-50), ownerId:'u3' },
+      { id:'pt-b', projectId:'pj1', name:'Compra — lote 1 (40 un.)', done:true, dueOn:dISO(-30), ownerId:'u4' },
+      { id:'pt-c', projectId:'pj1', name:'Migração de perfis', done:false, dueOn:dISO(5), ownerId:'u3' },
+      { id:'pt-d', projectId:'pj1', name:'Descarte certificado dos antigos', done:false, dueOn:dISO(35), ownerId:'u4' },
+      { id:'pt-e', projectId:'pj2', name:'Inventário de caixas e aliases', done:true, dueOn:dISO(-10), ownerId:'u1' },
+      { id:'pt-f', projectId:'pj2', name:'Piloto com 20 usuários', done:false, dueOn:dISO(12), ownerId:'u1' }
+    ];
+    /* O orçamento é por centro de custo e competência, e compara PREVISTO com
+       REALIZADO — este último vindo dos títulos a pagar, não digitado. */
+    const budgetLines = [
+      { id:'bg1', costCenterId:'cc1', competence:compISO(0), planned:38000, kind:'Licenças e serviços' },
+      { id:'bg2', costCenterId:'cc2', competence:compISO(0), planned:22000, kind:'Infraestrutura' },
+      { id:'bg3', costCenterId:'cc4', competence:compISO(0), planned:6000,  kind:'Conectividade' },
+      { id:'bg4', costCenterId:'cc1', competence:compISO(-1), planned:35000, kind:'Licenças e serviços' },
+      { id:'bg5', costCenterId:'cc2', competence:compISO(-1), planned:22000, kind:'Infraestrutura' }
+    ];
+
+    /* Agentes (0032) e software (0031). */
+    const agents = [
+      { id:'ag1', hostname:'NB-FIN-0012', assetId:'a1', os:'Windows 11 Pro 23H2', version:'1.4.2',
+        lastSeen:dISO(0), online:true, cpu:38, ramPct:71, diskFreeGb:84, diskTotalGb:476, alerts:0 },
+      { id:'ag2', hostname:'NB-TI-0003', assetId:'a2', os:'Windows 11 Pro 23H2', version:'1.4.2',
+        lastSeen:dISO(0), online:true, cpu:12, ramPct:44, diskFreeGb:12, diskTotalGb:256, alerts:1 },
+      { id:'ag3', hostname:'SRV-ARQ-01', assetId:null, os:'Ubuntu Server 24.04', version:'1.3.9',
+        lastSeen:dISO(-9), online:false, cpu:0, ramPct:0, diskFreeGb:310, diskTotalGb:1024, alerts:1 }
+    ];
+    const software = [
+      { id:'sw1', name:'Microsoft 365 Apps', publisher:'Microsoft', installs:48, licensed:50, kind:'paga' },
+      { id:'sw2', name:'AutoCAD 2026', publisher:'Autodesk', installs:7, licensed:4, kind:'paga' },
+      { id:'sw3', name:'Google Chrome', publisher:'Google', installs:51, licensed:null, kind:'livre' },
+      { id:'sw4', name:'7-Zip', publisher:'Igor Pavlov', installs:33, licensed:null, kind:'livre' },
+      { id:'sw5', name:'TeamViewer', publisher:'TeamViewer', installs:5, licensed:0, kind:'paga' }
+    ];
+
+    /* IA (0044): a chave NUNCA fica no banco — o que fica é o NOME da variável
+       de ambiente que a guarda (ADR-009). */
+    const aiConfig = { enabled:true, provider:'anthropic', model:'claude-opus-5',
+                       keyEnvVar:'ANTHROPIC_API_KEY', monthlyTokenCap:2000000,
+                       usedThisMonth:412880, autoSuggest:true, autoClassify:true };
+    const aiSuggestions = [
+      { id:'ia1', ticketId:1051, kind:'resposta', accepted:true,
+        text:'Verificar se o toner é o original; o erro 51.2 costuma ser sensor sujo.' },
+      { id:'ia2', ticketId:1049, kind:'classificação', accepted:false,
+        text:'Sugerido "Rede › VPN"; o operador classificou como "Rede › Wi-Fi".' },
+      { id:'ia3', ticketId:1047, kind:'resumo', accepted:true,
+        text:'Três interações, causa raiz no switch da sala 2, resolvido com troca de porta.' }
+    ];
+
+    /* Preferências do ambiente (0025): o que é da EMPRESA, não da pessoa. */
+    const envPrefs = {
+      tenantName:'IAR Office', slug:'iarx',
+      spheres:['management','rental'],
+      slaWarningPct:75, slaCriticalPct:90, autoCloseAfterDays:5,
+      timezone:'America/Sao_Paulo', locale:'pt-BR',
+      brandColor:'#2f6fed', logoUrl:null,
+      csatEnabled:true, csatDelayHours:2
+    };
+
+    /* Trilha de alterações (0010): quem mudou o quê, e o valor de antes. */
+    const auditTrail = [
+      { id:'au1', at:dISO(0), userId:'u1', table:'rental_contracts', recordRef:'LOC-2026-001',
+        action:'update', field:'status', from:'draft', to:'active' },
+      { id:'au2', at:dISO(-1), userId:'u4', table:'payables', recordRef:'tp2',
+        action:'update', field:'status', from:'pending_approval', to:'approved' },
+      { id:'au3', at:dISO(-2), userId:'u1', table:'profiles', recordRef:'bruno.atendente@iaroffice.com.br',
+        action:'update', field:'is_active', from:'true', to:'false' },
+      { id:'au4', at:dISO(-3), userId:'u3', table:'it_assets', recordRef:'PAT-001100',
+        action:'update', field:'assigned_user_id', from:'Ana Souza', to:'Bruno Lima' },
+      { id:'au5', at:dISO(-5), userId:'u1', table:'permission_grants', recordRef:'Operador Financeiro',
+        action:'insert', field:'permission_key', from:null, to:'financeiro.titulos_pagar.criar' }
+    ];
+
+    /* Trabalhos agendados (0055): o alerta de trabalho PARADO é o que pega a
+       falha silenciosa — nada acontece, nada reclama. */
+    const jobs = [
+      { job:'sla_alerts', label:'Alertas de SLA', toleranceMin:15, lastRun:dISO(0),
+        lastOk:true, lastAffected:3, note:'A cada 5 minutos.' },
+      { job:'auto_close', label:'Fechamento automático', toleranceMin:1440, lastRun:dISO(0),
+        lastOk:true, lastAffected:2, note:'Diária.' },
+      { job:'csat_invites', label:'Convites de satisfação', toleranceMin:120, lastRun:dISO(0),
+        lastOk:true, lastAffected:5, note:'A cada hora.' },
+      { job:'drain_outbox', label:'Drenagem da caixa de saída', toleranceMin:30, lastRun:dISO(0),
+        lastOk:false, lastAffected:0, note:'Falhou: provedor recusou o remetente.',
+        error:'HTTP 403 domain not verified' },
+      { job:'purge_convites', label:'Purga de convites vencidos', toleranceMin:2880,
+        lastRun:dISO(-4), lastOk:true, lastAffected:0, note:'Diária.' },
+      /* Parado: não houve execução nenhuma dentro da cadência. É a falha mais
+         perigosa, porque é a que não produz erro nenhum. */
+      { job:'link_check', label:'Verificação de links', toleranceMin:60, lastRun:dISO(-3),
+        lastOk:true, lastAffected:0, note:'A cada 15 minutos.' }
+    ];
+
+    /* Caixa de saída (0057-0058): o corpo NÃO aparece na tela — ele carrega o
+       link de redefinição de senha de outra pessoa. */
+    const emailOutbox = [
+      { id:'eo1', to:'carla.solicitante@meridiano.com.br', subject:'Seu chamado #1051 foi aberto',
+        kind:'ticket_assigned', status:'sent', attempts:1, at:dISO(0), error:null },
+      { id:'eo2', to:'convidada@exemplo.com.br', subject:'Convite para usar o STI na IAR Office',
+        kind:'invite', status:'pending', attempts:0, at:dISO(0), error:null },
+      { id:'eo3', to:'gestor@iaroffice.com.br', subject:'SLA crítico no chamado #1049',
+        kind:'sla_critical', status:'sent', attempts:1, at:dISO(-1), error:null },
+      { id:'eo4', to:'antigo@dominio-que-sumiu.com', subject:'Pesquisa de satisfação',
+        kind:'satisfaction_invite', status:'failed', attempts:5, at:dISO(-2),
+        error:'HTTP 422 recipient domain does not accept mail' },
+      { id:'eo5', to:'admin@iaroffice.com.br', subject:'Trabalho agendado parou: link_check',
+        kind:'agent_alert', status:'sent', attempts:1, at:dISO(-3), error:null }
+    ];
+
+    const invites = [
+      { id:'iv1', email:'nova.atendente@iaroffice.com.br', role:'atendente', status:'pending',
+        invitedBy:'u1', createdOn:dISO(-1), expiresOn:dISO(6) },
+      { id:'iv2', email:'consultor@parceiro.com.br', role:'visualizador', status:'accepted',
+        invitedBy:'u1', createdOn:dISO(-20), expiresOn:dISO(-13), acceptedOn:dISO(-19) },
+      { id:'iv3', email:'desistiu@exemplo.com.br', role:'solicitante', status:'expired',
+        invitedBy:'u4', createdOn:dISO(-40), expiresOn:dISO(-33) }
+    ];
+
+    /* Planilhas (0054): importar é um CICLO — subir, conferir, aplicar —, e não
+       um botão. O lote que falha pela metade é o que destrói cadastro. */
+    const importBatches = [
+      { id:'ib1', file:'inventario-matriz.xlsx', target:'Inventário de TI', status:'applied',
+        rows:142, ok:142, errors:0, at:dISO(-8), byId:'u1' },
+      { id:'ib2', file:'linhas-vivo-outubro.csv', target:'Telefonia', status:'review',
+        rows:68, ok:61, errors:7, at:dISO(-1), byId:'u3' },
+      { id:'ib3', file:'frota-2026.xlsx', target:'Frota de locação', status:'failed',
+        rows:30, ok:0, errors:30, at:dISO(-2), byId:'u4',
+        note:'Coluna "etiqueta" ausente — nada foi aplicado.' }
+    ];
+
     return { clients, branches, areas, queues, categories, priorities,
              slaContracts, slaDefs, suppliers, supplierContracts, users,
              tickets, assets, lines, links, integration,
              accessProfiles, costCenters, bankAccounts, movements,
              expenseCategories, approvalRules, approvalRequired, payables, receivables,
+             /* Locação (0048-0056). Entram no mesmo objeto porque o protótipo
+                não tem banco: o que separa as duas esferas é o MENU, não o
+                armazenamento — exatamente como na aplicação, onde as tabelas
+                convivem no mesmo schema sob a mesma RLS. */
+             depots, equipManufacturers, equipCategories, equipModels, rentalEquipment,
+             operationLocations, rentalContracts, rentalContractItems,
+             meterReadings, rentalInvoices, rentalInvoiceItems,
+             fieldService, laborEntries, partsUsed,
+             parts, stockPolicies, partMovements,
+             purchaseOrders, purchaseOrderItems, inventoryCounts, inventoryCountItems,
+             /* A empresa declara em que negócio está (migração 0047). As duas
+                de propósito: quem abre a ferramenta pela primeira vez tem de ver
+                o produto inteiro, e o seletor do cabeçalho é o que mostra que a
+                filtragem existe. */
+             spheres:['management','rental'],
+             sphereFocus:null,
+             /* Gestão: as dezessete telas que a aplicação ganhou entre a 0021 e
+                a 0061 e que nunca chegaram ao protótipo. */
+             businessHours, holidays, channels, conversations,
+             kbArticles, serviceCatalog, projects, projectTasks, budgetLines,
+             agents, software, aiConfig, aiSuggestions, envPrefs,
+             auditTrail, jobs, emailOutbox, invites, importBatches,
              /* Quem está usando o sistema agora. Trocar aqui é o que faz a
                 interface inteira mudar — é a prova que a camada funciona.
 
@@ -3340,9 +3869,9 @@
         { label: 'Abrir ticket', tela: 'novo' },
         { label: 'Filas', tela: 'filas' },
         { label: 'SLA e prazos', tela: 'sla' },
-        { label: 'Expediente e feriados' },
+        { label: 'Expediente e feriados', tela: 'horarios' },
         { label: 'Satisfação', tela: 'satisfacao' },
-        { label: 'Conversas' },
+        { label: 'Conversas', tela: 'conversas' },
       ],
     },
     {
@@ -3350,8 +3879,25 @@
       label: 'Autoatendimento',
       porque: 'O que o solicitante resolve sem abrir chamado. Separado de Atendimento porque o dono da tela é outro: aqui quem lê é quem pede, não quem atende.',
       itens: [
-        { label: 'Base de conhecimento' },
-        { label: 'Catálogo de serviços' },
+        { label: 'Base de conhecimento', tela: 'base' },
+        { label: 'Catálogo de serviços', tela: 'catalogo' },
+      ],
+    },
+    {
+      id: 'locacao',
+      label: 'Locação',
+      esfera: 'rental',
+      porque: 'O negócio de quem aluga equipamento próprio. Fica acima do Financeiro porque numa locadora é o trabalho do dia, e abaixo de Atendimento porque o chamado continua sendo o que interrompe. Só aparece para a empresa que declarou a esfera.',
+      itens: [
+        { label: 'Frota', tela: 'frota' },
+        { label: 'Modelos e categorias', tela: 'loc-cadastros' },
+        { label: 'Contratos', tela: 'loc-contratos' },
+        { label: 'Medições e consumo', tela: 'medicoes' },
+        { label: 'Faturamento', tela: 'loc-faturamento' },
+        { label: 'Manutenção em campo', tela: 'manutencao' },
+        { label: 'Peças e estoque', tela: 'pecas' },
+        { label: 'Ordens de compra', tela: 'compras' },
+        { label: 'Contagens de inventário', tela: 'contagens' },
       ],
     },
     {
@@ -3359,8 +3905,8 @@
       label: 'Gestão',
       porque: 'Aquilo por que o gestor de TI responde. A Visão de resultado saiu do topo e veio para cá: ela não pertence a Financeiro nem a Atendimento, pertence a quem responde pelos dois.',
       itens: [
-        { label: 'Visão de resultado' },
-        { label: 'Projetos' },
+        { label: 'Visão de resultado', tela: 'resultado' },
+        { label: 'Projetos', tela: 'projetos' },
       ],
     },
     {
@@ -3373,7 +3919,7 @@
         { label: 'Contas bancárias', tela: 'contas' },
         { label: 'Centros de custo', tela: 'centros' },
         { label: 'Fluxo de caixa', tela: 'fluxo-caixa' },
-        { label: 'Orçamento de TI' },
+        { label: 'Orçamento de TI', tela: 'orcamento' },
       ],
     },
     {
@@ -3382,8 +3928,8 @@
       porque: 'O parque e o que ele reporta sozinho. Chamava-se "Infraestrutura", que não dizia se era o equipamento ou o monitoramento dele — e são as duas coisas.',
       itens: [
         { label: 'Inventário de TI', tela: 'inventario' },
-        { label: 'Agentes nas máquinas' },
-        { label: 'Software instalado' },
+        { label: 'Agentes nas máquinas', tela: 'agentes' },
+        { label: 'Software instalado', tela: 'software' },
         { label: 'Telefonia', tela: 'telefonia' },
         { label: 'Links de internet', tela: 'links' },
         { label: 'Mapa das filiais', tela: 'mapas' },
@@ -3404,7 +3950,7 @@
       porque: 'As telas que falam com sistema de fora. Sugestões de IA veio de Administração para cá: o que decide o grupo é com quem a tela fala, e ela fala com um provedor de terceiro.',
       itens: [
         { label: 'Sistemas de tickets', tela: 'integracoes' },
-        { label: 'Sugestões de IA' },
+        { label: 'Sugestões de IA', tela: 'ia' },
         { label: 'Bancos de dados', previsto: 'Leitura de base externa para importar inventário ou cadastro.' },
         { label: 'Pagamento bancário', previsto: 'Remessa de pagamento ao banco. Depende dos títulos a pagar.' },
         { label: 'Recebimento bancário', previsto: 'Retorno de cobrança e baixa automática. Depende dos títulos a receber.' },
@@ -3416,11 +3962,14 @@
       porque: 'Quem pode o quê, o que o sistema faz sozinho e o rastro do que foi feito. Fica no fim porque é o que se abre uma vez e não se volta.',
       itens: [
         { label: 'Usuários', tela: 'usuarios' },
-        { label: 'Preferências do ambiente' },
-        { label: 'Trilha de alterações' },
-        { label: 'Trabalhos agendados' },
+        { label: 'Preferências do ambiente', tela: 'ambiente' },
+        { label: 'Trilha de alterações', tela: 'auditoria' },
+        { label: 'Trabalhos agendados', tela: 'trabalhos' },
+        { label: 'Avisos enviados', tela: 'avisos' },
         { label: 'Perfis de acesso', tela: 'perfis' },
+        { label: 'Convites', tela: 'convites' },
         { label: 'Painéis de TV', tela: 'tv' },
+        { label: 'Planilhas', tela: 'planilhas' },
       ],
     },
   ];
@@ -3429,7 +3978,7 @@
   const MAPA_SOLTOS = [
     { label: 'Novidades', tela: 'novidades', onde: 'topo' },
     { label: 'Visão geral', tela: 'painel', onde: 'topo' },
-    { label: 'Portal', onde: 'topo' },
+    { label: 'Portal', tela: 'portal', onde: 'topo' },
     { label: 'Minha conta', tela: 'conta', onde: 'rodapé' },
   ];
 
@@ -4306,6 +4855,1498 @@
     if (!faixas.length) return null;
     return [...new Set(faixas.map(r => r.level))].sort();
   }
+
+
+  /* ====================================================================== */
+  /* LOCAÇÃO (migrações 0048-0056)                                          */
+  /* ====================================================================== */
+  /*
+   * A esfera `rental`. O que separa estas telas das de gestão não é o que elas
+   * fazem, é o sentido do dinheiro: aqui ele ENTRA — contrato + medição →
+   * fatura → título a receber. Na gestão ele sai — nota de terceiro → título a
+   * pagar → orçamento.
+   *
+   * Todas respeitam as chaves `locacao.*`, que já existiam no catálogo desde a
+   * 0048 e até agora não governavam nada aqui: o protótipo tinha a permissão e
+   * não tinha a tela. Chave sem tela é configuração que não governa coisa
+   * alguma — o mesmo defeito que "Links de internet" teve ao contrário.
+   */
+
+  /* Auxiliares que faltavam no escopo global: `dISO` mora dentro de `seed()`,
+     e as telas precisam da mesma conta fora dela. */
+  const dIso = d => new Date(Date.now() + d*864e5).toISOString().slice(0,10);
+  const nomeDoUsuario = id => userById(id)?.name || '—';
+
+  /* O custo do atendimento é a SOMA do que foi apontado — mão de obra mais
+     peças. Guardá-lo numa coluna faria "o que foi apontado" e "o que está
+     escrito" divergirem no primeiro apontamento corrigido. */
+  const custoDaFicha = ticketId =>
+    db.laborEntries.filter(l => l.ticketId === ticketId).reduce((s,l) => s + l.amount, 0) +
+    db.partsUsed.filter(x => x.ticketId === ticketId).reduce((s,x) => s + x.amount, 0);
+
+  const EQUIP_STATUS = {
+    available:       { label:'Disponível',      tone:'ok' },
+    reserved:        { label:'Reservado',       tone:'info' },
+    in_transit_out:  { label:'Em trânsito',     tone:'warn' },
+    rented:          { label:'Locado',          tone:'brand' },
+    in_transit_back: { label:'Recolhendo',      tone:'warn' },
+    inspection:      { label:'Em conferência',  tone:'info' },
+    maintenance:     { label:'Em manutenção',   tone:'warn' },
+    blocked:         { label:'Bloqueado',       tone:'crit' },
+    lost:            { label:'Extraviado',      tone:'crit' },
+    written_off:     { label:'Baixado',         tone:'neutral' },
+  };
+
+  /* A máquina de estados é CÓPIA FIEL da 0048. Divergir aqui tornaria a
+     demonstração enganosa: quem vê o protótipo aprende um ciclo que o banco
+     recusa. */
+  const EQUIP_TRANSITIONS = {
+    available:       ['reserved','in_transit_out','maintenance'],
+    reserved:        ['in_transit_out','available'],
+    in_transit_out:  ['rented','available'],
+    rented:          ['in_transit_back','maintenance'],
+    in_transit_back: ['inspection'],
+    inspection:      ['available','maintenance'],
+    maintenance:     ['available','rented'],
+    blocked:         ['available','maintenance'],
+    lost:            [],
+    written_off:     [],
+  };
+
+  const CONTRACT_STATUS = {
+    draft:     { label:'Rascunho',  tone:'neutral' },
+    active:    { label:'Ativo',     tone:'ok' },
+    suspended: { label:'Suspenso',  tone:'warn' },
+    ended:     { label:'Encerrado', tone:'neutral' },
+    cancelled: { label:'Rescindido',tone:'crit' },
+  };
+  const CONTRACT_TRANSITIONS = {
+    draft:     ['active','cancelled'],
+    active:    ['suspended','ended','cancelled'],
+    suspended: ['active','ended','cancelled'],
+    ended:     [],
+    cancelled: [],
+  };
+
+  const ITEM_STATUS = {
+    reserved:  { label:'Reservado', tone:'info' },
+    delivered: { label:'Entregue',  tone:'ok' },
+    returned:  { label:'Devolvido', tone:'neutral' },
+    cancelled: { label:'Cancelado', tone:'crit' },
+  };
+
+  const INVOICE_STATUS = {
+    draft:     { label:'Rascunho',  tone:'neutral' },
+    issued:    { label:'Emitida',   tone:'ok' },
+    cancelled: { label:'Cancelada', tone:'crit' },
+  };
+
+  const PO_STATUS = {
+    draft:     { label:'Rascunho', tone:'neutral' },
+    sent:      { label:'Enviada',  tone:'info' },
+    partial:   { label:'Parcial',  tone:'warn' },
+    received:  { label:'Recebida', tone:'ok' },
+    cancelled: { label:'Cancelada',tone:'crit' },
+  };
+
+  const MOV_KIND = {
+    purchase:     'Compra',
+    consumption:  'Consumo',
+    return:       'Devolução',
+    adjustment:   'Ajuste',
+    transfer_in:  'Transf. entrada',
+    transfer_out: 'Transf. saída',
+  };
+
+  const FS_KIND = {
+    corrective:   'Corretiva',
+    preventive:   'Preventiva',
+    installation: 'Instalação',
+    removal:      'Retirada',
+  };
+
+  const METER_KIND = { none:'sem medidor', hours:'horímetro', cycles:'ciclos', distance:'odômetro' };
+
+  const modelById   = id => db.equipModels.find(m => m.id === id);
+  const equipById   = id => db.rentalEquipment.find(e => e.id === id);
+  const depotById   = id => db.depots.find(d => d.id === id);
+  const rcById      = id => db.rentalContracts.find(c => c.id === id);
+  const partById    = id => db.parts.find(x => x.id === id);
+  const equipCatById = id => db.equipCategories.find(c => c.id === id);
+  const fabById     = id => db.equipManufacturers.find(f => f.id === id);
+  const clienteById = id => db.clients.find(c => c.id === id);
+  const num = (v, casas) => (v == null ? '—' :
+    Number(v).toLocaleString('pt-BR', { minimumFractionDigits: casas ?? 0, maximumFractionDigits: casas ?? 0 }));
+  const dBR = d => (d ? String(d).split('-').reverse().join('/') : '—');
+  const compBR = c => {
+    if (!c) return '—';
+    const [a, m] = String(c).split('-');
+    return `${m}/${a}`;
+  };
+
+  /* O SALDO DA PEÇA É DERIVADO, nunca digitado.
+     É a mesma decisão do total da fatura e do número dela: na 0053 quem mantém
+     `part_balances` é um gatilho sobre `part_movements`. Saldo que alguém edita
+     é saldo que diverge do extrato em silêncio, e o extrato deixa de explicar
+     como se chegou ao número. */
+  const saldoDaPeca = (partId, depotId) => db.partMovements
+    .filter(m => m.partId === partId && (!depotId || m.depotId === depotId))
+    .reduce((s, m) => s + m.quantity, 0);
+
+  /* ---------------------------------------------------------------------- */
+  views['frota'] = () => {
+    const podeMover = may('locacao.frota.mover');
+    const lista = [...db.rentalEquipment].sort((a,b) => a.assetTag.localeCompare(b.assetTag));
+    const porStatus = k => lista.filter(e => e.status === k).length;
+    const bloqueados = lista.filter(e => e.blocked);
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Locação</p><h1>Frota</h1>
+        <p class="lede">O equipamento próprio que se aluga, e onde cada peça está.
+        O ciclo de vida é máquina de estados: de "disponível" não se vai direto para
+        "locado" — passa por reserva e expedição, e cada passo fica registrado.</p></div>
+        ${ifMay('locacao.frota.criar',
+          `<button type="button" class="btn" id="fr-new">Cadastrar equipamento</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Disponíveis', porStatus('available'), 'base alocável', 'ok')}
+        ${tile('Locados', porStatus('rented'), 'gerando receita', 'brand')}
+        ${tile('Em manutenção', porStatus('maintenance'), 'fora de operação',
+               porStatus('maintenance') ? 'warn' : 'neutral')}
+        ${tile('Bloqueados', bloqueados.length,
+               bloqueados.length ? 'não alocáveis' : 'nenhum',
+               bloqueados.length ? 'crit' : 'neutral')}
+      </div>
+
+      ${bloqueados.length ? `<div class="alert" data-kind="warn">
+        <strong>Bloqueio é atributo, não estado.</strong> ${bloqueados.length} peça(s)
+        continuam com o status real — onde elas de fato estão — e saem da base alocável
+        por bandeira própria. Misturar as duas coisas obrigaria a mentir sobre a
+        localização para impedir a alocação.</div>` : ''}
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Etiqueta</th><th>Modelo</th><th>Depósito</th><th>Medidor</th>
+          <th>Situação</th><th></th></tr></thead>
+        <tbody>${lista.map(e => {
+          const m = modelById(e.modelId);
+          const st = EQUIP_STATUS[e.status];
+          const destinos = EQUIP_TRANSITIONS[e.status] || [];
+          return `<tr>
+            <td class="mono strong">${esc(e.assetTag)}
+              <div class="dim">${esc(e.serial || 'sem série')}</div></td>
+            <td>${esc(m ? m.name : '—')}
+              <div class="dim">${esc(m ? fabById(m.manufacturerId)?.name || '' : '')}</div></td>
+            <td class="dim">${esc(depotById(e.depotId)?.name || '—')}</td>
+            <td class="mono">${e.meterKind === 'none' ? '<span class="dim">—</span>'
+              : `${num(e.meter, 1)} <span class="dim">${esc(METER_KIND[e.meterKind])}</span>`}</td>
+            <td>${pill(st.label, st.tone)}
+              ${e.blocked ? ' ' + pill('bloqueado','crit') : ''}
+              ${e.blocked && e.blockReason
+                ? `<div class="dim" style="color:var(--breach-ink)">${esc(e.blockReason)}</div>` : ''}</td>
+            <td class="row-actions">
+              ${podeMover && destinos.length
+                ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                     data-eq-move="${e.id}">Mover</button>` : ''}
+              <button type="button" class="btn btn-sm" data-variant="ghost"
+                data-eq-open="${e.id}">Ficha</button>
+            </td></tr>`;
+        }).join('')}</tbody></table></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['loc-cadastros'] = () => {
+    const pode = may('locacao.cadastros.gerenciar');
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Locação</p><h1>Modelos e categorias</h1>
+        <p class="lede">O que a frota pode ser. Categoria define a natureza e o medidor
+        padrão; modelo define o preço de tabela e a ficha técnica.</p></div></div>
+
+      <div class="card"><div class="card-body">
+        <h2>Categorias</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">O medidor padrão é <strong>nenhum</strong>,
+        e isso é decisão da migração 0048: a maior parte do que se aluga é cobrada por
+        tempo, não por uso. Medidor obrigatório inventaria horímetro onde não existe, e
+        o faturamento cobraria leitura de um aparelho que não mede nada.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Código</th><th>Nome</th><th>Medidor padrão</th><th>Vida útil</th><th></th></tr></thead>
+          <tbody>${db.equipCategories.map(c => `<tr>
+            <td class="mono strong">${esc(c.code)}</td>
+            <td>${esc(c.name)}</td>
+            <td>${pill(METER_KIND[c.meterKind], c.meterKind === 'none' ? 'neutral' : 'info')}</td>
+            <td class="mono">${c.usefulLifeMonths ? c.usefulLifeMonths + ' meses' : '—'}</td>
+            <td>${c.active ? '' : pill('inativa','neutral')}</td></tr>`).join('')}</tbody></table></div>
+      </div></div>
+
+      <div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>Modelos</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">A ficha técnica é livre
+        (<span class="mono">specs</span>), e não uma coluna por atributo: empilhadeira
+        tem capacidade, gerador tem potência, e uma coluna para cada viraria uma tabela
+        com oitenta campos vazios. O que a tela lê daqui é texto para exibir, nunca regra.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Código</th><th>Modelo</th><th>Categoria</th><th>Mensal</th>
+            <th>Diária</th><th>Ficha</th></tr></thead>
+          <tbody>${db.equipModels.map(m => `<tr>
+            <td class="mono strong">${esc(m.code)}</td>
+            <td>${esc(m.name)}
+              <div class="dim">${esc(fabById(m.manufacturerId)?.name || '')}</div></td>
+            <td class="dim">${esc(equipCatById(m.categoryId)?.name || '—')}</td>
+            <td class="mono">${m.monthlyPrice ? brl(m.monthlyPrice) : '—'}</td>
+            <td class="mono">${m.dailyPrice ? brl(m.dailyPrice) : '—'}</td>
+            <td class="dim">${Object.entries(m.specs).map(([k,v]) =>
+              `${esc(k)}: ${esc(v)}`).join(' · ')}
+              ${m.active ? '' : ' ' + pill('inativo','neutral')}</td></tr>`).join('')}</tbody></table></div>
+        ${pode ? '' : `<p class="dim" style="margin-top:.8rem">Você consulta, mas não altera:
+          falta <span class="mono">locacao.cadastros.gerenciar</span>.</p>`}
+      </div></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['loc-contratos'] = () => {
+    const podeMover = may('locacao.contratos.mover');
+    const podeAlocar = may('locacao.contratos.alocar');
+    const lista = [...db.rentalContracts].sort((a,b) => b.startsOn.localeCompare(a.startsOn));
+    const ativos = lista.filter(c => c.status === 'active');
+    const receitaMes = db.rentalContractItems
+      .filter(i => i.status === 'delivered' && ativos.some(c => c.id === i.contractId))
+      .reduce((s,i) => s + i.monthlyPrice, 0);
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Locação</p><h1>Contratos</h1>
+        <p class="lede">Quem aluga o quê, por quanto e até quando. Cada equipamento
+        alocado é um item do contrato, com preço e franquia próprios — porque o mesmo
+        cliente pode ter negociado diferente para peças diferentes.</p></div>
+        ${ifMay('locacao.contratos.criar',
+          `<button type="button" class="btn" id="rc-new">Novo contrato</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Ativos', ativos.length, null, ativos.length ? 'ok' : 'neutral')}
+        ${tile('Receita recorrente', brl(receitaMes), 'itens entregues', 'brand')}
+        ${tile('Suspensos', lista.filter(c => c.status === 'suspended').length,
+               'param de faturar, equipamento fica',
+               lista.filter(c => c.status === 'suspended').length ? 'warn' : 'neutral')}
+        ${tile('Rascunhos', lista.filter(c => c.status === 'draft').length, 'ainda não valem')}
+      </div>
+
+      ${lista.map(c => {
+        const st = CONTRACT_STATUS[c.status];
+        const itens = db.rentalContractItems.filter(i => i.contractId === c.id);
+        const destinos = CONTRACT_TRANSITIONS[c.status] || [];
+        return `<div class="card" style="margin-bottom:1rem"><div class="card-body">
+          <div class="row-actions" style="align-items:flex-start">
+            <div style="flex:1">
+              <h2 style="margin:0">${esc(c.code)} ${pill(st.label, st.tone)}</h2>
+              <p class="dim" style="margin:.25rem 0 0">
+                ${esc(clienteById(c.clientId)?.tradeName || '—')} ·
+                ${dBR(c.startsOn)} a ${dBR(c.endsOn)} ·
+                fecha dia ${c.billingDay}
+                ${c.adjustmentIndex ? ` · reajuste ${esc(c.adjustmentIndex)} em ${c.adjustmentMonth}/` : ''}</p>
+              ${c.notes ? `<p class="dim" style="margin:.3rem 0 0">${esc(c.notes)}</p>` : ''}
+            </div>
+            <div class="row-actions">
+              ${podeMover && destinos.length
+                ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                     data-rc-move="${c.id}">Mover situação</button>` : ''}
+            </div>
+          </div>
+
+          ${c.adjustmentIndex ? `<p class="dim" style="margin:.5rem 0 0">
+            O índice é <strong>registrado, não calculado</strong>: o sistema não tem a série
+            do ${esc(c.adjustmentIndex)}, e prometer o cálculo exigiria uma fonte que não
+            existe aqui. Número inventado é pior que campo descritivo.</p>` : ''}
+
+          ${itens.length ? `<div class="table-wrap" style="margin-top:.8rem"><table>
+            <thead><tr><th>Equipamento</th><th>Local de operação</th><th>Mensal</th>
+              <th>Franquia</th><th>Período</th><th>Situação</th><th></th></tr></thead>
+            <tbody>${itens.map(i => {
+              const e = equipById(i.equipmentId);
+              const ist = ITEM_STATUS[i.status];
+              const loc = db.operationLocations.find(l => l.id === i.locationId);
+              return `<tr>
+                <td class="mono strong">${esc(e ? e.assetTag : '—')}
+                  <div class="dim">${esc(e ? modelById(e.modelId)?.name || '' : '')}</div></td>
+                <td class="dim">${esc(loc ? loc.name : '—')}</td>
+                <td class="mono">${brl(i.monthlyPrice)}</td>
+                <td class="mono">${i.franchise != null
+                  ? `${num(i.franchise)} h <div class="dim">exc. ${brl(i.excessPrice)}/h</div>` : '—'}</td>
+                <td class="dim">${i.deliveredOn ? dBR(i.deliveredOn) : 'não entregue'}
+                  ${i.returnedOn ? ` → ${dBR(i.returnedOn)}` : ''}
+                  ${i.meterAtReturn != null
+                    ? `<div class="dim">medidor ${num(i.meterAtDelivery,0)} → ${num(i.meterAtReturn,0)}</div>` : ''}</td>
+                <td>${pill(ist.label, ist.tone)}</td>
+                <td class="row-actions">${podeAlocar && i.status === 'reserved'
+                  ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                       data-ri-deliver="${i.id}">Entregar</button>` : ''}
+                  ${podeAlocar && i.status === 'delivered'
+                  ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                       data-ri-return="${i.id}">Recolher</button>` : ''}</td></tr>`;
+            }).join('')}</tbody></table></div>`
+            : `<p class="dim" style="margin:.8rem 0 0">Nenhum equipamento alocado ainda.</p>`}
+        </div></div>`;
+      }).join('')}`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['medicoes'] = () => {
+    const podeLancar = may('locacao.medicoes.lancar');
+    const comMedidor = db.rentalEquipment.filter(e => e.meterKind !== 'none');
+    const leituras = [...db.meterReadings].sort((a,b) => b.readOn.localeCompare(a.readOn));
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Locação</p><h1>Medições e consumo</h1>
+        <p class="lede">A leitura do medidor é o que transforma tempo em dinheiro: o que
+        passa da franquia vira excedente na fatura. Por isso ela é registro, e não
+        um número que alguém corrige depois.</p></div>
+        ${ifMay('locacao.medicoes.lancar',
+          `<button type="button" class="btn" id="md-new">Lançar leitura</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Com medidor', comMedidor.length, `de ${db.rentalEquipment.length} peças`)}
+        ${tile('Leituras registradas', leituras.length, 'histórico completo')}
+        ${tile('Sem leitura há 30 dias',
+               comMedidor.filter(e => !e.meterReadAt || e.meterReadAt < dIso(-30)).length,
+               'o excedente do mês depende disto', 'warn')}
+      </div>
+
+      <div class="alert" data-kind="info">
+        <strong>Leitura sem contrato também é leitura.</strong> A manutenção lê o medidor
+        quando a peça entra na oficina, e descartar o número por não haver contrato abriria
+        um buraco justamente onde ele andou sem faturar.</div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Data</th><th>Equipamento</th><th>Leitura</th><th>Origem</th>
+          <th>Contrato</th><th>Observação</th></tr></thead>
+        <tbody>${leituras.map(r => {
+          const e = equipById(r.equipmentId);
+          const item = db.rentalContractItems.find(i => i.id === r.contractItemId);
+          const k = rcById(item?.contractId);
+          const ORIGEM = { manual:'manual', import:'planilha', delivery:'entrega',
+                           return:'recolhimento', agent:'agente' };
+          return `<tr>
+            <td class="mono">${dBR(r.readOn)}</td>
+            <td class="mono strong">${esc(e ? e.assetTag : '—')}</td>
+            <td class="mono strong">${num(r.reading, 1)}
+              <span class="dim">${esc(e ? METER_KIND[e.meterKind] : '')}</span></td>
+            <td>${pill(ORIGEM[r.source] || r.source, r.source === 'manual' ? 'neutral' : 'info')}</td>
+            <td class="dim">${k ? esc(k.code) : '<span class="dim">sem contrato</span>'}</td>
+            <td class="dim">${esc(r.notes || '')}</td></tr>`;
+        }).join('')}</tbody></table></div>
+
+      ${podeLancar ? '' : `<p class="dim" style="margin-top:.8rem">Você consulta, mas não lança:
+        falta <span class="mono">locacao.medicoes.lancar</span>.</p>`}`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['loc-faturamento'] = () => {
+    const podeFaturar = may('locacao.faturamento.faturar');
+    const podeCancelar = may('locacao.faturamento.cancelar');
+    const lista = [...db.rentalInvoices].sort((a,b) =>
+      (b.competence + b.number).localeCompare(a.competence + a.number));
+    const emitidas = lista.filter(f => f.status === 'issued');
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Locação</p><h1>Faturamento</h1>
+        <p class="lede">A fatura do mês: aluguel, excedente de medidor, serviço, peça e
+        desconto. O total <strong>não é digitado</strong> — ele é a soma dos itens, mantida
+        por gatilho, como o número da fatura.</p></div>
+        ${ifMay('locacao.faturamento.faturar',
+          `<button type="button" class="btn" id="rf-new">Gerar fatura</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Emitidas', emitidas.length, brl(emitidas.reduce((s,f)=>s+f.total,0)), 'ok')}
+        ${tile('Em rascunho', lista.filter(f=>f.status==='draft').length, 'ainda não cobram')}
+        ${tile('Canceladas', lista.filter(f=>f.status==='cancelled').length,
+               'história, não erro apagado', 'neutral')}
+      </div>
+
+      <div class="alert" data-kind="info">
+        <strong>Reemitir não sobrescreve.</strong> Cancelar uma fatura e refazer a mesma
+        competência gera um número novo com sufixo — <span class="mono">…/202610-2</span>.
+        A versão cancelada continua existindo: ela pode ter sido enviada ao cliente, e uma
+        cobrança enviada que some do sistema é uma conversa sem prova.</div>
+
+      ${lista.map(f => {
+        const st = INVOICE_STATUS[f.status];
+        const itens = db.rentalInvoiceItems.filter(i => i.invoiceId === f.id);
+        const soma = itens.reduce((s,i) => s + i.amount, 0);
+        const KIND = { rent:'Aluguel', excess:'Excedente', service:'Serviço',
+                       part:'Peça', discount:'Desconto' };
+        return `<div class="card" style="margin-bottom:1rem"><div class="card-body">
+          <div class="row-actions" style="align-items:flex-start">
+            <div style="flex:1">
+              <h2 style="margin:0" class="mono">${esc(f.number)} ${pill(st.label, st.tone)}</h2>
+              <p class="dim" style="margin:.25rem 0 0">
+                competência ${compBR(f.competence)} ·
+                ${esc(clienteById(f.clientId)?.tradeName || '—')} ·
+                ${f.issuedOn ? `emitida ${dBR(f.issuedOn)}, vence ${dBR(f.dueOn)}` : 'não emitida'}</p>
+              ${f.notes ? `<p class="dim" style="margin:.3rem 0 0">${esc(f.notes)}</p>` : ''}
+            </div>
+            <div style="text-align:right">
+              <div class="mono strong" style="font-size:1.15rem">${brl(f.total)}</div>
+              ${Math.abs(soma - f.total) > 0.005
+                ? `<div class="dim" style="color:var(--breach-ink)">itens somam ${brl(soma)}</div>` : ''}
+            </div>
+          </div>
+
+          ${itens.length ? `<div class="table-wrap" style="margin-top:.8rem"><table>
+            <thead><tr><th>Tipo</th><th>Descrição</th><th>Qtd.</th><th>Unitário</th>
+              <th>Valor</th></tr></thead>
+            <tbody>${itens.map(i => `<tr>
+              <td>${pill(KIND[i.kind] || i.kind, i.kind === 'discount' ? 'warn' : 'neutral')}</td>
+              <td>${esc(i.description)}
+                ${i.meterFrom != null
+                  ? `<div class="dim">medidor ${num(i.meterFrom,1)} → ${num(i.meterTo,1)}</div>` : ''}
+                ${i.days ? `<div class="dim">${i.days} dia(s)</div>` : ''}</td>
+              <td class="mono">${num(i.quantity, i.quantity % 1 ? 2 : 0)}</td>
+              <td class="mono">${brl(i.unitPrice)}</td>
+              <td class="mono strong">${brl(i.amount)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+
+          <div class="row-actions" style="margin-top:.8rem;justify-content:flex-end">
+            ${podeFaturar && f.status === 'draft'
+              ? `<button type="button" class="btn btn-sm" data-rf-issue="${f.id}">Emitir</button>` : ''}
+            ${podeCancelar && f.status === 'issued'
+              ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                   data-rf-cancel="${f.id}">Cancelar</button>` : ''}
+          </div>
+        </div></div>`;
+      }).join('')}`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['manutencao'] = () => {
+    const podeAprovar = may('locacao.manutencao.aprovar');
+    const fichas = db.fieldService;
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Locação</p><h1>Manutenção em campo</h1>
+        <p class="lede">Atendimento de campo <strong>é chamado</strong>, com ficha extra —
+        não uma segunda fila de trabalho. Quem vai até o cliente trocar uma peça está
+        atendendo um chamado, e duas listas fariam o técnico olhar as duas.</p></div>
+        ${ifMay('locacao.manutencao.abrir',
+          `<button type="button" class="btn" id="fs-new">Abrir atendimento</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Atendimentos', fichas.length, 'com ficha de campo')}
+        ${tile('Acima da alçada',
+               fichas.filter(f => custoDaFicha(f.ticketId) > f.costLimit).length,
+               'precisam de aprovação', 'warn')}
+        ${tile('Horas apontadas',
+               num(db.laborEntries.reduce((s,l) => s + l.hours, 0), 1), 'no período')}
+        ${tile('Custo de peças',
+               brl(db.partsUsed.reduce((s,p) => s + p.amount, 0)), 'baixadas do estoque')}
+      </div>
+
+      ${fichas.map(f => {
+        const t = db.tickets.find(x => x.id === f.ticketId);
+        const e = equipById(f.equipmentId);
+        const maos = db.laborEntries.filter(l => l.ticketId === f.ticketId);
+        const pecas = db.partsUsed.filter(p => p.ticketId === f.ticketId);
+        const custo = custoDaFicha(f.ticketId);
+        const estourou = custo > f.costLimit;
+        return `<div class="card" style="margin-bottom:1rem"><div class="card-body">
+          <div class="row-actions" style="align-items:flex-start">
+            <div style="flex:1">
+              <h2 style="margin:0">#${f.ticketId} — ${esc(t ? t.subject : 'chamado')}</h2>
+              <p class="dim" style="margin:.25rem 0 0">
+                ${esc(FS_KIND[f.kind])} ·
+                ${esc(e ? e.assetTag : 'sem equipamento')} ·
+                cobrança: ${f.billableTo === 'client' ? 'do cliente' : 'nossa'}</p>
+            </div>
+            <div style="text-align:right">
+              <div class="mono strong" style="font-size:1.15rem">${brl(custo)}</div>
+              <div class="dim">alçada ${brl(f.costLimit)}</div>
+            </div>
+          </div>
+
+          ${estourou ? (f.approvedAt
+            ? `<div class="alert" data-kind="ok" style="margin-top:.6rem">
+                 <strong>Aprovado acima da alçada.</strong> ${esc(nomeDoUsuario(f.approvedBy))}
+                 autorizou${f.approvalNote ? `: ${esc(f.approvalNote)}` : ''}. Sem o registro de
+                 QUEM aprovou, "passou da alçada" e "ninguém viu" ficariam idênticos depois
+                 de o chamado fechar.</div>`
+            : `<div class="alert" data-kind="warn" style="margin-top:.6rem">
+                 <strong>Acima da alçada e sem aprovação.</strong> O custo apontado passou
+                 ${brl(custo - f.costLimit)} do limite.
+                 ${podeAprovar
+                   ? `<button type="button" class="btn btn-sm" style="margin-left:.5rem"
+                        data-fs-approve="${f.ticketId}">Aprovar</button>`
+                   : ' Falta <span class="mono">locacao.manutencao.aprovar</span>.'}</div>`) : ''}
+
+          ${maos.length ? `<div class="table-wrap" style="margin-top:.8rem"><table>
+            <thead><tr><th>Data</th><th>Técnico</th><th>Horas</th><th>Valor/h</th>
+              <th>Total</th><th>Observação</th></tr></thead>
+            <tbody>${maos.map(l => `<tr>
+              <td class="mono">${dBR(l.workedOn)}</td>
+              <td>${esc(nomeDoUsuario(l.technicianId))}</td>
+              <td class="mono">${num(l.hours,1)}</td>
+              <td class="mono">${brl(l.hourlyRate)}</td>
+              <td class="mono strong">${brl(l.amount)}</td>
+              <td class="dim">${esc(l.notes || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}
+
+          ${pecas.length ? `<div class="table-wrap" style="margin-top:.6rem"><table>
+            <thead><tr><th>Peça</th><th>Qtd.</th><th>Custo unit.</th><th>Total</th></tr></thead>
+            <tbody>${pecas.map(x => `<tr>
+              <td>${esc(x.description)}
+                <div class="dim mono">${esc(partById(x.partId)?.sku || '')}</div></td>
+              <td class="mono">${num(x.quantity)}</td>
+              <td class="mono">${brl(x.unitCost)}</td>
+              <td class="mono strong">${brl(x.amount)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+
+          ${pecas.length ? `<p class="dim" style="margin:.6rem 0 0">A descrição e o custo
+            ficam <strong>congelados</strong> na linha: o catálogo muda de nome e de preço,
+            e um atendimento de dois anos atrás não pode passar a custar o que a peça custa
+            hoje.</p>` : ''}
+        </div></div>`;
+      }).join('')}`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['pecas'] = () => {
+    const podeMovimentar = may('locacao.pecas.movimentar');
+    const linhas = [];
+    for (const pol of db.stockPolicies) {
+      const peca = partById(pol.partId);
+      if (!peca) continue;
+      const saldo = saldoDaPeca(pol.partId, pol.depotId);
+      linhas.push({ peca, pol, saldo, abaixo: saldo < pol.minQuantity });
+    }
+    const abaixo = linhas.filter(l => l.abaixo);
+    const valor = linhas.reduce((s,l) => s + l.saldo * (l.peca.averageCost || 0), 0);
+    const movs = [...db.partMovements].sort((a,b) => b.at.localeCompare(a.at)).slice(0, 14);
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Locação</p><h1>Peças e estoque</h1>
+        <p class="lede">O saldo é <strong>derivado das movimentações</strong>, nunca
+        digitado — mesma decisão do total da fatura. Saldo que alguém edita é saldo que
+        diverge do extrato em silêncio, e o extrato deixa de explicar o número.</p></div>
+        ${ifMay('locacao.pecas.gerenciar',
+          `<button type="button" class="btn" id="pc-new">Cadastrar peça</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Itens com política', linhas.length, 'mínimo e máximo definidos')}
+        ${tile('Abaixo do mínimo', abaixo.length,
+               abaixo.length ? 'repor' : 'nenhum', abaixo.length ? 'crit' : 'ok')}
+        ${tile('Valor em estoque', brl(valor), 'ao custo médio')}
+        ${tile('Movimentações', db.partMovements.length, 'o extrato que explica o saldo')}
+      </div>
+
+      ${abaixo.length ? `<div class="alert" data-kind="warn">
+        <strong>${abaixo.length} item(ns) abaixo do mínimo.</strong>
+        ${abaixo.map(l => `${esc(l.peca.name)} (${num(l.saldo)} de ${num(l.pol.minQuantity)})`).join(' · ')}
+        </div>` : ''}
+
+      <div class="card"><div class="card-body">
+        <h2>Saldo por depósito</h2>
+        <div class="table-wrap" style="margin-top:.6rem"><table>
+          <thead><tr><th>SKU</th><th>Peça</th><th>Depósito</th><th>Saldo</th>
+            <th>Mín. / Máx.</th><th>Prazo de reposição</th></tr></thead>
+          <tbody>${linhas.map(l => `<tr>
+            <td class="mono">${esc(l.peca.sku)}</td>
+            <td>${esc(l.peca.name)}
+              <div class="dim">${esc(l.peca.category || '')} · custo médio ${brl(l.peca.averageCost)}</div></td>
+            <td class="dim">${esc(depotById(l.pol.depotId)?.name || '—')}</td>
+            <td class="mono strong"${l.abaixo ? ' style="color:var(--breach-ink)"' : ''}>
+              ${num(l.saldo)} ${esc(l.peca.unit)}</td>
+            <td class="mono dim">${num(l.pol.minQuantity)} / ${num(l.pol.maxQuantity)}</td>
+            <td class="dim">${l.pol.leadTimeDays} dia(s)</td></tr>`).join('')}</tbody></table></div>
+      </div></div>
+
+      <div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>Extrato</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">As últimas movimentações. O ajuste de
+        contagem entra <strong>como movimentação</strong>, e não como edição de saldo — é o
+        que mantém o extrato capaz de explicar como se chegou ao número de hoje.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Data</th><th>Peça</th><th>Depósito</th><th>Tipo</th>
+            <th>Qtd.</th><th>Origem</th></tr></thead>
+          <tbody>${movs.map(m => `<tr>
+            <td class="mono">${dBR(m.at)}</td>
+            <td class="mono">${esc(partById(m.partId)?.sku || '—')}</td>
+            <td class="dim">${esc(depotById(m.depotId)?.name || '—')}</td>
+            <td>${pill(MOV_KIND[m.kind] || m.kind,
+              m.quantity < 0 ? 'warn' : 'ok')}</td>
+            <td class="mono strong">${m.quantity > 0 ? '+' : ''}${num(m.quantity)}</td>
+            <td class="dim">${m.ticketId ? 'chamado #' + m.ticketId
+              : m.orderId ? 'ordem ' + esc(db.purchaseOrders.find(o=>o.id===m.orderId)?.code || '')
+              : m.countId ? 'contagem ' + esc(db.inventoryCounts.find(c=>c.id===m.countId)?.code || '')
+              : m.transferDepotId ? esc(depotById(m.transferDepotId)?.name || '')
+              : '—'}</td></tr>`).join('')}</tbody></table></div>
+        ${podeMovimentar ? '' : `<p class="dim" style="margin-top:.8rem">Você consulta, mas não
+          movimenta: falta <span class="mono">locacao.pecas.movimentar</span>.</p>`}
+      </div></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['compras'] = () => {
+    const podeGerenciar = may('locacao.compras.gerenciar');
+    const podeReceber = may('locacao.compras.receber');
+    const podeFaturar = may('locacao.compras.faturar');
+    const lista = [...db.purchaseOrders].sort((a,b) => b.code.localeCompare(a.code));
+    const abertas = lista.filter(o => ['sent','partial'].includes(o.status));
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Locação</p><h1>Ordens de compra</h1>
+        <p class="lede">A reposição de peça, do pedido ao recebimento. Receber mercadoria
+        é o que dá entrada no estoque — e registrar a nota é o que gera o título a pagar,
+        um passo depois, porque receber e dever são coisas diferentes.</p></div>
+        ${ifMay('locacao.compras.gerenciar',
+          `<button type="button" class="btn" id="po-new">Nova ordem</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Em aberto', abertas.length, brl(abertas.reduce((s,o)=>s+o.total,0)),
+               abertas.length ? 'warn' : 'neutral')}
+        ${tile('Recebidas', lista.filter(o=>o.status==='received').length, 'entraram no estoque', 'ok')}
+        ${tile('Sem nota registrada',
+               lista.filter(o => o.status === 'received' && !o.invoiceRef).length,
+               'não viraram título a pagar')}
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Ordem</th><th>Fornecedor</th><th>Depósito</th><th>Previsão</th>
+          <th>Total</th><th>Situação</th><th></th></tr></thead>
+        <tbody>${lista.map(o => {
+          const st = PO_STATUS[o.status];
+          const itens = db.purchaseOrderItems.filter(i => i.orderId === o.id);
+          const recebido = itens.reduce((s,i) => s + i.receivedQuantity, 0);
+          const pedido = itens.reduce((s,i) => s + i.quantity, 0);
+          return `<tr>
+            <td class="mono strong">${esc(o.code)}
+              ${o.invoiceRef ? `<div class="dim">${esc(o.invoiceRef)}</div>` : ''}</td>
+            <td>${esc(db.suppliers.find(f=>f.id===o.supplierId)?.name || '—')}</td>
+            <td class="dim">${esc(depotById(o.depotId)?.name || '—')}</td>
+            <td class="mono">${dBR(o.expectedOn)}</td>
+            <td class="mono strong">${brl(o.total)}</td>
+            <td>${pill(st.label, st.tone)}
+              ${pedido ? `<div class="dim">${num(recebido)} de ${num(pedido)} recebido(s)</div>` : ''}</td>
+            <td class="row-actions">
+              ${podeReceber && ['sent','partial'].includes(o.status)
+                ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                     data-po-receive="${o.id}">Receber</button>` : ''}
+              ${podeFaturar && o.status === 'received' && !o.invoiceRef
+                ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                     data-po-invoice="${o.id}">Registrar NF</button>` : ''}
+              ${podeGerenciar && o.status === 'draft'
+                ? `<button type="button" class="btn btn-sm" data-po-send="${o.id}">Enviar</button>` : ''}
+            </td></tr>`;
+        }).join('')}</tbody></table></div>
+
+      <div class="alert" data-kind="info" style="margin-top:1rem">
+        <strong>Receber não é dever.</strong> A entrada no estoque acontece quando a
+        mercadoria chega; o título a pagar nasce quando a nota é registrada. Juntar os dois
+        faria a contabilidade depender de quem está na doca.</div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['contagens'] = () => {
+    const podeContar = may('locacao.contagens.contar');
+    const lista = [...db.inventoryCounts].sort((a,b) => b.countedOn.localeCompare(a.countedOn));
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Locação</p><h1>Contagens de inventário</h1>
+        <p class="lede">O confronto entre o que o sistema diz e o que existe na prateleira.
+        A divergência vira <strong>movimentação de ajuste</strong>, e não uma correção de
+        saldo — assim o extrato continua explicando o número.</p></div>
+        ${ifMay('locacao.contagens.contar',
+          `<button type="button" class="btn" id="ct-new">Abrir contagem</button>`)}</div>
+
+      ${lista.map(c => {
+        const itens = db.inventoryCountItems.filter(i => i.countId === c.id);
+        const contados = itens.filter(i => i.countedQuantity != null);
+        const divergentes = contados.filter(i => i.countedQuantity !== i.expectedQuantity);
+        return `<div class="card" style="margin-bottom:1rem"><div class="card-body">
+          <div class="row-actions" style="align-items:flex-start">
+            <div style="flex:1">
+              <h2 style="margin:0" class="mono">${esc(c.code)}
+                ${pill(c.status === 'closed' ? 'Fechada' : c.status === 'open' ? 'Aberta' : 'Cancelada',
+                       c.status === 'closed' ? 'neutral' : c.status === 'open' ? 'info' : 'crit')}</h2>
+              <p class="dim" style="margin:.25rem 0 0">
+                ${esc(depotById(c.depotId)?.name || '—')} ·
+                contada em ${dBR(c.countedOn)}
+                ${c.closedBy ? ` · fechada por ${esc(nomeDoUsuario(c.closedBy))}` : ''}</p>
+              ${c.notes ? `<p class="dim" style="margin:.3rem 0 0">${esc(c.notes)}</p>` : ''}
+            </div>
+            <div style="text-align:right">
+              <div class="strong">${contados.length} de ${itens.length} contado(s)</div>
+              ${divergentes.length
+                ? `<div class="dim" style="color:var(--breach-ink)">${divergentes.length} divergência(s)</div>`
+                : contados.length ? '<div class="dim" style="color:var(--ok-ink)">sem divergência</div>' : ''}
+            </div>
+          </div>
+
+          <div class="table-wrap" style="margin-top:.8rem"><table>
+            <thead><tr><th>Peça</th><th>Esperado</th><th>Contado</th><th>Diferença</th></tr></thead>
+            <tbody>${itens.map(i => {
+              const dif = i.countedQuantity == null ? null : i.countedQuantity - i.expectedQuantity;
+              return `<tr>
+                <td>${esc(partById(i.partId)?.name || '—')}
+                  <div class="dim mono">${esc(partById(i.partId)?.sku || '')}</div></td>
+                <td class="mono">${num(i.expectedQuantity)}</td>
+                <td class="mono strong">${i.countedQuantity == null
+                  ? '<span class="dim">não contado</span>' : num(i.countedQuantity)}</td>
+                <td class="mono strong"${dif ? ' style="color:var(--breach-ink)"' : ''}>
+                  ${dif == null ? '—' : (dif > 0 ? '+' : '') + num(dif)}</td></tr>`;
+            }).join('')}</tbody></table></div>
+
+          ${podeContar && c.status === 'open'
+            ? `<div class="row-actions" style="margin-top:.8rem;justify-content:flex-end">
+                 <button type="button" class="btn btn-sm" data-ct-close="${c.id}">Fechar contagem</button>
+               </div>` : ''}
+        </div></div>`;
+      }).join('')}`;
+  };
+
+
+  /* ====================================================================== */
+  /* GESTÃO — as dezessete telas que faltavam                               */
+  /* ====================================================================== */
+
+  const CANAL = { whatsapp:'WhatsApp', telegram:'Telegram', bitrix:'Bitrix24', n8n:'N8N' };
+
+  /* Competência corrente, fora do `seed()` — a mesma convenção de primeiro dia
+     do mês que `app.eh_competencia` cobra no banco. */
+  const compIsoAtual = () => { const d = new Date(); d.setDate(1);
+                               return d.toISOString().slice(0,10); };
+
+  /* Quanto tempo desde a última execução, em minutos. É esta conta que separa
+     "falhou" de "PAROU": a primeira tem erro registrado, a segunda não tem nada
+     — e é a que ninguém percebe. */
+  const minutosDesde = iso => Math.round((Date.now() - new Date(iso + 'T12:00:00').getTime()) / 60000);
+
+  /* ---------------------------------------------------------------------- */
+  views['portal'] = () => {
+    const meus = db.tickets.filter(t => t.requester === userById(db.session.userId)?.name).slice(0,5);
+    const publicados = db.kbArticles.filter(a => a.status === 'published');
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Autoatendimento</p><h1>Portal</h1>
+        <p class="lede">A tela de quem só pede. Ela <strong>não acrescenta acesso nenhum</strong>:
+        tudo que mostra já era alcançável. O que ela acrescenta é a ORDEM — procurar a
+        resposta antes de pedir um serviço, e pedir um serviço antes de abrir chamado livre.</p></div></div>
+
+      <div class="card"><div class="card-body">
+        <h2>1. Procure a resposta</h2>
+        <div class="table-wrap" style="margin-top:.6rem"><table>
+          <thead><tr><th>Artigo</th><th>Assunto</th><th>Ajudou</th></tr></thead>
+          <tbody>${publicados.slice(0,3).map(a => `<tr>
+            <td class="strong">${esc(a.title)}<div class="dim">${esc(a.summary)}</div></td>
+            <td class="dim">${esc(a.category)}</td>
+            <td class="mono">${a.helpful} de ${a.views}</td></tr>`).join('')}</tbody></table></div>
+      </div></div>
+
+      <div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>2. Peça um serviço do catálogo</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">Serviço de catálogo tem prazo combinado e
+        aprovação quando precisa. É melhor que chamado livre justamente por isso.</p>
+        <div class="row-actions" style="flex-wrap:wrap">
+          ${db.serviceCatalog.filter(s => s.active).map(s =>
+            `<button type="button" class="btn btn-sm" data-variant="ghost" data-sv-request="${s.id}">
+              ${esc(s.name)} <span class="dim">· ${s.slaHours}h${s.needsApproval ? ' · aprovação' : ''}</span>
+            </button>`).join('')}
+        </div>
+      </div></div>
+
+      <div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>3. Se nada serviu, abra um chamado</h2>
+        <div class="row-actions"><button type="button" class="btn" data-go="novo">Abrir chamado</button></div>
+        ${meus.length ? `<div class="table-wrap" style="margin-top:.8rem"><table>
+          <thead><tr><th>Nº</th><th>Assunto</th><th>Situação</th></tr></thead>
+          <tbody>${meus.map(t => `<tr><td class="mono">#${t.id}</td>
+            <td>${esc(t.subject)}</td>
+            <td>${pill(STATUS[t.status]?.label || t.status, STATUS[t.status]?.tone || 'neutral')}</td>
+            </tr>`).join('')}</tbody></table></div>` : ''}
+      </div></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['horarios'] = () => {
+    const pode = may('sla.horarios.editar');
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Atendimento</p><h1>Expediente e feriados</h1>
+        <p class="lede">O relógio do SLA só anda em hora útil. Um SLA que conta hora corrida
+        promete o que não cumpre: chamado aberto sexta às 17h venceria no sábado, com
+        ninguém para atender.</p></div></div>
+
+      <div class="card"><div class="card-body">
+        <h2>Expediente</h2>
+        <div class="table-wrap" style="margin-top:.6rem"><table>
+          <thead><tr><th>Dia</th><th>Abre</th><th>Fecha</th><th>Intervalo</th><th>Horas úteis</th></tr></thead>
+          <tbody>${db.businessHours.map(d => {
+            const horas = d.open
+              ? (Number(d.to.split(':')[0]) - Number(d.from.split(':')[0])) -
+                (d.lunchFrom ? 1 : 0)
+              : 0;
+            return `<tr>
+              <td class="strong">${esc(d.label)}</td>
+              <td class="mono">${d.open ? esc(d.from) : '—'}</td>
+              <td class="mono">${d.open ? esc(d.to) : '—'}</td>
+              <td class="mono dim">${d.lunchFrom ? `${esc(d.lunchFrom)}–${esc(d.lunchTo)}` : '—'}</td>
+              <td>${d.open ? `<span class="mono strong">${horas}h</span>`
+                            : pill('fechado','neutral')}</td></tr>`;
+          }).join('')}</tbody></table></div>
+      </div></div>
+
+      <div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>Feriados</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">Feriado estadual vale só para as filiais
+        daquela UF — um feriado de São Paulo não pode parar o relógio de um chamado de Manaus.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Data</th><th>Feriado</th><th>Abrangência</th></tr></thead>
+          <tbody>${db.holidays.map(h => `<tr>
+            <td class="mono">${dBR(h.date)}</td>
+            <td>${esc(h.name)}</td>
+            <td>${pill(h.scope === 'national' ? 'nacional' : `estadual · ${esc(h.state || '')}`,
+                       h.scope === 'national' ? 'info' : 'neutral')}</td></tr>`).join('')}</tbody></table></div>
+        ${pode ? '' : `<p class="dim" style="margin-top:.8rem">Você consulta, mas não altera:
+          falta <span class="mono">sla.horarios.editar</span>.</p>`}
+      </div></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['conversas'] = () => {
+    const abertas = db.conversations.filter(c => c.status === 'open');
+    const naoLidas = abertas.reduce((s,c) => s + c.unread, 0);
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Atendimento</p><h1>Conversas</h1>
+        <p class="lede">WhatsApp, Telegram e Bitrix entram pelo mesmo funil. O chamado continua
+        sendo o registro; a conversa é <strong>como ele chegou</strong> — e guardá-la é o que
+        permite responder sem pedir à pessoa que repita tudo.</p></div></div>
+
+      <div class="tiles">
+        ${tile('Conversas abertas', abertas.length, null, abertas.length ? 'warn' : 'ok')}
+        ${tile('Sem resposta', naoLidas, 'mensagens não lidas', naoLidas ? 'crit' : 'ok')}
+        ${tile('Canais ativos', db.channels.filter(c => c.active).length,
+               `de ${db.channels.length} configurados`)}
+      </div>
+
+      ${db.conversations.map(c => {
+        const ch = db.channels.find(x => x.id === c.channelId);
+        return `<div class="card" style="margin-bottom:.8rem"><div class="card-body">
+          <div class="row-actions" style="align-items:flex-start">
+            <div style="flex:1">
+              <h2 style="margin:0">${esc(c.contact)}
+                ${pill(CANAL[ch?.kind] || '—', c.status === 'open' ? 'info' : 'neutral')}
+                ${c.unread ? pill(`${c.unread} não lida(s)`, 'crit') : ''}</h2>
+              <p class="dim" style="margin:.25rem 0 0" class="mono">${esc(c.contactRef)}
+                ${c.ticketId ? ` · chamado #${c.ticketId}` : ' · <strong>sem chamado</strong>'}</p>
+            </div>
+            <span class="dim">${dBR(c.lastAt)}</span>
+          </div>
+          <div class="att-list" style="margin-top:.6rem">
+            ${c.messages.map(m => `<div class="att-row">
+              ${pill(m.dir === 'in' ? 'cliente' : 'nós', m.dir === 'in' ? 'neutral' : 'brand')}
+              <span>${esc(m.text)}</span>
+              <span class="dim" style="margin-left:auto">${dBR(m.at)}</span></div>`).join('')}
+          </div>
+          ${!c.ticketId && c.status === 'open' ? `<div class="alert" data-kind="warn" style="margin-top:.6rem">
+            Conversa sem chamado. Enquanto ela não virar um, o SLA não corre e a cobrança
+            do prazo não existe.</div>` : ''}
+        </div></div>`;
+      }).join('')}`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['base'] = () => {
+    const pode = may('autoatendimento.base.editar');
+    const pub = db.kbArticles.filter(a => a.status === 'published');
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Autoatendimento</p><h1>Base de conhecimento</h1>
+        <p class="lede">O chamado que não precisa existir. Cada artigo lido é um pedido que
+        não entrou na fila — e por isso a métrica que importa aqui é "ajudou", não "publicado".</p></div>
+        ${ifMay('autoatendimento.base.editar',
+          `<button type="button" class="btn" id="kb-new">Novo artigo</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Publicados', pub.length, null, 'ok')}
+        ${tile('Leituras', num(pub.reduce((s,a)=>s+a.views,0)), 'no período')}
+        ${tile('Útil', pub.length
+          ? Math.round(100 * pub.reduce((s,a)=>s+a.helpful,0) / Math.max(1,pub.reduce((s,a)=>s+a.views,0))) + '%'
+          : '—', 'de quem leu e respondeu')}
+        ${tile('Rascunhos', db.kbArticles.filter(a=>a.status==='draft').length, 'não aparecem no portal')}
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Artigo</th><th>Assunto</th><th>Leituras</th><th>Ajudou</th>
+          <th>Atualizado</th><th>Situação</th></tr></thead>
+        <tbody>${db.kbArticles.map(a => `<tr>
+          <td class="strong">${esc(a.title)}<div class="dim">${esc(a.summary)}</div></td>
+          <td class="dim">${esc(a.category)}</td>
+          <td class="mono">${num(a.views)}</td>
+          <td class="mono">${a.views ? Math.round(100*a.helpful/a.views) + '%' : '—'}</td>
+          <td class="mono dim">${dBR(a.updatedOn)}</td>
+          <td>${pill(a.status === 'published' ? 'publicado' : 'rascunho',
+                     a.status === 'published' ? 'ok' : 'neutral')}</td></tr>`).join('')}</tbody></table></div>
+      ${pode ? '' : `<p class="dim" style="margin-top:.8rem">Você consulta, mas não edita:
+        falta <span class="mono">autoatendimento.base.editar</span>.</p>`}`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['catalogo'] = () => `
+      <div class="page-head">
+        <div><p class="eyebrow">Autoatendimento</p><h1>Catálogo de serviços</h1>
+        <p class="lede">O que a TI oferece, com prazo combinado e aprovação quando precisa.
+        Serviço de catálogo é melhor que chamado livre porque o prazo é <strong>acordado
+        antes</strong>, e não discutido depois.</p></div>
+        ${ifMay('autoatendimento.catalogo.editar',
+          `<button type="button" class="btn" id="sv-new">Novo serviço</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Serviços ativos', db.serviceCatalog.filter(s=>s.active).length, null, 'ok')}
+        ${tile('Com aprovação', db.serviceCatalog.filter(s=>s.needsApproval).length,
+               'passam por quem autoriza')}
+        ${tile('Pedidos', num(db.serviceCatalog.reduce((s,x)=>s+x.requests,0)), 'no período')}
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Serviço</th><th>Assunto</th><th>Prazo</th><th>Aprovação</th>
+          <th>Pedidos</th></tr></thead>
+        <tbody>${db.serviceCatalog.map(s => `<tr>
+          <td class="strong">${esc(s.name)}${s.active ? '' : ' ' + pill('inativo','neutral')}</td>
+          <td class="dim">${esc(s.category)}</td>
+          <td class="mono">${s.slaHours}h <span class="dim">úteis</span></td>
+          <td>${s.needsApproval
+            ? pill(esc(s.approverProfile), 'info')
+            : '<span class="dim">direto</span>'}</td>
+          <td class="mono">${num(s.requests)}</td></tr>`).join('')}</tbody></table></div>
+
+      <div class="alert" data-kind="info" style="margin-top:1rem">
+        O prazo é em <strong>horas úteis</strong>, contadas pelo expediente e pelos feriados —
+        não em horas corridas. É a mesma régua do SLA dos chamados.</div>`;
+
+  /* ---------------------------------------------------------------------- */
+  views['resultado'] = () => {
+    const receita = db.receivables.reduce((s,t) => s + t.amount, 0);
+    const custo = db.payables.filter(t => t.status !== 'cancelled' && t.status !== 'rejected')
+                             .reduce((s,t) => s + t.amount, 0);
+    const margem = receita - custo;
+    const porCliente = db.clients.map(c => {
+      const r = db.receivables.filter(t => t.clientId === c.id).reduce((s,t)=>s+t.amount,0);
+      const chamados = db.tickets.filter(t => t.clientId === c.id).length;
+      return { c, r, chamados };
+    }).sort((a,b) => b.r - a.r);
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Gestão</p><h1>Visão de resultado</h1>
+        <p class="lede">A pergunta que nenhuma outra tela responde: <strong>o contrato com
+        este cliente paga o custo de atendê-lo?</strong> Receita de um lado, custo do outro,
+        e o número de chamados como medida de esforço.</p></div></div>
+
+      <div class="tiles">
+        ${tile('Receita', brl(receita), 'títulos a receber', 'ok')}
+        ${tile('Custo', brl(custo), 'títulos a pagar', 'warn')}
+        ${tile('Margem', brl(margem),
+               receita ? Math.round(100*margem/receita) + '%' : '—',
+               margem >= 0 ? 'brand' : 'crit')}
+        ${tile('Chamados', db.tickets.length, 'o esforço por trás do custo')}
+      </div>
+
+      <div class="card"><div class="card-body">
+        <h2>Por cliente</h2>
+        <div class="table-wrap" style="margin-top:.6rem"><table>
+          <thead><tr><th>Cliente</th><th>Receita</th><th>Chamados</th><th>Receita por chamado</th></tr></thead>
+          <tbody>${porCliente.map(x => `<tr>
+            <td class="strong">${esc(x.c.tradeName)}</td>
+            <td class="mono">${brl(x.r)}</td>
+            <td class="mono">${x.chamados}</td>
+            <td class="mono${x.chamados && x.r/x.chamados < 1000 ? ' strong" style="color:var(--breach-ink)' : ''}">
+              ${x.chamados ? brl(x.r/x.chamados) : '—'}</td></tr>`).join('')}</tbody></table></div>
+        <p class="dim" style="margin:.8rem 0 0">Receita por chamado é uma <strong>pista</strong>,
+        não um veredito: um cliente com muitos chamados pode estar em migração. O que ela faz é
+        apontar onde olhar.</p>
+      </div></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['projetos'] = () => {
+    const rodando = db.projects.filter(p => p.status === 'running');
+    const estourados = db.projects.filter(p => p.spent > p.budget);
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Gestão</p><h1>Projetos</h1>
+        <p class="lede">O que a TI faz além de apagar incêndio. Projeto tem orçamento próprio,
+        e o que já foi gasto vem dos títulos — não de um campo que alguém atualiza quando
+        lembra.</p></div>
+        ${ifMay('projetos.projetos.criar',
+          `<button type="button" class="btn" id="pj-new">Novo projeto</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Em andamento', rodando.length, null, 'brand')}
+        ${tile('Orçamento', brl(db.projects.reduce((s,p)=>s+p.budget,0)), 'somado')}
+        ${tile('Gasto', brl(db.projects.reduce((s,p)=>s+p.spent,0)), 'até agora')}
+        ${tile('Estourados', estourados.length,
+               estourados.length ? 'acima do orçado' : 'nenhum',
+               estourados.length ? 'crit' : 'ok')}
+      </div>
+
+      ${db.projects.map(p => {
+        const tarefas = db.projectTasks.filter(t => t.projectId === p.id);
+        const feitas = tarefas.filter(t => t.done).length;
+        const estourou = p.spent > p.budget;
+        const ST = { running:['Em andamento','brand'], done:['Concluído','ok'],
+                     paused:['Pausado','warn'], cancelled:['Cancelado','crit'] };
+        const st = ST[p.status] || ['—','neutral'];
+        return `<div class="card" style="margin-bottom:1rem"><div class="card-body">
+          <div class="row-actions" style="align-items:flex-start">
+            <div style="flex:1">
+              <h2 style="margin:0">${esc(p.name)} ${pill(st[0], st[1])}</h2>
+              <p class="dim" style="margin:.25rem 0 0" class="mono">${esc(p.code)} ·
+                ${dBR(p.startsOn)} a ${dBR(p.endsOn)} ·
+                responsável ${esc(nomeDoUsuario(p.ownerId))}</p>
+            </div>
+            <div style="text-align:right">
+              <div class="mono strong">${brl(p.spent)} <span class="dim">de ${brl(p.budget)}</span></div>
+              ${estourou ? `<div class="dim" style="color:var(--breach-ink)">
+                estourou ${brl(p.spent - p.budget)}</div>` : ''}
+              <div class="dim">${feitas} de ${tarefas.length} tarefa(s)</div>
+            </div>
+          </div>
+          ${tarefas.length ? `<div class="att-list" style="margin-top:.6rem">
+            ${tarefas.map(t => `<div class="att-row">
+              ${pill(t.done ? 'feita' : 'aberta', t.done ? 'ok' : 'neutral')}
+              <span${t.done ? ' class="dim"' : ' class="strong"'}>${esc(t.name)}</span>
+              <span class="dim" style="margin-left:auto">${dBR(t.dueOn)} ·
+                ${esc(nomeDoUsuario(t.ownerId))}</span></div>`).join('')}
+          </div>` : ''}
+        </div></div>`;
+      }).join('')}`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['orcamento'] = () => {
+    const comp = compIsoAtual();
+    const linhas = db.budgetLines.filter(b => b.competence === comp);
+    const realizado = cc => db.payables
+      .filter(t => t.costCenterId === cc && !['cancelled','rejected'].includes(t.status))
+      .reduce((s,t) => s + t.amount, 0);
+    const previsto = linhas.reduce((s,b) => s + b.planned, 0);
+    const gasto = linhas.reduce((s,b) => s + realizado(b.costCenterId), 0);
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Financeiro</p><h1>Orçamento de TI</h1>
+        <p class="lede">Previsto contra realizado, por centro de custo. O realizado
+        <strong>não é digitado</strong>: ele vem dos títulos a pagar. Um orçamento que
+        alguém alimenta à mão só conta a história que quem alimenta quer contar.</p></div></div>
+
+      <div class="tiles">
+        ${tile('Previsto', brl(previsto), compBR(comp))}
+        ${tile('Realizado', brl(gasto), 'dos títulos a pagar',
+               gasto > previsto ? 'crit' : 'ok')}
+        ${tile('Saldo', brl(previsto - gasto),
+               previsto ? Math.round(100*gasto/previsto) + '% consumido' : '—',
+               previsto - gasto < 0 ? 'crit' : 'brand')}
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Centro de custo</th><th>Natureza</th><th>Previsto</th>
+          <th>Realizado</th><th>Saldo</th><th>Consumo</th></tr></thead>
+        <tbody>${linhas.map(b => {
+          const cc = costCenterById(b.costCenterId);
+          const real = realizado(b.costCenterId);
+          const pct = b.planned ? Math.round(100*real/b.planned) : 0;
+          return `<tr>
+            <td class="strong">${esc(cc ? cc.code : '—')}
+              <div class="dim">${esc(cc ? cc.name : '')}</div></td>
+            <td class="dim">${esc(b.kind)}</td>
+            <td class="mono">${brl(b.planned)}</td>
+            <td class="mono">${brl(real)}</td>
+            <td class="mono strong"${real > b.planned ? ' style="color:var(--breach-ink)"' : ''}>
+              ${brl(b.planned - real)}</td>
+            <td>${pill(pct + '%', pct > 100 ? 'crit' : pct > 85 ? 'warn' : 'ok')}</td></tr>`;
+        }).join('')}</tbody></table></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['agentes'] = () => {
+    const online = db.agents.filter(a => a.online);
+    const comAlerta = db.agents.filter(a => a.alerts > 0);
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Inventário</p><h1>Agentes nas máquinas</h1>
+        <p class="lede">O inventário que se atualiza sozinho. O agente não tem navegador nem
+        cookie: o que o autoriza é o <strong>token da máquina</strong>, conferido no banco —
+        o mesmo desenho do painel de TV e da pesquisa de satisfação.</p></div></div>
+
+      <div class="tiles">
+        ${tile('Online', online.length, `de ${db.agents.length} agentes`,
+               online.length === db.agents.length ? 'ok' : 'warn')}
+        ${tile('Com alerta', comAlerta.length, comAlerta.length ? 'olhar' : 'nenhum',
+               comAlerta.length ? 'crit' : 'ok')}
+        ${tile('Sem contato há 7 dias',
+               db.agents.filter(a => a.lastSeen < dIso(-7)).length,
+               'máquina desligada ou agente parado', 'warn')}
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Máquina</th><th>Sistema</th><th>Agente</th><th>CPU</th>
+          <th>Memória</th><th>Disco</th><th>Último contato</th></tr></thead>
+        <tbody>${db.agents.map(a => {
+          const discoPct = Math.round(100 * (1 - a.diskFreeGb / a.diskTotalGb));
+          return `<tr>
+            <td class="mono strong">${esc(a.hostname)}
+              ${a.online ? '' : ' ' + pill('offline','crit')}</td>
+            <td class="dim">${esc(a.os)}</td>
+            <td class="mono dim">v${esc(a.version)}</td>
+            <td class="mono">${a.online ? a.cpu + '%' : '—'}</td>
+            <td class="mono"${a.ramPct > 85 ? ' style="color:var(--breach-ink)"' : ''}>
+              ${a.online ? a.ramPct + '%' : '—'}</td>
+            <td class="mono"${discoPct > 90 ? ' style="color:var(--breach-ink)"' : ''}>
+              ${discoPct}% <span class="dim">${num(a.diskFreeGb)} GB livres</span></td>
+            <td class="mono dim">${dBR(a.lastSeen)}</td></tr>`;
+        }).join('')}</tbody></table></div>
+
+      ${comAlerta.length ? `<div class="alert" data-kind="warn" style="margin-top:1rem">
+        <strong>Disco quase cheio em NB-TI-0003</strong> e <strong>SRV-ARQ-01 sem contato há
+        9 dias</strong>. A segunda é a mais perigosa: nada acontece, nada reclama — e o
+        inventário daquela máquina vai envelhecendo sem ninguém notar.</div>` : ''}`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['software'] = () => {
+    const excedidas = db.software.filter(s => s.licensed != null && s.installs > s.licensed);
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Inventário</p><h1>Software instalado</h1>
+        <p class="lede">O que está instalado contra o que foi licenciado. A diferença não é
+        curiosidade: licença faltando é risco jurídico, e licença sobrando é dinheiro parado.</p></div></div>
+
+      <div class="tiles">
+        ${tile('Títulos', db.software.length, 'programas distintos')}
+        ${tile('Licenças excedidas', excedidas.length,
+               excedidas.length ? 'regularizar' : 'nenhuma',
+               excedidas.length ? 'crit' : 'ok')}
+        ${tile('Instalações', num(db.software.reduce((s,x)=>s+x.installs,0)), 'no parque')}
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Programa</th><th>Fabricante</th><th>Instalado</th><th>Licenciado</th>
+          <th>Situação</th></tr></thead>
+        <tbody>${db.software.map(s => {
+          const excede = s.licensed != null && s.installs > s.licensed;
+          const sobra = s.licensed != null && s.installs < s.licensed;
+          return `<tr>
+            <td class="strong">${esc(s.name)}</td>
+            <td class="dim">${esc(s.publisher)}</td>
+            <td class="mono">${num(s.installs)}</td>
+            <td class="mono">${s.licensed == null
+              ? '<span class="dim">livre</span>' : num(s.licensed)}</td>
+            <td>${excede ? pill(`${s.installs - s.licensed} a mais`, 'crit')
+                : sobra ? pill(`${s.licensed - s.installs} ocioso(s)`, 'warn')
+                : s.licensed == null ? pill('sem licença necessária','neutral')
+                : pill('em dia','ok')}</td></tr>`;
+        }).join('')}</tbody></table></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['ia'] = () => {
+    const c = db.aiConfig;
+    const pct = Math.round(100 * c.usedThisMonth / c.monthlyTokenCap);
+    const aceitas = db.aiSuggestions.filter(s => s.accepted).length;
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Integrações</p><h1>Sugestões de IA</h1>
+        <p class="lede">A IA sugere; quem decide é o operador. Toda sugestão fica registrada
+        com o desfecho — aceita ou recusada —, porque uma IA que ninguém mede é uma IA que
+        ninguém sabe se ajuda.</p></div></div>
+
+      <div class="tiles">
+        ${tile('Situação', c.enabled ? 'ligada' : 'desligada', esc(c.model), c.enabled ? 'ok' : 'neutral')}
+        ${tile('Consumo do mês', pct + '%',
+               `${num(c.usedThisMonth)} de ${num(c.monthlyTokenCap)} tokens`,
+               pct > 85 ? 'crit' : pct > 60 ? 'warn' : 'ok')}
+        ${tile('Sugestões', db.aiSuggestions.length, `${aceitas} aceita(s)`)}
+        ${tile('Taxa de aceite',
+               db.aiSuggestions.length
+                 ? Math.round(100*aceitas/db.aiSuggestions.length) + '%' : '—',
+               'o que mede se ela ajuda')}
+      </div>
+
+      <div class="alert" data-kind="info">
+        <strong>A chave não fica no banco.</strong> O que fica guardado é o
+        <em>nome da variável de ambiente</em> que a contém —
+        <span class="mono">${esc(c.keyEnvVar)}</span>. Um dump do banco carrega todos os
+        dados de todos os clientes; carregar junto a credencial do provedor transformaria um
+        vazamento de dados num vazamento de conta.</div>
+
+      <div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>O que ela sugeriu</h2>
+        <div class="table-wrap" style="margin-top:.6rem"><table>
+          <thead><tr><th>Chamado</th><th>Tipo</th><th>Sugestão</th><th>Desfecho</th></tr></thead>
+          <tbody>${db.aiSuggestions.map(s => `<tr>
+            <td class="mono">#${s.ticketId}</td>
+            <td class="dim">${esc(s.kind)}</td>
+            <td>${esc(s.text)}</td>
+            <td>${pill(s.accepted ? 'aceita' : 'recusada', s.accepted ? 'ok' : 'neutral')}</td>
+            </tr>`).join('')}</tbody></table></div>
+      </div></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['ambiente'] = () => {
+    const e = db.envPrefs;
+    const pode = may('ambiente.preferencias.editar');
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Administração</p><h1>Preferências do ambiente</h1>
+        <p class="lede">O que é da <strong>empresa</strong>, e não da pessoa. Tema e densidade
+        da lista são de quem usa; limiar de SLA e esfera de negócio são de quem responde pela
+        operação.</p></div></div>
+
+      <div class="card"><div class="card-body">
+        <h2>Identificação</h2>
+        <div class="table-wrap" style="margin-top:.6rem"><table><tbody>
+          <tr><td class="dim">Empresa</td><td class="strong">${esc(e.tenantName)}</td></tr>
+          <tr><td class="dim">Identificador</td><td class="mono">${esc(e.slug)}</td></tr>
+          <tr><td class="dim">Fuso horário</td><td class="mono">${esc(e.timezone)}</td></tr>
+          <tr><td class="dim">Idioma</td><td class="mono">${esc(e.locale)}</td></tr>
+        </tbody></table></div>
+      </div></div>
+
+      <div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>Esferas de negócio</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">Esfera <strong>não é permissão</strong>:
+        ela responde "esta tela existe neste negócio?", e não "esta pessoa pode abri-la?".
+        Por isso é atributo da empresa, e não do usuário.</p>
+        <div class="row-actions">
+          ${['management','rental'].map(k => {
+            const on = (db.spheres || []).includes(k);
+            const rot = k === 'management' ? 'Gestão de TI' : 'Locação e serviços';
+            return `<button type="button" class="btn btn-sm"
+              data-variant="${on ? '' : 'ghost'}" data-sphere-toggle="${k}">
+              ${on ? '✓ ' : ''}${rot}</button>`;
+          }).join('')}
+        </div>
+        <p class="dim" style="margin:.8rem 0 0">Desligar uma esfera esconde o grupo do menu —
+        e <strong>não apaga dado nenhum</strong>. Ligá-la de volta traz tudo como estava.</p>
+      </div></div>
+
+      <div class="card" style="margin-top:1rem"><div class="card-body">
+        <h2>Atendimento</h2>
+        <div class="table-wrap" style="margin-top:.6rem"><table><tbody>
+          <tr><td class="dim">Aviso de SLA</td>
+            <td class="mono strong">${e.slaWarningPct}%</td>
+            <td class="dim">do prazo consumido</td></tr>
+          <tr><td class="dim">SLA crítico</td>
+            <td class="mono strong">${e.slaCriticalPct}%</td>
+            <td class="dim">vira vermelho</td></tr>
+          <tr><td class="dim">Fechamento automático</td>
+            <td class="mono strong">${e.autoCloseAfterDays} dias</td>
+            <td class="dim">sem resposta do solicitante</td></tr>
+          <tr><td class="dim">Pesquisa de satisfação</td>
+            <td>${pill(e.csatEnabled ? 'ligada' : 'desligada', e.csatEnabled ? 'ok' : 'neutral')}</td>
+            <td class="dim">${e.csatDelayHours}h após o encerramento</td></tr>
+        </tbody></table></div>
+        ${pode ? '' : `<p class="dim" style="margin-top:.8rem">Você consulta, mas não altera:
+          falta <span class="mono">ambiente.preferencias.editar</span>.</p>`}
+      </div></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['auditoria'] = () => `
+      <div class="page-head">
+        <div><p class="eyebrow">Administração</p><h1>Trilha de alterações</h1>
+        <p class="lede">Quem mudou o quê, quando, e <strong>qual era o valor antes</strong>.
+        O valor anterior é o que diferencia uma trilha de um log: sem ele, dá para saber que
+        alguém mexeu, e não dá para saber no quê.</p></div></div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Quando</th><th>Quem</th><th>Onde</th><th>Campo</th>
+          <th>De</th><th>Para</th></tr></thead>
+        <tbody>${db.auditTrail.map(a => `<tr>
+          <td class="mono dim">${dBR(a.at)}</td>
+          <td>${esc(nomeDoUsuario(a.userId))}</td>
+          <td class="mono dim">${esc(a.table)}
+            <div class="dim">${esc(a.recordRef)}</div></td>
+          <td class="mono">${esc(a.field)}</td>
+          <td class="dim">${a.from == null ? '<em>vazio</em>' : esc(a.from)}</td>
+          <td class="strong">${esc(a.to)}</td></tr>`).join('')}</tbody></table></div>
+
+      <div class="alert" data-kind="info" style="margin-top:1rem">
+        A trilha é gravada por <strong>gatilho no banco</strong>, e não pela aplicação. Uma
+        trilha que depende de a aplicação lembrar de escrever é uma trilha que some justamente
+        no caminho que alguém esqueceu de instrumentar.</div>`;
+
+  /* ---------------------------------------------------------------------- */
+  views['trabalhos'] = () => {
+    const falhando = db.jobs.filter(j => !j.lastOk);
+    const parados = db.jobs.filter(j => minutosDesde(j.lastRun) > j.toleranceMin);
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Administração</p><h1>Trabalhos agendados</h1>
+        <p class="lede">Dois tipos de falha, e o segundo é o perigoso.
+        <strong>Falhou</strong>: houve execução e deu erro — a mensagem está aqui.
+        <strong>Parou</strong>: não houve execução nenhuma — nada acontece, nada reclama.</p></div></div>
+
+      <div class="tiles">
+        ${tile('Trabalhos', db.jobs.length, 'com cadência esperada')}
+        ${tile('Falhando', falhando.length, falhando.length ? 'com erro registrado' : 'nenhum',
+               falhando.length ? 'crit' : 'ok')}
+        ${tile('Parados', parados.length,
+               parados.length ? 'sem execução na cadência' : 'nenhum',
+               parados.length ? 'crit' : 'ok')}
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Trabalho</th><th>Cadência</th><th>Última execução</th>
+          <th>Resultado</th><th>Afetou</th></tr></thead>
+        <tbody>${db.jobs.map(j => {
+          const atraso = minutosDesde(j.lastRun);
+          const parou = atraso > j.toleranceMin;
+          return `<tr>
+            <td class="strong">${esc(j.label)}
+              <div class="dim mono">${esc(j.job)}</div></td>
+            <td class="dim">${esc(j.note)}
+              <div class="dim">tolerância ${j.toleranceMin} min</div></td>
+            <td class="mono dim">${dBR(j.lastRun)}</td>
+            <td>${parou ? pill('PAROU','crit')
+                : j.lastOk ? pill('ok','ok') : pill('falhou','crit')}
+              ${j.error ? `<div class="dim" style="color:var(--breach-ink)">${esc(j.error)}</div>` : ''}</td>
+            <td class="mono">${num(j.lastAffected)}</td></tr>`;
+        }).join('')}</tbody></table></div>
+
+      <div class="alert" data-kind="warn" style="margin-top:1rem">
+        <strong>O limite deste alerta, dito antes de alguém descobrir sozinho:</strong> ele é
+        disparado pela própria rota de trabalhos agendados. Se o agendador morrer por inteiro,
+        ninguém chama a rota e <em>nenhum aviso sai</em> — o vigia dorme junto com o vigiado.
+        Por isso existe também um monitor externo apontado para
+        <span class="mono">/api/health</span>.</div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['avisos'] = () => {
+    const falhas = db.emailOutbox.filter(m => m.status === 'failed');
+    const fila = db.emailOutbox.filter(m => m.status === 'pending');
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Administração</p><h1>Avisos enviados</h1>
+        <p class="lede">O que saiu, o que está esperando e o que falhou — com o motivo.
+        Sem esta tela, "o cliente não recebeu" e "o sistema não mandou" são indistinguíveis.</p></div></div>
+
+      <div class="tiles">
+        ${tile('Enviados', db.emailOutbox.filter(m=>m.status==='sent').length, null, 'ok')}
+        ${tile('Na fila', fila.length, fila.length ? 'aguardando a drenagem' : 'vazia',
+               fila.length ? 'warn' : 'ok')}
+        ${tile('Falharam', falhas.length, falhas.length ? 'com motivo registrado' : 'nenhum',
+               falhas.length ? 'crit' : 'ok')}
+      </div>
+
+      <div class="alert" data-kind="info">
+        <strong>O corpo da mensagem não aparece aqui.</strong> Ele carrega o link de
+        redefinição de senha de outra pessoa — e quem administra o sistema não precisa dele
+        para saber se o aviso saiu.</div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Quando</th><th>Para</th><th>Assunto</th><th>Tipo</th>
+          <th>Situação</th><th>Tentativas</th></tr></thead>
+        <tbody>${db.emailOutbox.map(m => `<tr>
+          <td class="mono dim">${dBR(m.at)}</td>
+          <td class="mono">${esc(m.to)}</td>
+          <td>${esc(m.subject)}</td>
+          <td class="dim mono">${esc(m.kind)}</td>
+          <td>${pill(m.status === 'sent' ? 'enviado' : m.status === 'pending' ? 'na fila' : 'falhou',
+                     m.status === 'sent' ? 'ok' : m.status === 'pending' ? 'warn' : 'crit')}
+            ${m.error ? `<div class="dim" style="color:var(--breach-ink)">${esc(m.error)}</div>` : ''}</td>
+          <td class="mono">${m.attempts}</td></tr>`).join('')}</tbody></table></div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['convites'] = () => {
+    const pendentes = db.invites.filter(i => i.status === 'pending');
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Administração</p><h1>Convites</h1>
+        <p class="lede">Quem foi convidado e <strong>ainda não entrou</strong>. É a diferença
+        entre "mandei o convite" e "a pessoa está usando" — e, sem ela, a única forma de saber
+        era perguntar à pessoa.</p></div>
+        ${ifMay('usuarios.convites.criar',
+          `<button type="button" class="btn" id="iv-new">Convidar alguém</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Aguardando', pendentes.length, 'convite vivo', pendentes.length ? 'info' : 'neutral')}
+        ${tile('Aceitos', db.invites.filter(i=>i.status==='accepted').length, 'viraram conta', 'ok')}
+        ${tile('Vencidos', db.invites.filter(i=>i.status==='expired').length,
+               'deixaram de valer sozinhos')}
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Para</th><th>Papel</th><th>Quem convidou</th><th>Prazo</th>
+          <th>Situação</th><th></th></tr></thead>
+        <tbody>${db.invites.map(i => {
+          const ST = { pending:['aguardando','info'], accepted:['aceito','ok'],
+                       expired:['vencido','warn'], revoked:['revogado','neutral'] };
+          const st = ST[i.status] || ['—','neutral'];
+          return `<tr>
+            <td class="mono">${esc(i.email)}</td>
+            <td>${esc({admin:'Administrador',gestor:'Gestor',atendente:'Atendente',
+                       solicitante:'Solicitante',visualizador:'Visualizador'}[i.role] || i.role)}</td>
+            <td class="dim">${esc(nomeDoUsuario(i.invitedBy))}</td>
+            <td class="mono dim">${i.acceptedOn
+              ? 'aceito em ' + dBR(i.acceptedOn) : 'vale até ' + dBR(i.expiresOn)}</td>
+            <td>${pill(st[0], st[1])}</td>
+            <td class="row-actions">${may('usuarios.convites.revogar') && i.status === 'pending'
+              ? `<button type="button" class="btn btn-sm" data-variant="ghost"
+                   data-iv-revoke="${i.id}">Revogar</button>` : ''}</td></tr>`;
+        }).join('')}</tbody></table></div>
+
+      <div class="alert" data-kind="info" style="margin-top:1rem">
+        <strong>Ninguém convida para cima.</strong> Um gestor não convida como administrador —
+        sem a trava, auto-promoção ficaria a um passo: convide-se como admin num endereço seu
+        e escolha a senha.</div>`;
+  };
+
+  /* ---------------------------------------------------------------------- */
+  views['planilhas'] = () => `
+      <div class="page-head">
+        <div><p class="eyebrow">Administração</p><h1>Planilhas</h1>
+        <p class="lede">Importar é um <strong>ciclo</strong> — subir, conferir, aplicar —,
+        e não um botão. O lote que falha pela metade é o que destrói cadastro: metade
+        atualizada, metade não, e nenhum registro de onde parou.</p></div>
+        ${ifMay('sistema.planilhas.importar',
+          `<button type="button" class="btn" id="ib-new">Subir planilha</button>`)}</div>
+
+      <div class="tiles">
+        ${tile('Lotes', db.importBatches.length, 'no histórico')}
+        ${tile('Em conferência', db.importBatches.filter(b=>b.status==='review').length,
+               'esperando decisão', 'warn')}
+        ${tile('Linhas com erro',
+               num(db.importBatches.reduce((s,b)=>s+b.errors,0)), 'não foram aplicadas')}
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th>Arquivo</th><th>Destino</th><th>Quando</th><th>Linhas</th>
+          <th>Situação</th></tr></thead>
+        <tbody>${db.importBatches.map(b => {
+          const ST = { applied:['aplicado','ok'], review:['em conferência','warn'],
+                       failed:['recusado','crit'], draft:['rascunho','neutral'] };
+          const st = ST[b.status] || ['—','neutral'];
+          return `<tr>
+            <td class="mono strong">${esc(b.file)}
+              <div class="dim">por ${esc(nomeDoUsuario(b.byId))}</div></td>
+            <td class="dim">${esc(b.target)}</td>
+            <td class="mono dim">${dBR(b.at)}</td>
+            <td class="mono">${num(b.ok)} de ${num(b.rows)}
+              ${b.errors ? `<div class="dim" style="color:var(--breach-ink)">
+                ${num(b.errors)} com erro</div>` : ''}</td>
+            <td>${pill(st[0], st[1])}
+              ${b.note ? `<div class="dim">${esc(b.note)}</div>` : ''}</td></tr>`;
+        }).join('')}</tbody></table></div>
+
+      <div class="alert" data-kind="info" style="margin-top:1rem">
+        <strong>Tudo ou nada.</strong> Um lote recusado não aplica linha nenhuma — nem as que
+        estavam certas. Aplicar as boas e deixar as ruins de fora produz um cadastro que
+        ninguém consegue reconciliar depois.</div>`;
 
   views['titulos-pagar'] = () => {
     const podeCriar = may('financeiro.titulos_pagar.criar');
@@ -6088,6 +8129,10 @@
          dela exige a permissão do seu módulo. Exigir helpdesk.painel.ver no
          destino padrão era a causa do laço de redirect. */
       ['painel','Visão geral',false,null],
+      /* O portal não acrescenta acesso nenhum: tudo que ele mostra já era
+         alcançável. O que ele acrescenta é a ORDEM — procurar a resposta antes
+         de pedir um serviço, e pedir um serviço antes de abrir chamado livre. */
+      ['portal','Portal',true,null],
       ['menu','Mapa do menu',false,null],
       ['arquivo','Peças incorporadas',false,null],
     ]],
@@ -6097,28 +8142,70 @@
       ['filas','Filas',false,'helpdesk.filas.ver'],
       ['satisfacao','Satisfação',false,'helpdesk.satisfacao.ver'],
       ['sla','SLA e prazos',false,'sla.compliance.ver'],
+      ['horarios','Expediente e feriados',true,'sla.horarios.ver'],
+      ['conversas','Conversas',true,'canais.conversas.ver'],
     ]],
+    /* AUTOATENDIMENTO — vale nas duas esferas: quem aluga equipamento também
+       responde dúvida e também oferece serviço de catálogo. */
+    ['Autoatendimento', [
+      ['base','Base de conhecimento',true,'autoatendimento.base.ver'],
+      ['catalogo','Catálogo de serviços',true,'autoatendimento.catalogo.ver'],
+    ]],
+    /* LOCAÇÃO — a esfera `rental` (migração 0047).
+     *
+     * Entra acima do Financeiro porque numa empresa de locação é o trabalho do
+     * dia; e abaixo de Atendimento porque o chamado continua sendo o que
+     * interrompe. É a mesma ordem da aplicação, e a ordem aqui não é estética:
+     * o protótipo é o que se abre para mostrar o produto, e mostrar o menu numa
+     * ordem que o produto não tem é ensaiar a demonstração errada.
+     *
+     * O terceiro elemento do grupo são as ESFERAS. Esfera não é permissão: ela
+     * responde "esta tela existe neste negócio?", e não "esta pessoa pode
+     * abri-la?". Um gestor de TI com todas as permissões do mundo não deveria
+     * ver "Medições e consumo". */
+    ['Locação', [
+      ['frota','Frota',true,'locacao.frota.ver'],
+      ['loc-cadastros','Modelos e categorias',true,'locacao.cadastros.ver'],
+      ['loc-contratos','Contratos',true,'locacao.contratos.ver'],
+      ['medicoes','Medições e consumo',true,'locacao.medicoes.ver'],
+      ['loc-faturamento','Faturamento',true,'locacao.faturamento.ver'],
+      ['manutencao','Manutenção em campo',true,'locacao.manutencao.ver'],
+      ['pecas','Peças e estoque',true,'locacao.pecas.ver'],
+      ['compras','Ordens de compra',true,'locacao.compras.ver'],
+      ['contagens','Contagens de inventário',true,'locacao.contagens.ver'],
+    ], ['rental']],
+    /* GESTÃO — a esfera `management`. Não tem correspondente na locação: aqui o
+       dinheiro SAI, e a pergunta é se o contrato com o cliente paga o custo de
+       atendê-lo. */
+    ['Gestão', [
+      ['resultado','Visão de resultado',true,'gestao.resultado.ver'],
+      ['projetos','Projetos',true,'projetos.projetos.ver'],
+    ], ['management']],
     ['Financeiro', [
       ['titulos-pagar','Títulos a pagar',true,'financeiro.titulos_pagar.ver'],
       ['titulos-receber','Títulos a receber',true,'financeiro.titulos_receber.ver'],
       ['contas','Contas bancárias',false,'financeiro.contas_bancarias.ver'],
       ['centros','Centros de custo',false,'financeiro.centros_custo.ver'],
       ['fluxo-caixa','Fluxo de caixa',true,'financeiro.fluxo_caixa.ver'],
+      ['orcamento','Orçamento de TI',true,'financeiro.orcamento.ver'],
     ]],
     ['Inventário e monitoramento', [
       ['inventario','Inventário de TI',false,'inventario.ativos.ver'],
+      ['agentes','Agentes nas máquinas',true,'inventario.agentes.ver'],
+      ['software','Software instalado',true,'inventario.software.ver'],
       ['telefonia','Telefonia',false,'telefonia.linhas.ver'],
       /* Ganhou chave própria na migração 0022, junto com a tela da aplicação —
          permissão entra com a tela que ela governa, nunca antes. */
       ['links','Links de internet',true,'conectividade.links.ver'],
       ['mapas','Mapa das filiais',false,'mapas.geolocalizacao.ver'],
-    ]],
+    ], ['management']],
     ['Clientes e contratos', [
       ['clientes','Clientes e filiais',false,'clientes.grupos.ver'],
       ['fornecedores','Fornecedores e contratos',false,'fornecedores.cadastro.ver'],
     ]],
     ['Integrações', [
       ['integracoes','Sistemas de tickets',false,'integracoes.hub.ver'],
+      ['ia','Sugestões de IA',true,'ia.config.ver'],
       [null,'Automação (N8N)',false,null,true,
        'Disparo de fluxos no N8N por webhook.'],
       [null,'WhatsApp',false,null,true,'Abertura e acompanhamento de ticket por WhatsApp.'],
@@ -6129,8 +8216,14 @@
     ]],
     ['Administração', [
       ['usuarios','Usuários',false,'usuarios.usuarios.ver'],
+      ['ambiente','Preferências do ambiente',true,'ambiente.preferencias.ver'],
+      ['auditoria','Trilha de alterações',true,'auditoria.trilha.ver'],
+      ['trabalhos','Trabalhos agendados',true,'auditoria.trabalhos.ver'],
+      ['avisos','Avisos enviados',true,'auditoria.avisos.ver'],
       ['perfis','Perfis de acesso',false,'usuarios.perfis.ver'],
+      ['convites','Convites',true,'usuarios.convites.ver'],
       ['tv','Painéis de TV',false,'tv.tokens.ver'],
+      ['planilhas','Planilhas',true,'sistema.planilhas.ver'],
     ]],
     [null, [
       /* Trocar a própria senha não é permissão de módulo, é direito de quem tem
@@ -6145,9 +8238,28 @@
 
   /* Grupo sem item alcançável desaparece inteiro, cabeçalho incluído: cabeçalho
      sozinho anuncia um módulo sem dar acesso a ele. */
+  /*
+   * O grupo pertence a uma esfera quando declara uma. Sem declaração, ele é de
+   * todo mundo — Atendimento, Administração e os destinos soltos valem nos dois
+   * negócios, e exigir que cada um se declare transformaria a esfera numa
+   * etiqueta burocrática em vez de uma distinção.
+   */
+  const grupoNaEsfera = (esferas) => {
+    if (!esferas) return true;
+    const daEmpresa = db.spheres || ['management'];
+    if (!esferas.some(e => daEmpresa.includes(e))) return false;
+    /* O FOCO encurta o menu de quem tem as duas esferas, e NÃO dá nem tira
+       acesso: escolher "Locação" esconde o atalho para Projetos, não o projeto.
+       A busca continua achando tudo e o endereço digitado continua abrindo —
+       por isso ele é preferência de quem usa, como a densidade da lista. */
+    const foco = db.sphereFocus;
+    return !foco || esferas.includes(foco);
+  };
+
   function visibleNavGroups() {
     return NAV_GROUPS
-      .map(([rotulo, itens]) => {
+      .map(([rotulo, itens, esferas]) => {
+        if (!grupoNaEsfera(esferas)) return null;
         const reais = itens.filter(itemVisivel);
         if (!reais.length) return null;
         return [rotulo, itens.filter(i => reais.includes(i) || i[4])];
@@ -6284,6 +8396,17 @@
       });
     });
   }
+  function renderFoco() {
+    const wrap = document.getElementById('sphere-focus-wrap');
+    const sel = document.getElementById('sphere-focus');
+    if (!wrap || !sel) return;
+    /* Uma esfera só: sem escolha a fazer, e o seletor sai do cabeçalho em vez
+       de ficar lá com uma opção. */
+    const duas = (db.spheres || []).length > 1;
+    wrap.hidden = !duas;
+    sel.value = db.sphereFocus || '';
+  }
+
   function renderWhoami() {
     const sel = document.getElementById('acting-user');
     if (!sel) return;
@@ -6301,6 +8424,7 @@
     document.getElementById('view').innerHTML = (views[current] || views.novidades)();
     renderNav();
     renderWhoami();
+    renderFoco();
   }
   function refresh() {
     if (wallVisible()) renderWall(); else render();
@@ -6378,6 +8502,15 @@
   /* Trocar a pessoa da sessão recarrega as concessões e re-renderiza. É o
      controle que torna a camada de permissão observável sem um Supabase: o menu
      encolhe, os botões desaparecem e a tela negada cai no destino permitido. */
+  document.getElementById('sphere-focus').addEventListener('change', e => {
+    db.sphereFocus = e.target.value || null;
+    save();
+    /* Se a tela aberta sumiu do menu, a pessoa continua nela: o foco não tira
+       acesso, e expulsar alguém da tela em que está por causa de uma
+       preferência de menu seria exatamente o contrário do que ele faz. */
+    renderNav();
+  });
+
   document.getElementById('acting-user').addEventListener('change', e => {
     db.session.userId = e.target.value;
     refreshGrants();

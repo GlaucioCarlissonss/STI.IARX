@@ -123,6 +123,23 @@ zero, estão em [docs/22](docs/22-modo-local-sem-supabase.md) §6.1.
 
 A instalação abaixo é a de quem vai **desenvolver** ou publicar em produção.
 
+### Sem instalar nada: a ferramenta navegável
+
+Para **mostrar o produto** — a um cliente, a um sócio, a você mesmo antes de subir
+qualquer coisa —, abra [`demo/sti-tool.html`](demo/sti-tool.html) direto no navegador. É um
+arquivo só, sem servidor, com **as 48 telas**: o ciclo do chamado, o autoatendimento, a
+locação de equipamento, a gestão, o financeiro, o inventário e a administração.
+
+Dois seletores no topo explicam o produto melhor que qualquer texto:
+
+- **Vendo como** troca de pessoa, e o menu e os botões mudam na hora. Diego e Elis têm o
+  *mesmo papel*; o que os separa é o perfil de acesso.
+- **Foco** troca a esfera de negócio. Esfera não é permissão: ela responde "esta tela
+  existe neste negócio?", e não "esta pessoa pode abri-la?".
+
+Os detalhes, as decisões que cada tela mostra e os limites do protótipo estão em
+[`demo/README.md`](demo/README.md).
+
 ## Instalação
 
 ### Pré-requisitos
@@ -232,7 +249,7 @@ Com o seed aplicado, o painel de TV de demonstração fica em
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 797 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
+npm test              # 800 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
 npm run db:validate   # migrações + seed + 1210 asserções em PostgreSQL real
 ```
 
@@ -240,7 +257,7 @@ Mais as suítes em navegador de verdade, que rodam à parte porque precisam de
 Chromium e, fora a primeira, de um build:
 
 ```bash
-node demo/tests/prototipo.spec.mjs   # 51 asserções de permissão no protótipo
+node demo/tests/prototipo.spec.mjs   # 56 asserções no protótipo: permissão, menu e as 48 telas
 node demo/tests/aplicacao.spec.mjs   # 61 asserções na aplicação: tema, fontes, foco, 360px, peso do JS, rotas do agente, dos canais e da exportação
 
 # E, com o modo local de pé (docs/22), as telas AUTENTICADAS — que até esta
@@ -375,8 +392,8 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 Verificado na última entrega: build de produção limpo, `tsc` sem apontamentos,
-`eslint` com 4 avisos de variável não usada em teste, **797 testes unitários** e
-**1210 asserções de banco** passando, mais 51 asserções no protótipo e 61 na
+`eslint` com 4 avisos de variável não usada em teste, **800 testes unitários** e
+**1210 asserções de banco** passando, mais 56 asserções no protótipo e 61 na
 aplicação, em navegador — incluindo a aritmética de horário útil conferida
 contra 8 cenários (almoço, fim de semana, feriado, fora de expediente).
 

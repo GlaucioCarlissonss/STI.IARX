@@ -1,12 +1,29 @@
 # Ferramenta navegável (protótipo de interface)
 
-`sti-tool.html` é uma página autocontida que implementa a **interface** das 11 melhorias
-especificadas em [../docs/06-lacunas-e-roadmap.md](../docs/06-lacunas-e-roadmap.md), dos
-**cadastros administrativos** portados do app Next.js, e da **camada de permissão e base do
-financeiro** de [../docs/07-financeiro-e-permissoes.md](../docs/07-financeiro-e-permissoes.md).
+`sti-tool.html` é uma página autocontida com **as 48 telas do produto**: o ciclo do
+chamado, o autoatendimento, a **locação de equipamento**, a gestão, o financeiro, o
+inventário e a administração. Abra o arquivo direto no navegador — não precisa de servidor.
 
-Serve para avaliar e demonstrar o comportamento das telas antes de portá-las para o app
-Next.js. Abra o arquivo direto no navegador — não precisa de servidor.
+Ela serve para **mostrar o produto** a quem ainda não o comprou, e para avaliar
+comportamento de tela sem subir nada.
+
+> ### O defeito que esta rodada corrigiu, dito aqui porque ele pode voltar
+>
+> A aplicação chegou a 48 telas enquanto este arquivo ainda mostrava **25**. Faltava a
+> **locação inteira** — frota, contratos, medições, faturamento, manutenção, peças,
+> compras, contagens — e mais dezessete telas de gestão. Mais da metade do produto não
+> existia no único artefato que se abre para mostrar o produto.
+>
+> E nada acusava: o catálogo de permissões estava em dia, as telas da aplicação estavam
+> testadas, e a ferramenta abria bonita — só que menor. É o tipo de divergência que cresce
+> em silêncio, uma entrega de cada vez, até alguém abrir o arquivo para demonstrar e sentir
+> falta do que tinha antes.
+>
+> Agora existem dois testes para isso: `src/lib/navigation.demo.test.ts` falha quando o
+> menu da aplicação ganha tela que este arquivo não tem, e a seção 15 de
+> `tests/prototipo.spec.mjs` abre cada uma das 26 telas novas e confere que o **título**
+> apareceu — tela ausente cai no fallback de "Novidades", que tem 4.500 caracteres e
+> passaria por qualquer conferência de tamanho.
 
 ## O que ela é
 
@@ -28,6 +45,60 @@ Os cadastros administrativos (telas marcadas como **novo** no menu) cobrem:
 | **Perfis de acesso** | Os 9 perfis do sistema, a matriz módulo → tela → ação sobre as 108 chaves do catálogo, e "quem usa qual perfil" com o papel efetivo. Duplicar um perfil do sistema é o jeito de variá-lo sem quebrar quem o usa. |
 | **Centros de custo** | Hierarquia até 3 níveis, com o 4º e o ciclo recusados. Centro de filial permite cobrar custo de TI por unidade. |
 | **Contas bancárias** | Saldo derivado das movimentações, extrato consolidado, conciliação e transferência interna de dupla entrada. |
+
+## Locação de equipamento — a esfera `rental`
+
+O negócio de quem aluga equipamento próprio. O que separa estas telas das de gestão não é
+o que elas fazem: é o **sentido do dinheiro**. Aqui ele entra — contrato + medição →
+fatura → título a receber. Na gestão ele sai — nota de terceiro → título a pagar → orçamento.
+
+| Tela | O que ela mostra, e por quê |
+|---|---|
+| **Frota** | O ciclo de vida como máquina de estados, cópia fiel da migração 0048: de "disponível" não se vai direto a "locado". **Bloqueio é atributo, não estado** — a peça bloqueada continua dizendo onde de fato está. |
+| **Modelos e categorias** | O medidor padrão é **nenhum**: a maior parte do que se aluga é cobrada por tempo. Medidor obrigatório inventaria horímetro onde não existe. |
+| **Contratos** | Item com preço e franquia próprios — o mesmo cliente negocia diferente para peças diferentes. O reajuste é **registrado, não calculado**: o sistema não tem a série do IPCA. |
+| **Medições e consumo** | Leitura **sem contrato também é leitura**: a manutenção lê o medidor na entrada da oficina, e descartar o número abriria um buraco onde ele andou sem faturar. |
+| **Faturamento** | A fatura **reemitida** aparece com sufixo (`…/202610-2`) e a cancelada continua na lista — cobrança enviada que some do sistema é conversa sem prova. |
+| **Manutenção em campo** | Atendimento de campo **é chamado**, com ficha extra. Custo acima da alçada mostra **quem aprovou**: sem isso, "passou da alçada" e "ninguém viu" ficam idênticos. |
+| **Peças e estoque** | O saldo é **derivado das movimentações**, nunca digitado. O ajuste de contagem entra como movimentação, e é o que mantém o extrato capaz de explicar o número. |
+| **Ordens de compra** | **Receber não é dever**: a entrada no estoque é quando a mercadoria chega; o título a pagar nasce quando a nota é registrada. |
+| **Contagens de inventário** | A divergência vira ajuste rastreável, e a semente traz uma de propósito — contagem que bate sempre não prova nada. |
+
+## Gestão — as dezessete que faltavam
+
+Portal, Expediente e feriados, Conversas, Base de conhecimento, Catálogo de serviços,
+Visão de resultado, Projetos, Orçamento de TI, Agentes nas máquinas, Software instalado,
+Sugestões de IA, Preferências do ambiente, Trilha de alterações, Trabalhos agendados,
+Avisos enviados, Convites e Planilhas.
+
+Três delas carregam decisões que valem ser vistas antes de comprar:
+
+- **Trabalhos agendados** distingue *falhou* (houve execução e deu erro) de **PAROU** (não
+  houve execução nenhuma) — e diz, na própria tela, que o alerta é disparado pela rota de
+  trabalhos: se o agendador morrer por inteiro, o vigia dorme junto com o vigiado.
+- **Sugestões de IA** mostra que a chave **não fica no banco** — o que fica é o nome da
+  variável de ambiente. Um dump carrega os dados de todos os clientes; carregar junto a
+  credencial transformaria vazamento de dados em vazamento de conta.
+- **Avisos enviados** não mostra o corpo da mensagem: ele carrega o link de redefinição de
+  senha de outra pessoa.
+
+## O seletor "Foco" — esfera não é permissão
+
+Ao lado de "Vendo como" há um segundo seletor, e ele responde a uma pergunta diferente.
+Permissão responde *"esta pessoa pode abrir esta tela?"*; **esfera** responde *"esta tela
+existe neste negócio?"*. Um gestor de TI com todas as permissões do mundo não deveria ver
+"Medições e consumo".
+
+O foco **não dá nem tira acesso**: escolher "Locação" tira Projetos do menu, não o projeto
+— o endereço digitado continua abrindo, e há uma asserção que prova isso. Ele existe para
+encurtar a barra de quem está num trabalho só.
+
+> **Um achado que ficou em aberto.** Com as duas esferas a barra tem **9 grupos**, acima do
+> teto prático de 7 para um menu que se lê de relance. Quem estourou o teto foi o produto,
+> não o protótipo — a aplicação também tem 9. Com foco em locação a barra volta a 7; com
+> foco em gestão fica em 8. "Autoatendimento" tem dois itens e caberia dentro de
+> "Atendimento", mas isso é decisão de produto, e está registrada no teste em vez de ser
+> resolvida por conta própria.
 
 ## O seletor "Vendo como" — é por aqui que se avalia a permissão
 
