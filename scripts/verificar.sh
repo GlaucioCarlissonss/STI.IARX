@@ -57,6 +57,12 @@ for arg in "$@"; do
 done
 
 TMP="$(mktemp -d)"
+
+# Onde fica a saída de quem reprovou. O `$TMP` some no `trap`, e com ele o
+# único registro do que aconteceu — "FALHOU" sem log obriga a rodar os
+# quarenta minutos de novo só para reler a mesma linha.
+GUARDA="$RAIZ/.verificacao"
+rm -rf "$GUARDA"; mkdir -p "$GUARDA"
 trap 'rm -rf "$TMP"; fuser -k "${PORTA:-3177}/tcp" >/dev/null 2>&1' EXIT
 
 falhas=0
@@ -166,7 +172,13 @@ rodar_suite() { # caminho rótulo
   if [ "$codigo" -eq 0 ]; then
     marcar "$rotulo" 'ok' "$n asserções"
   else
-    marcar "$rotulo" 'FALHOU' "$(grep -E 'FALHOU' "$saida" | head -1 | cut -c1-70)"
+    cp "$saida" "$GUARDA/$(basename "$caminho" .spec.mjs).log"
+    marcar "$rotulo" 'FALHOU' "$(grep -E 'FALHOU' "$saida" | head -1 | cut -c1-60)"
+    # A falha costuma vir precedida do diagnóstico que a própria suíte imprime
+    # — a lista que a paleta devolveu, a rota que deu 500. Mostrá-lo aqui evita
+    # que a pessoa tenha de ir atrás do arquivo para saber se vale a pena.
+    grep -B 2 -E 'FALHOU' "$saida" | grep -vE 'FALHOU|^--' | tail -1 \
+      | sed 's/^/        /' | grep -v '^\s*$' || true
     falhas=$((falhas+1))
   fi
 }
@@ -258,7 +270,11 @@ if [ "$mortes" -gt 0 ]; then
 fi
 if [ "$falhas" -eq 0 ]; then
   echo 'VARREDURA LIMPA'
+  rm -rf "$GUARDA"
 else
   echo "$falhas item(ns) com problema"
+  if [ -n "$(ls -A "$GUARDA" 2>/dev/null)" ]; then
+    echo "a saída de quem reprovou ficou em .verificacao/"
+  fi
 fi
 exit $(( falhas > 0 ? 1 : 0 ))

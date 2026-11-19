@@ -46,3 +46,7 @@ agente/dist/
 # Scripts de captura de tela, criados fora do repositório durante o trabalho.
 .tirar.mjs
 .f3*.mjs
+
+# Saída das suítes que reprovaram em `scripts/verificar.sh`. Guardada porque
+# "FALHOU" sem o log faz a investigação recomeçar do zero a cada varredura.
+.verificacao/

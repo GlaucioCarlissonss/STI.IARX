@@ -139,6 +139,27 @@ console.log('\n=== 2. Telas, ações e registros na mesma caixa ===')
    */
   const temATela = (r) => r.some((x) => /Fluxo de caixa/.test(x) && /Financeiro/.test(x))
   const r = await buscar(p, 'fluxo', temATela)
+  /*
+   * QUANDO ESTA REPROVAR, ELA DIZ O QUE VIU.
+   *
+   * Esta asserção reprova na varredura COMPLETA (duas de duas) e passa em todo
+   * recorte menor que se tentou: sozinha, sob carga de quatro suítes em
+   * paralelo, logo depois de `esferas`, e depois das cinco que a antecedem na
+   * ordem. O que ainda não foi reproduzido é a sequência inteira contra um
+   * servidor de vida longa.
+   *
+   * Sem esta linha, o relatório diz apenas "FALHOU" e a investigação recomeça
+   * do zero a cada varredura — quarenta minutos para produzir a mesma frase.
+   * Com ela, a próxima reprovação entrega a lista que a paleta devolveu, que é
+   * o dado que falta: se vier vazia, a busca não voltou; se vier cheia sem a
+   * tela, o recorte mudou.
+   *
+   * Afrouxar a asserção faria o vermelho sumir sem explicar nada, e um verde
+   * que não se entende não é melhor que um vermelho que não se entende.
+   */
+  if (!temATela(r)) {
+    console.log(`         a paleta devolveu ${r.length} item(ns): ${JSON.stringify(r).slice(0, 500)}`)
+  }
   ok(temATela(r), 'acha a tela pelo nome, com o grupo ao lado para dar contexto')
 
   await p.fill('[data-testid="paleta"] input', '')
