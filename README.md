@@ -276,7 +276,7 @@ As partes, se quiser rodar separado:
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 800 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
+npm test              # 809 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
 npm run db:validate   # migrações + seed + 1218 asserções em PostgreSQL real
 ```
 
@@ -298,7 +298,8 @@ npm run build && npx next start -p 3177 &
 node demo/tests/local/telas.spec.mjs      # 49 telas autenticadas, uma a uma
 node demo/tests/local/aprovacao.spec.mjs  # o fluxo de aprovação com três pessoas
 node demo/tests/local/menu.spec.mjs       # o menu que abre e fecha, e lembra
-# … e as outras dezoito em demo/tests/local/
+node demo/tests/local/banco-fora.spec.mjs # PARA o PostgreSQL e confere o que a tela diz
+# … e as outras dezenove em demo/tests/local/
 ```
 
 > **`playwright` não está no `package.json`.** As suítes o importam, e ele vem do
@@ -419,10 +420,10 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 `bash scripts/verificar.sh` sai **VARREDURA LIMPA**: `tsc` sem apontamentos,
-`eslint` com 4 avisos de variável não usada em teste, **800 testes unitários**,
+`eslint` com 4 avisos de variável não usada em teste, **809 testes unitários**,
 **1218 asserções de banco**, os números da documentação conferindo contra o
 banco, **56 asserções no protótipo**, build de produção limpo, as **49 telas**
-autenticadas varridas uma a uma, as **20 suítes de comportamento** e **61
+autenticadas varridas uma a uma, as **21 suítes de comportamento** e **61
 asserções na aplicação** — incluindo a aritmética de horário útil conferida
 contra 8 cenários (almoço, fim de semana, feriado, fora de expediente).
 

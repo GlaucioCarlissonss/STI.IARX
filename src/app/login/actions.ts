@@ -5,6 +5,11 @@ import { revalidatePath } from 'next/cache'
 import type { Route } from 'next'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
+import {
+  AVISO_DE_INDISPONIBILIDADE,
+  CODIGO_INDISPONIVEL,
+  ehFalhaDeInfraestrutura,
+} from '@/lib/infraestrutura'
 
 const credentialsSchema = z.object({
   email: z.string().email('Informe um e-mail válido.'),
@@ -13,6 +18,9 @@ const credentialsSchema = z.object({
 
 export interface AuthFormState {
   error?: string
+  /* Código estável, para a interface ramificar sem depender da frase. Prosa
+     melhora com o tempo; condicional escrita sobre prosa quebra junto. */
+  codigo?: string
 }
 
 export async function signIn(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
@@ -26,9 +34,42 @@ export async function signIn(_prev: AuthFormState, formData: FormData): Promise<
   }
 
   const supabase = await createClient()
-  const { error } = await supabase.auth.signInWithPassword(parsed.data)
 
-  if (error) {
+  /*
+   * O `try` existe porque `autenticar()` LANÇA quando a conexão falha. Sem ele,
+   * a exceção subia da Server Action e quem estava na tela recebia o erro
+   * genérico — honesto, e que não diz nem que a senha está certa nem a quem
+   * avisar. Com o banco fora, a pessoa desconfia da própria senha.
+   *
+   * O `if` abaixo cobre o outro formato: quando a falha de conexão chega como
+   * `{ error }` em vez de exceção, ela cairia no `return` seguinte e a tela
+   * diria "E-mail ou senha incorretos" — uma frase falsa que é também um
+   * conselho errado, porque manda tentar outra senha e pedir redefinição.
+   *
+   * `autenticar()` LANÇA quando a conexão falha, em vez de devolver `{ error }`
+   * — e sem este `try` a exceção subia da Server Action, o que também não
+   * explicava nada a quem estava na tela.
+   */
+  let erroDoLogin: { code?: string; message: string } | null = null
+  try {
+    const { error } = await supabase.auth.signInWithPassword(parsed.data)
+    erroDoLogin = error
+  } catch (e) {
+    if (ehFalhaDeInfraestrutura(e)) {
+      console.error('[login] banco indisponível:', e)
+      return { error: AVISO_DE_INDISPONIBILIDADE, codigo: CODIGO_INDISPONIVEL }
+    }
+    throw e
+  }
+
+  if (erroDoLogin) {
+    /* O driver pode devolver a falha de conexão como objeto em vez de lançá-la,
+       dependendo de onde ela aconteceu. O mesmo tratamento vale, pelo mesmo
+       motivo. */
+    if (ehFalhaDeInfraestrutura(erroDoLogin)) {
+      console.error('[login] banco indisponível:', erroDoLogin)
+      return { error: AVISO_DE_INDISPONIBILIDADE, codigo: CODIGO_INDISPONIVEL }
+    }
     // Mensagem genérica de propósito: distinguir "e-mail não existe" de "senha
     // errada" entrega ao atacante uma forma de enumerar contas válidas.
     return { error: 'E-mail ou senha incorretos.' }

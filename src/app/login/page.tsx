@@ -32,6 +32,18 @@ export default async function LoginPage({
           * veria é um formulário em branco no lugar do que estava fazendo — e
           * concluiria que o sistema caiu.
           */}
+        {/*
+          * CADA MOTIVO DIZ UMA COISA, porque cada um pede uma ação diferente.
+          *
+          * Antes havia um só, e ele era usado para tudo: com o banco parado, a
+          * tela dizia que a CONTA estava desativada. A pessoa ia procurar o
+          * administrador da empresa, que confirmaria que a conta está ativa, e
+          * ninguém avisaria quem cuida do servidor.
+          *
+          * `sem-perfil` existe separado de `inativa` porque reativar não
+          * resolve: a conta existe na autenticação e não tem vínculo com
+          * empresa nenhuma. São conselhos diferentes para quem recebe o pedido.
+          */}
         {motivo === 'inativa' && (
           <div
             role="status"
@@ -39,6 +51,16 @@ export default async function LoginPage({
           >
             A sua sessão foi encerrada porque esta conta está desativada. Procure o administrador
             da sua empresa para reativá-la.
+          </div>
+        )}
+
+        {motivo === 'sem-perfil' && (
+          <div
+            role="status"
+            className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-warn-soft)] px-4 py-3 text-sm text-[var(--color-warn-ink)]"
+          >
+            Esta conta existe, mas ainda não está vinculada a nenhuma empresa. Peça a quem
+            administra para enviar um convite — reativar a conta não resolve este caso.
           </div>
         )}
 

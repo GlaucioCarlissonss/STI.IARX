@@ -37,13 +37,29 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
   await supabase.auth.signOut()
 
+  const pedido = request.nextUrl.searchParams.get('motivo')
+
+  /*
+   * O motivo vem de quem redirecionou, e passa por uma LISTA FECHADA.
+   *
+   * Ele é refletido na tela seguinte, e refletir parâmetro de URL sem filtrar é
+   * como se faz um redirecionador de conteúdo: bastaria alguém mandar um link
+   * com `?motivo=<qualquer coisa>` para escolher o que a vítima lê na tela de
+   * entrada do sistema. A lista fechada custa uma linha.
+   *
+   * `inativa` é o padrão porque era o único motivo que existia quando esta rota
+   * nasceu — um link antigo continua dizendo o que dizia.
+   */
+  const MOTIVOS = ['inativa', 'sem-perfil', 'sem-sessao']
+  const motivo = pedido && MOTIVOS.includes(pedido) ? pedido : 'inativa'
+
   const url = request.nextUrl.clone()
   url.pathname = '/login'
   url.search = ''
   /* O motivo viaja na URL para a tela de entrada poder explicar. Sem ele, a
      pessoa seria devolvida a um formulário em branco, sem nenhuma pista de por
      que foi expulsa do meio do trabalho. */
-  url.searchParams.set('motivo', 'inativa')
+  url.searchParams.set('motivo', motivo)
 
   return NextResponse.redirect(url)
 }
