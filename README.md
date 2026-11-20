@@ -418,17 +418,28 @@ Cada uma tem justificativa e alternativas rejeitadas em
 
 ## Estado atual e próximos passos
 
-Verificado na última entrega: build de produção limpo, `tsc` sem apontamentos,
-`eslint` com 4 avisos de variável não usada em teste, **800 testes unitários** e
-**1218 asserções de banco** passando, mais 56 asserções no protótipo e 61 na
-aplicação, em navegador — incluindo a aritmética de horário útil conferida
+`bash scripts/verificar.sh` sai **VARREDURA LIMPA**: `tsc` sem apontamentos,
+`eslint` com 4 avisos de variável não usada em teste, **800 testes unitários**,
+**1218 asserções de banco**, os números da documentação conferindo contra o
+banco, **56 asserções no protótipo**, build de produção limpo, as **49 telas**
+autenticadas varridas uma a uma, as **20 suítes de comportamento** e **61
+asserções na aplicação** — incluindo a aritmética de horário útil conferida
 contra 8 cenários (almoço, fim de semana, feriado, fora de expediente).
 
-As **21 suítes de navegador autenticadas** passam duas vezes seguidas no mesmo
-banco. A segunda passada não é zelo: é a que pega suíte que consome estado e só
-funciona uma vez — foi assim que apareceu o defeito de refaturamento corrigido
-na migração 0056, em que cancelar uma fatura e refazer a competência era
-recusado com o nome de um índice.
+As suítes rodam contra o mesmo banco, sem recriá-lo, e por isso são exercitadas
+repetidamente: é o que pega a suíte que consome estado e só funciona uma vez —
+foi assim que apareceu o defeito de refaturamento corrigido na migração 0056,
+em que cancelar uma fatura e refazer a competência era recusado com o nome de
+um índice. `--duas` força duas passadas seguidas na mesma execução.
+
+> **Chegar a essa linha limpa custou cinco varreduras, e nenhuma das falhas era
+> do produto.** Foram defeitos de MEDIÇÃO, todos nomeados em
+> [`docs/padroes-de-engenharia.md`](docs/padroes-de-engenharia.md): um runner que
+> matava o invólucro do servidor e deixava a porta ocupada; uma suíte que digitava
+> antes de o campo receber foco e media a lista de busca vazia; e quatro
+> asserções que contavam linhas em listas limitadas a 20 que as próprias suítes
+> faziam crescer. Cada uma acusava o produto de um defeito que ele não tinha —
+> que é o custo de uma suíte que mente, e a razão de o runner existir.
 
 A imagem de produção foi construída e executada: sobe como usuário não-root,
 responde `healthy`, e **não contém** código-fonte, migrações, `npm`, `typescript`
