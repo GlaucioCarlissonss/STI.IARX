@@ -18,6 +18,7 @@
  * Como rodar: ver `telas.spec.mjs`.
  */
 import { chromium } from 'playwright'
+import { execSync } from 'node:child_process'
 
 const BASE = 'http://127.0.0.1:3177'
 const SENHA = 'desenvolvimento'
@@ -371,6 +372,44 @@ console.log('\n=== 10. Leitura de medidor: o volume de verdade ===')
     'EQP-0412;31/02/2026;9.700',
   ].join('\n')
 
+  /*
+   * A SUÍTE CRIA O VAZIO QUE VAI MEDIR, em vez de torcer por ele.
+   *
+   * `DIA_DA_LEITURA` era uma tentativa de unicidade: data derivada de
+   * `Date.now()` em módulo 28/12/6. São 2.016 datas possíveis — colisão é
+   * questão de tempo, e ela aconteceu. Numa varredura completa a leitura JÁ
+   * existia, a prévia disse "atualizam" em vez de "entram novas 2", a asserção
+   * reprovou, e o clique seguinte esperou trinta segundos por um botão que
+   * nunca ia aparecer e MATOU a suíte — levando junto as asserções da seção 11.
+   *
+   * Pior: ela alternava. Quando a morte acontecia antes de aplicar, a execução
+   * seguinte encontrava o vazio e passava. Verde e vermelho em dias alternados,
+   * sem nada ter mudado no produto.
+   *
+   * Apagar as duas leituras antes de importar é determinístico e custa uma
+   * linha. É a mesma regra do padrão: crie o estado, e confira o preparo.
+   */
+  const psql = (q) =>
+    execSync(
+      `PGPASSWORD=postgres psql -At -h 127.0.0.1 -p 5433 -U postgres -d sti_iarx_dev -c "${q}"`,
+    )
+      .toString()
+      .trim()
+
+  const [dia, mes, ano] = DIA_DA_LEITURA.split('/')
+  const iso = `${ano}-${mes}-${dia}`
+  psql(
+    `delete from public.meter_readings r using public.rental_equipment e
+      where e.id = r.equipment_id
+        and e.asset_tag in ('EQP-0412','EQP-0501')
+        and r.read_on = '${iso}'`,
+  )
+  const sobraram = psql(
+    `select count(*) from public.meter_readings r join public.rental_equipment e on e.id = r.equipment_id
+      where e.asset_tag in ('EQP-0412','EQP-0501') and r.read_on = '${iso}'`,
+  )
+  ok(sobraram === '0', `o preparo deixou a data ${DIA_DA_LEITURA} livre (sobraram ${sobraram})`)
+
   await enviar(p, 'leituras', `leituras-${SUFIXO}.csv`, csv)
   await esperarTexto(p, /Planilha conferida/i)
 
@@ -390,8 +429,21 @@ console.log('\n=== 10. Leitura de medidor: o volume de verdade ===')
   const resumo = await p.locator('[data-testid="resumo-da-importacao"]').innerText().then((t) => t.replace(/\n/g, ' '))
   ok(/Entram novas\s*2/.test(resumo), 'as duas leituras boas entram')
 
-  await p.locator('[data-testid="gaveta"] button:has-text("Aplicar 2 linha(s)")').click()
-  await esperarTexto(p, /Importação aplicada/i)
+  /*
+   * O clique protegido, porque uma asserção vermelha não pode MATAR a suíte.
+   *
+   * Sem o `catch`, a reprovação acima virava `locator.click: Timeout 30000ms`
+   * e o processo morria — somindo com a seção 11 inteira. Morte não é falha: é
+   * ausência de medição, e aqui ela apagava asserções que não tinham nada a ver
+   * com o problema.
+   */
+  const aplicou = await p
+    .locator('[data-testid="gaveta"] button:has-text("Aplicar 2 linha(s)")')
+    .click({ timeout: 10000 })
+    .then(() => true)
+    .catch(() => false)
+  ok(aplicou, 'o botão de aplicar as 2 linhas está lá')
+  if (aplicou) await esperarTexto(p, /Importação aplicada/i)
 
   await p.goto(`${BASE}/locacao/medicoes`, { waitUntil: 'networkidle' })
   await p.waitForTimeout(600)
