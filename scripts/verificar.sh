@@ -163,7 +163,13 @@ rodar_suite() { # caminho rótulo
   # na saída: uma suíte pode imprimir "Error" num caso de teste legítimo, e uma
   # que estoura sem captura pode não imprimir nada parecido.
   if grep -qE '^Node\.js v[0-9]' "$saida"; then
+    cp "$saida" "$GUARDA/$(basename "$caminho" .spec.mjs).log"
     marcar "$rotulo" 'MORREU' "$(grep -E '^[A-Za-z]*Error' "$saida" | head -1 | cut -c1-70)"
+    # A MORTE É O CASO EM QUE O LOG MAIS IMPORTA, e era o único que não o
+    # guardava: o `return` saía antes do `cp` do ramo de falha. Uma suíte que
+    # morre não diz o que estava errado, então a saída dela é tudo o que
+    # sobra — e sem ela a investigação recomeça com uma varredura inteira.
+    sed -n '/^[A-Za-z]*Error\|^\s*at /p' "$saida" | head -3 | sed 's/^/        /'
     mortes=$((mortes+1)); falhas=$((falhas+1))
     return
   fi
