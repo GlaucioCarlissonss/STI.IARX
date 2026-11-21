@@ -10903,4 +10903,120 @@ reset role;
 reset request.jwt.claims;
 
 \echo ''
+\echo '=== 63. Toda recusa de domínio tem NOME (0064) ==='
+
+-- -----------------------------------------------------------------------------
+-- POR QUE ESTA SEÇÃO LÊ `pg_proc` E NÃO OS ARQUIVOS DE MIGRAÇÃO
+--
+-- Migração é somente-avante: a 0053 continua, para sempre, com o texto sem
+-- `constraint =`, porque ela já rodou em bancos que existem. Uma peneira sobre
+-- os ARQUIVOS ficaria vermelha para sempre por causa de história que não se
+-- reescreve.
+--
+-- `pg_proc.prosrc` guarda a definição VIVA — a que o `create or replace` da
+-- 0064 deixou no lugar. É o fato; o arquivo é o histórico.
+--
+-- O que se cobra: toda função que levanta `errcode = '23514'` — o código de
+-- violação de regra de domínio — também diz `constraint =`. Sem o nome, quem
+-- depura vê "violação de check" e nada mais, e a camada de cima é obrigada a
+-- ramificar por texto, que quebra na primeira melhoria de redação.
+--
+-- As recusas de PERMISSÃO (`42501`) e as de argumento ficam de fora de
+-- propósito: elas não são regra de domínio, não têm constraint para nomear, e
+-- exigir nome delas seria inventar um.
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_sem    text[];
+  v_total  int;
+begin
+  select coalesce(array_agg(n.nspname || '.' || p.proname order by p.proname), '{}'),
+         count(*)
+    into v_sem, v_total
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname in ('app', 'public')
+     and p.prosrc like '%23514%'
+     and p.prosrc not like '%constraint%';
+
+  perform app.assert(
+    cardinality(v_sem) = 0,
+    'toda função que levanta 23514 nomeia a constraint'
+      || case when cardinality(v_sem) = 0 then ''
+              else ' — sem nome: ' || array_to_string(v_sem, ', ') end);
+
+  -- Guarda contra vacuidade: se o schema for renomeado, a consulta acima não
+  -- acha nada, `v_sem` fica vazio e a asserção passa sem ter lido uma linha.
+  select count(*) into v_total
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname in ('app', 'public') and p.prosrc like '%23514%';
+  -- Nove hoje. O piso é cinco, e não nove, porque o número exato transformaria
+  -- esta guarda numa segunda asserção sobre o produto: toda regra nova de
+  -- domínio deixaria a seção vermelha sem nada ter quebrado. O que ela precisa
+  -- provar é que a consulta LEU alguma coisa.
+  -- A frase vale nos DOIS sentidos: `app.assert` imprime a mesma mensagem ao
+  -- passar e ao falhar, e uma escrita só para o fracasso vira absurdo no
+  -- relatório verde ("só 9 funções" como notícia boa).
+  perform app.assert(v_total >= 5,
+    v_total || ' função(ões) levantam 23514 — a consulta alcançou os schemas');
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- E A RECUSA É AFIRMADA PELO NOME, não por "houve erro".
+--
+-- `assert erro` passa quando o código falha pelo motivo errado — uma coluna que
+-- não existe, um `not null` de outra tabela, um typo no insert. O teste fica
+-- verde provando outra coisa.
+--
+-- Aqui a recusa é provocada de propósito e o nome da constraint é lido de
+-- `get stacked diagnostics`. Se a regra mudar de nome, esta seção fica vermelha
+-- no mesmo dia — que é exatamente o que se quer de uma costura.
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_nome   text;
+  v_mov    uuid;
+  v_tenant uuid := 'a0000000-0000-4000-8000-000000000001';
+begin
+  -- O razão de estoque é imutável. Primeiro cria-se o movimento: afirmar sobre
+  -- uma linha que talvez não exista é a armadilha do estado vazio suposto, e
+  -- um `if found` em volta faria a seção inteira passar sem executar nada.
+  insert into public.part_movements
+    (tenant_id, part_id, depot_id, kind, quantity, notes)
+  select v_tenant, p.id, d.id, 'purchase', 1, 'prova da 0064'
+    from public.parts p
+    cross join lateral (
+      select id from public.rental_depots where tenant_id = v_tenant limit 1
+    ) d
+   where p.tenant_id = v_tenant
+   limit 1
+  returning id into v_mov;
+
+  perform app.assert(v_mov is not null,
+    'o preparo criou o movimento — sem ele a asserção abaixo não mediria nada');
+
+  begin
+    update public.part_movements set quantity = 999 where id = v_mov;
+    perform app.assert(false, 'alterar movimento de estoque deveria ser recusado');
+  exception when sqlstate '23514' then
+    get stacked diagnostics v_nome = constraint_name;
+    perform app.assert(v_nome = 'part_movements_imutavel',
+      'alterar recusa por part_movements_imutavel (veio: '
+        || coalesce(v_nome, '(sem nome)') || ')');
+  end;
+
+  begin
+    delete from public.part_movements where id = v_mov;
+    perform app.assert(false, 'excluir movimento de estoque deveria ser recusado');
+  exception when sqlstate '23514' then
+    get stacked diagnostics v_nome = constraint_name;
+    perform app.assert(v_nome = 'part_movements_imutavel',
+      'excluir recusa por part_movements_imutavel (veio: '
+        || coalesce(v_nome, '(sem nome)') || ')');
+  end;
+end
+$$;
+
+\echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

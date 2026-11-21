@@ -296,3 +296,280 @@ As duas coisas agora têm remédio commitado: `scripts/verificar.sh` constrói u
 vez antes da primeira suíte, aborta se a construção falhar, recusa rodar se a
 porta já estiver ocupada, e decide "morreu" pelo rodapé do Node — nunca
 procurando uma frase de sucesso.
+
+---
+
+# Parte II — doutrina de engenharia IARX
+
+A referência longa está em [`docs/doutrina-iarx.md`](docs/doutrina-iarx.md), com
+o código de referência de cada padrão.
+
+**Como ela convive com a Parte I.** As duas vêm da mesma casa e cobram a mesma
+coisa por caminhos diferentes: a Parte I descreve o DEFEITO que originou cada
+regra, esta descreve o PORTÃO que a impede de ser esquecida. Onde as duas falam
+do mesmo assunto, vale a mais exigente. Onde uma delas não couber neste projeto,
+a regra das duas é a mesma: diga por quê, com número medido, em vez de
+descumprir em silêncio — e é o que a Parte III faz.
+
+Você trabalha neste projeto segundo a doutrina abaixo. Ela não é estilo: cada
+regra existe porque a sua ausência produziu um defeito real, e o comentário que
+a acompanha diz qual.
+
+## 1. Onde a regra mora
+
+**Invariante de domínio mora no banco.** Gatilho, `EXCLUDE USING gist`, coluna
+gerada, índice único parcial, `CHECK`. Não na aplicação, não na tela, não "nos
+dois lugares".
+
+Duas cópias da mesma regra divergem na primeira vez que uma das duas for
+corrigida — e a divergência aparece tarde, em produção, num relatório que não
+bate. Quando a cópia for inevitável (uma base de demonstração sem banco atrás,
+por exemplo), as duas usam o **mesmo nome de regra**, e é por esse nome que se
+percebe que uma mudou sozinha.
+
+**Derivado nunca é armazenado.** Saldo, total, estado — tudo o que é projeção
+de outra coisa é calculado. Sem caminho de escrita não há caminho de
+divergência. Se o custo de calcular doer, a resposta é índice ou view
+materializada com regra de atualização, nunca uma coluna que alguém atualiza à
+mão.
+
+**Migração é somente-avante.** Uma migração aplicada não se edita. A exceção —
+projeto sem nenhum ambiente vivo, onde todo banco é recriado do zero — precisa
+ser dita em voz alta e justificada no próprio commit.
+
+**Toda recusa do banco tem nome.** `raise exception ... using errcode='23514',
+constraint='nome_da_regra'`, e uma tabela na API que traduz `constraint` em erro
+legível com saída sugerida. Recusa sem saída deixa o operador travado; recusa
+sem nome deixa quem depura sem rastro.
+
+## 2. Autorização
+
+**Negada por omissão.** Toda rota HTTP declara a permissão que exige. Rota sem
+declaração é recusada pelo guarda antes de olhar o token — e isso é portão de
+CI, não convenção.
+
+**Duas camadas, duas perguntas.** A permissão responde *"pode fazer isto?"* e é
+conferida na rota. O limite — alçada, teto, faixa — responde *"até onde?"* e é
+conferido no banco, porque depende do corpo da requisição. Uma permissão que
+tentasse medir valor viraria dez permissões.
+
+**Permissão vem do perfil, não do token, quando a decisão é do banco.** Um token
+vale até expirar; uma permissão revogada há cinco minutos ainda está dentro
+dele. Se a aplicação também precisa decidir, ela lê a mesma fonte — duas
+verdades sobre a mesma permissão divergem no dia em que alguém revoga algo.
+
+**Isolamento multi-locatário é RLS com `FORCE`**, e o contexto entra por
+`set_config(..., true)` ou `SET LOCAL` — **nunca** `SET` de sessão, que vaza
+para a próxima requisição do mesmo pool. Chave administrativa que ignora RLS
+nunca aparece em código de cliente nem é o papel de execução da API.
+
+**Não distinga "não existe" de "existe e não é seu".** As duas devolvem 404.
+Distinguir confirma a existência de registro alheio — oráculo suficiente para
+enumerar a base de outro locatário um id por vez.
+
+## 3. Portões
+
+Um portão não é teste: é a regra escrita de uma forma que reprova quando alguém
+a esquece. Os que valem em qualquer projeto:
+
+| Portão | Impede |
+| --- | --- |
+| Tipos | divergência entre contrato e implementação |
+| Contraste de paleta | cor que não se lê, e cores que se confundem sob daltonismo |
+| Tokens de CSS declarados | `var(--inexistente)`, que o navegador **descarta em silêncio** |
+| Superfície de módulo | `export` sem consumidor — API pública que ninguém pediu |
+| Cobertura de rotas | permissão no catálogo sem rota e sem razão escrita |
+| Matriz de permissões | perfil-semente divergindo da matriz documentada |
+| Estados de tela | tela que consulta e não sabe dizer que a consulta falhou |
+| axe + teclado + refluxo 320px | acessibilidade medida no DOM renderizado |
+| Invariantes de banco | cada regra do domínio, com o nome da constraint |
+| Integração da API | a rota, a permissão e a recusa, de ponta a ponta |
+
+Todo portão precisa de uma **guarda contra vacuidade**: um teste que afirma que
+o portão leu o que deveria ler. Sem ela, um arquivo renomeado faz o portão
+passar por não encontrar nada.
+
+## 4. Como verificar
+
+**Meça o fato, nunca um proxy conveniente.** Esta é a lição que mais se repetiu
+neste projeto, em formas diferentes:
+
+- um gatilho `BEFORE` que lia coluna gerada — sempre nula ali, então a regra
+  passava em todo lugar *parecendo* instalada;
+- uma sonda que declarava um tipo de parâmetro diferente do da consulta real —
+  media outra coisa;
+- um marcador de "coluna obrigatória" que só olhava `is_nullable`, escondendo
+  as `NOT NULL` com valor padrão;
+- um valor fixo num teste que, sem dizer, afirmava "nenhum outro arquivo tocou
+  neste estoque";
+- o `axe` medindo contraste **no meio da animação de entrada**, numa cor que
+  não existe em nenhum frame parado.
+
+Antes de confiar numa verificação, pergunte: *ela mede o fato, ou algo que
+costuma andar junto com ele?*
+
+**Teste afirma o nome da regra, não só que houve erro.** `assert erro` passa
+quando o código falha pelo motivo errado.
+
+**Olhe a tela.** Revisar usabilidade lendo código revisa a intenção, não o
+resultado. Vários defeitos deste projeto só apareceram ao capturar a tela
+renderizada — inclusive um em que a navegação do celular era inutilizável, e
+outro em que faltava uma saída inteira numa barra de ações.
+
+## 5. Interface
+
+**Uma ação visível por linha, o resto em `⋯`.** Três botões por linha em listas
+de centenas empurram o dado para fora da tela. A ação visível é a que vale para
+**toda** linha — uma primária que desaparece em algumas deixa a coluna
+irregular. Em filas, a primária é o passo que aquele registro espera.
+
+**O mesmo verbo nunca aparece na linha e no menu.** Repetir ensina que o menu
+não vale a pena abrir.
+
+**Barra de ação em lote substitui a de filtros; não se soma a ela.** Somar
+cresce a barra para duas linhas e empurra a tabela para baixo a cada seleção.
+
+**Seleção pertence à página exibida** e é esvaziada ao paginar. "Selecionar
+todos os 438" age sobre registros que ninguém viu.
+
+**Lote relata resultado parcial.** Concluído, recusado por regra, não tentado —
+três desfechos distintos, cada recusa com o nome da regra. Transação
+tudo-ou-nada desfaz o trabalho correto e ainda esconde qual registro falhou.
+
+**Irreversível confirma nomeando os alvos e contando no botão** — "Baixar 3
+ativos", nunca "Confirmar".
+
+**O filtro vive na URL.** Sem endereço, o recorte não sobrevive à navegação, não
+se compartilha por link e não há o que salvar como visão.
+
+**Nenhum glifo sem rótulo, em nenhuma largura.** Ícone sem rótulo não reflui;
+texto, sim. Colapsar um menu para uma coluna de ícones reproduz, em notebook, o
+defeito que a barra inferior rotulada veio corrigir no celular.
+
+**Estado nunca depende só de cor**: cor + forma + texto.
+
+**Marcar uma caixa não move o foco** — contagem de seleção vive em região
+`aria-live="polite"`.
+
+**Contar na interface custa consulta.** Contagem por item numa faixa pede uma
+consulta por item; mostre só a do item ativo.
+
+## 6. Escrita
+
+**Comentário explica o porquê, nunca o quê.** O código já diz o que faz. O
+comentário diz qual alternativa foi recusada e o que ela teria custado — é isso
+que impede alguém de "simplificar" a regra de volta ao defeito.
+
+**Ausência deliberada é documentada como decisão.** Uma permissão sem rota, um
+`DELETE` que não existe, um campo que não é preenchido: se não houver registro
+escrito do porquê, alguém o acrescenta por conveniência em seis meses.
+
+**Nunca invente dado de negócio.** Preço, taxa, cliente, condição comercial,
+recorte de trabalho: se não foi especificado, a resposta é perguntar ou entregar
+vazio — nunca semear um exemplo plausível, que é indistinguível de um requisito.
+
+**Desfaça duplicação em vez de contorná-la.** Duas rotas para o mesmo recurso,
+dois contratos para a mesma entidade, dois nomes para o mesmo conceito: a saída
+é unificar, não conviver.
+
+## 7. Processo
+
+1. **Modelagem antes do módulo.** Tabela, invariante e teste de banco primeiro;
+   rota depois; tela por último.
+2. **Protótipo em imagem antes de codificar**, quando a mudança é de interface.
+   Aprovação prévia economiza o trabalho inteiro, não metade dele.
+3. **Casos de teste antes do código** da fase: cada caso descreve uma obrigação
+   que o plano assumiu.
+4. **Nada é "pronto" sem os portões verdes**, e o relato diz os números.
+5. **Levante o que falta e diga.** Lacuna omitida é lacuna que ninguém resolve.
+
+## 8. O que não fazer
+
+- ❌ Implementar módulo sem antes estruturar modelagem e requisitos.
+- ❌ Criar endpoint sem documentar a permissão exigida.
+- ❌ Validar permissão só no front-end.
+- ❌ Quebrar a consistência do isolamento multi-locatário.
+- ❌ Inventar regra, valor, taxa ou condição não especificada.
+- ❌ Omitir lacunas ou decisões pendentes.
+- ❌ Dar por verificado o que foi medido por proxy.
+
+---
+
+# Parte III — os portões deste projeto, medidos
+
+Esta parte existe porque a Parte II manda um portão ser "a regra escrita de uma
+forma que reprova quando alguém a esquece" — e afirmar que um portão existe sem
+rodá-lo é exatamente o proxy que as duas doutrinas proíbem. Cada linha abaixo
+foi **medida contra este repositório**, e cada portão novo ficou **vermelho
+antes de ficar verde**.
+
+| Portão | Onde | Estado |
+| --- | --- | --- |
+| Tipos | `npm run typecheck` | existia |
+| Tokens de CSS declarados | `src/lib/tokens-css.test.ts` | **novo** |
+| Contraste da paleta, duas réguas | `src/lib/contraste.test.ts` | **novo** |
+| Contexto de transação só por `SET LOCAL` | `src/lib/db/contexto.test.ts` | **novo** |
+| Refluxo em 320px | `demo/tests/local/refluxo.spec.mjs` | **novo** |
+| Recusa do banco com NOME de constraint | `schema_test.sql` §63 | **novo** |
+| Cobertura de permissões × código | `src/lib/permissions.usage.test.ts` | existia |
+| Matriz de perfis × migração | `src/lib/permissions.demo.test.ts` | existia |
+| Cobertura de rotas × menu | `src/lib/navigation.varredura.test.ts` | existia |
+| Arquivo oferecido pelo artefato existe | `src/lib/navigation.artefato.test.ts` | existia |
+| `service_role` fora do navegador | `src/lib/segredos.test.ts` | existia |
+| Invariantes de banco | `schema_test.sql`, 1250+ asserções | existia |
+| Integração de ponta a ponta | 26 suítes de navegador | existia |
+
+**O que os portões novos acharam ao nascer** — nenhum deles nasceu verde por
+sorte:
+
+1. **Três `var(--inexistente)`**, todos em `sistema/planilhas/gaveta.tsx`:
+   `--color-info-soft` e `--color-info-ink` (a rampa `info` nunca existiu nesta
+   paleta) e `--color-breach` sem sufixo. O navegador descarta a declaração
+   inteira em silêncio — a caixa de dica ficava sem fundo e a linha recusada
+   ficava com a borda das aceitas. Nada quebrava, e é por isso que duraram.
+
+2. **Três recusas de domínio sem nome**, nas migrações 0053 e 0054. Quem
+   depurava via "violação de check" e nada mais. A **0064** as nomeia por
+   `create or replace`, com o corpo EXTRAÍDO do arquivo original em vez de
+   redigitado: a maior das três faz o ajuste de saldo inteiro, e um gatilho
+   recriado pela metade não acusa nada — fica instalado, fazendo menos.
+
+**O que foi medido e já estava certo**, dito para que ninguém "conserte" de
+volta: `set_config('request.jwt.claims', $1, true)` já era local à transação
+(o portão prova isso trocando o `true` por `false` e vendo a suíte ficar
+vermelha); as 50 rotas já cabiam em 320px sem rolagem lateral; e a paleta já
+passava nas duas réguas, com margens apertadas e reais — `ink-3/surface-2` em
+**4,60:1** contra os 4,5 exigidos, e `border-strong/surface-2` em **3,06:1**
+contra os 3.
+
+## Onde este projeto diverge da Parte II, e por quê
+
+**"Derivado nunca é armazenado"** — a divergência já está medida e justificada
+na Parte I: três colunas derivadas mantidas por gatilho, protegidas pela §60 de
+`schema_test.sql`, que confere o derivado contra a própria fonte em toda linha
+do banco. A Parte II acrescenta a saída correta para o caso de o custo doer
+("índice ou view materializada com regra de atualização, nunca uma coluna que
+alguém atualiza à mão") — e é exatamente esse "à mão" que aqui não existe: não
+há caminho de escrita que escape do gatilho, porque a RLS obriga toda escrita a
+passar pela tabela.
+
+**"Negada por omissão" como portão de CI** — aqui não há decorador de rota:
+são Server Actions do Next.js, e quem recusa é `requirePermission` dentro de
+cada uma. O que cobre o esquecimento é `permissions.usage.test.ts`, que exige
+que toda chave de ação do catálogo seja consultada em algum guard, gate ou
+`<Can>`. É a mesma obrigação pelo outro lado: em vez de "toda rota declara uma
+permissão", "toda permissão é exigida em algum lugar".
+
+**"Permissão em três camadas, conferidas no servidor"** — está assim, e a
+prova é a Parte III da galeria de telas: o perfil "Gestor de TI" concede **153
+das 264** chaves do catálogo, e é o perfil — não o papel — que tira cinco das
+seis telas do Financeiro que o teto do papel permitiria.
+
+**Forma do repositório** — a Parte II descreve `apps/api` + `apps/web` +
+`packages/`. Este projeto é Next.js App Router com a regra no banco (funções
+`security definer`, gatilhos, RLS) e Server Actions como camada fina de
+tradução (ADR-011). A razão da forma — "o catálogo de permissões vive num
+pacote sem dependências, então front e API leem o mesmo array" — é atendida por
+`src/lib/permissions.ts`, que roda no servidor, no navegador e nos testes, com
+`permissions.demo.test.ts` cobrando que as duas listas sejam idênticas **e na
+mesma ordem**.

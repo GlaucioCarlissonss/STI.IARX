@@ -129,8 +129,12 @@ export async function GavetaDeImportacao({
             </dd>
           </dl>
 
+          {/* A rampa é `brand`, não `info`: `info` nunca existiu nesta paleta,
+              e `var(--inexistente)` faz o navegador DESCARTAR a declaração em
+              silêncio — esta caixa ficava sem fundo e com a cor de texto do
+              pai, parecendo um parágrafo comum em vez de um aviso. */}
           {previa && (
-            <p className="mt-2 rounded-lg bg-[var(--color-info-soft)] px-3 py-2 text-xs text-[var(--color-info-ink)]">
+            <p className="mt-2 rounded-lg bg-[var(--color-brand-soft)] px-3 py-2 text-xs text-[var(--color-brand-ink)]">
               Nada foi gravado ainda. As {lote.rejected_rows} recusada(s) não impedem as{' '}
               {aplicaveis} — baixe só as recusadas, corrija e reenvie esse arquivo menor.
             </p>
@@ -202,7 +206,11 @@ export async function GavetaDeImportacao({
                   data-testid="linha-da-importacao"
                   className={`rounded-lg border px-3 py-2 ${
                     l.outcome === 'reject'
-                      ? 'border-[var(--color-breach)] bg-[var(--color-breach-soft)]'
+                      /* `--color-breach-ink`, não `--color-breach`: o segundo
+                         nunca existiu, a declaração da borda era descartada e a
+                         linha recusada ficava com a borda padrão — igual às
+                         linhas que foram aceitas. */
+                      ? 'border-[var(--color-breach-ink)] bg-[var(--color-breach-soft)]'
                       : 'border-[var(--color-border)]'
                   }`}
                 >

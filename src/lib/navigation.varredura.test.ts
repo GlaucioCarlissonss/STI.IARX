@@ -24,11 +24,17 @@ import { NAV_GROUPS } from './navigation'
  * nasce.
  */
 
-const SPEC = readFileSync('demo/tests/local/telas.spec.mjs', 'utf8')
+/*
+ * A lista saiu de dentro de `telas.spec.mjs` e virou `rotas.mjs` quando
+ * `refluxo.spec.mjs` passou a medir as MESMAS rotas a 320px. Duas cópias
+ * divergiriam na primeira tela nova, e a que ficasse para trás mediria menos
+ * sem avisar.
+ */
+const SPEC = readFileSync('demo/tests/local/rotas.mjs', 'utf8')
 
 function rotasDaVarredura(): Set<string> {
   const bloco = SPEC.match(/const ROTAS = \[([\s\S]*?)\n\]/)
-  expect(bloco, 'telas.spec.mjs precisa declarar ROTAS').not.toBeNull()
+  expect(bloco, 'rotas.mjs precisa declarar ROTAS').not.toBeNull()
   return new Set([...bloco![1]!.matchAll(/^\s*'(\/[^']*)'/gm)].map((m) => m[1]!))
 }
 
