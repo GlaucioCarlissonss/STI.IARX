@@ -9,6 +9,12 @@ Ele é escrito supondo que quem lê está com pressa, possivelmente de madrugada
 com alguém perguntando quanto falta. Por isso cada seção começa pelo comando e
 só depois explica.
 
+> **Primeira vez numa VPS da Hostinger?** Este documento supõe a máquina pronta:
+> Docker instalado, firewall resolvido, DNS apontado, e-mail configurado. Quem
+> ainda não tem nada disso começa pela
+> [docs/26](26-publicar-na-hostinger.md) — inclusive para saber **qual tamanho
+> de VPS serve**, que é medido lá e não chutado.
+
 ---
 
 ## 0. O que roda na VPS

@@ -470,14 +470,16 @@ superestima.
 - **Sincronização reversa para o Bitrix24**: as defesas contra eco estão prontas
   e testadas, o disparo a partir das Server Actions ainda não foi ligado.
 
-E, da entrada pública, o que falta depois do cadastro (`0060`) e do convite
-(`0061`):
+E, da entrada pública, o que falta depois do cadastro (`0060`), do convite
+(`0061`), da vigência (`0062`) e dos planos (`0063`):
 
-- **Planos** — catálogo, página pública `/planos` e o que acontece quando os 90
-  dias de avaliação acabam. Hoje `trial_ends_on` é gravado e nada o lê.
 - **Entrar com Google** — a conta existe pelos dois caminhos, mas só com senha.
 - **Mais de um perfil de acesso por pessoa**, com o seletor no menu lateral: a
   mesma pessoa, na mesma empresa, com chapéus diferentes.
+- **Cobrança.** O sistema diz quanto custa e sabe quando a vigência acabou; ele
+  **não emite boleto, não integra adquirente e não guarda cartão**. Quem cobra é
+  quem vende, por fora — e a página de planos diz isso com todas as letras, em
+  vez de deixar supor.
 
 Dois itens dependem de um Supabase de verdade e **não se aplicam à implantação
 em VPS** da [docs/24](docs/24-producao-na-vps.md), que roda sobre PostgreSQL
@@ -570,3 +572,4 @@ compilado e as dependências que ele carrega em tempo de execução.
 | [23 — Unificação LTI + GSTI](docs/23-unificacao-lti-gsti.md) | Como os dois sistemas foram absorvidos em oito fases, o que se dissolveu no que já existia, e o que o plano deliberadamente não faz |
 | [24 — Produção na VPS](docs/24-producao-na-vps.md) | O runbook: subir, atualizar, restaurar, girar segredo e descobrir que algo parou. Escrito para ser lido às três da manhã |
 | [25 — Migração de dados do LTI](docs/25-migracao-de-dados-do-lti.md) | O levantamento: a ordem derivada das chaves estrangeiras, as quatro travas do banco medidas, e as cinco decisões de negócio que faltam |
+| [26 — Publicar na Hostinger](docs/26-publicar-na-hostinger.md) | O que a docs/24 supõe: tamanho da VPS **medido** (o build consome ~2,1 GB), Docker, a armadilha do UFW, swap, DNS no painel, SMTP da própria Hostinger e o backup para fora de fato agendado |
