@@ -362,8 +362,8 @@ grant execute on function app.mudar_situacao_da_empresa(uuid, text, text, date) 
 -- -----------------------------------------------------------------------------
 insert into public.permission_catalog (key, module, screen, action, label, min_base_role, sort_order)
 values
-  ('ambiente.assinatura', 'ambiente', 'assinatura', null, 'Assinatura', 'gestor', 560),
-  ('ambiente.assinatura.ver', 'ambiente', 'assinatura', 'ver', 'Ver a situação da assinatura', 'gestor', 561)
+  ('ambiente.assinatura', 'ambiente', 'assinatura', null, 'Assinatura', 'admin', 560),
+  ('ambiente.assinatura.ver', 'ambiente', 'assinatura', 'ver', 'Ver a situação da assinatura', 'admin', 561)
 on conflict (key) do update
   set label = excluded.label, min_base_role = excluded.min_base_role, sort_order = excluded.sort_order;
 

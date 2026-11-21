@@ -498,14 +498,6 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('usuarios', 'convites', 'criar', 'Convidar alguém para a empresa', 'admin'),
   act('usuarios', 'convites', 'revogar', 'Revogar convite pendente', 'admin'),
 
-  /* --- Assinatura -------------------------------------------------------- */
-  /* Teto `gestor`, e não `admin`: quem responde pelo orçamento precisa ver
-     quando a avaliação acaba sem depender de quem administra o sistema. A tela
-     é só leitura — mudar a situação é da operação da plataforma, e passa por
-     `app.mudar_situacao_da_empresa`. */
-  scr('ambiente', 'assinatura', 'Assinatura', 'gestor'),
-  act('ambiente', 'assinatura', 'ver', 'Ver a situação da assinatura', 'gestor'),
-
   /* --- Integrações ------------------------------------------------------- */
   mod('integracoes', 'admin'),
   scr('integracoes', 'hub', 'Hub de integrações', 'admin'),
@@ -537,6 +529,15 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   scr('ambiente', 'preferencias', 'Preferências do ambiente', 'admin'),
   act('ambiente', 'preferencias', 'ver', 'Consultar as preferências do ambiente', 'admin'),
   act('ambiente', 'preferencias', 'editar', 'Alterar as preferências do ambiente', 'admin'),
+  /* A ORDEM IMPORTA: `catalogTree()` monta a árvore percorrendo o catálogo uma
+     vez, e uma tela declarada antes do próprio módulo é descartada em silêncio.
+     Estas duas chaves estavam na seção de `usuarios` e sumiam da matriz de
+     permissões sem erro nenhum — o teste de integridade pegou.
+
+     A tela é só leitura: mudar a situação é da operação da plataforma, por
+     `app.mudar_situacao_da_empresa`, que confere o papel por dentro. */
+  scr('ambiente', 'assinatura', 'Assinatura', 'admin'),
+  act('ambiente', 'assinatura', 'ver', 'Ver a situação da assinatura', 'admin'),
 
   /* --- Locação (0048) ------------------------------------------------------ */
   /* Mover o ciclo de vida é `atendente`, e não `gestor`: quem recolhe, entrega
