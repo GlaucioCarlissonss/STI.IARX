@@ -276,7 +276,7 @@ As partes, se quiser rodar separado:
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 816 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
+npm test              # 818 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
 npm run db:validate   # migrações + seed + 1250 asserções em PostgreSQL real
 ```
 
@@ -295,7 +295,7 @@ bash scripts/preparar-banco-local.sh
 # servidor de PRODUÇÃO ali. Não use `npm run dev`.
 npm run build && npx next start -p 3177 &
 
-node demo/tests/local/telas.spec.mjs      # 49 telas autenticadas, uma a uma
+node demo/tests/local/telas.spec.mjs      # 50 telas autenticadas, uma a uma
 node demo/tests/local/aprovacao.spec.mjs  # o fluxo de aprovação com três pessoas
 node demo/tests/local/menu.spec.mjs       # o menu que abre e fecha, e lembra
 node demo/tests/local/banco-fora.spec.mjs # PARA o PostgreSQL e confere o que a tela diz
@@ -420,9 +420,9 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 `bash scripts/verificar.sh` sai **VARREDURA LIMPA**: `tsc` sem apontamentos,
-`eslint` com 4 avisos de variável não usada em teste, **816 testes unitários**,
+`eslint` com 4 avisos de variável não usada em teste, **818 testes unitários**,
 **1250 asserções de banco**, os números da documentação conferindo contra o
-banco, **56 asserções no protótipo**, build de produção limpo, as **49 telas**
+banco, **56 asserções no protótipo**, build de produção limpo, as **50 telas**
 autenticadas varridas uma a uma, as **24 suítes de comportamento** e **61
 asserções na aplicação** — incluindo a aritmética de horário útil conferida
 contra 8 cenários (almoço, fim de semana, feriado, fora de expediente).
@@ -432,6 +432,21 @@ repetidamente: é o que pega a suíte que consome estado e só funciona uma vez 
 foi assim que apareceu o defeito de refaturamento corrigido na migração 0056,
 em que cancelar uma fatura e refazer a competência era recusado com o nome de
 um índice. `--duas` força duas passadas seguidas na mesma execução.
+
+### O que falta para PUBLICAR: nada que bloqueie
+
+Os quatro bloqueios que havia foram fechados:
+
+| era | agora |
+| --- | --- |
+| `tenants.status` não era lido por ninguém — avaliação vencida funcionava como ativa | a vigência vale (`0062`): fora dela não se escreve, e continua se lendo |
+| e-mail só por Resend, com verificação de domínio num serviço de fora | SMTP também — a caixa que você já tem serve |
+| sem catálogo de planos nem página de preço | `/planos` abre sem sessão, com preço, limites e o que entra |
+| o runbook supunha Docker, firewall, DNS e e-mail prontos | [docs/26](docs/26-publicar-na-hostinger.md), com o tamanho da VPS **medido** |
+
+O que o sistema **não faz**, e está dito na própria página de planos: ele não
+emite boleto, não integra adquirente e não guarda cartão. Ele sabe quanto custa
+e quando a vigência acabou; quem cobra é quem vende, por fora.
 
 > **Chegar a essa linha limpa custou cinco varreduras, e nenhuma das falhas era
 > do produto.** Foram defeitos de MEDIÇÃO, todos nomeados em

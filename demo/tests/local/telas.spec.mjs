@@ -89,6 +89,10 @@ const ROTAS = [
   /* A caixa de saída (0058), pelo mesmo motivo. */
   '/auditoria/avisos',
   '/ambiente',
+  /* A assinatura (0062). Tela nova entra na varredura no mesmo commit em que
+     nasce — foi a terceira lista escrita à mão desta base a deixar uma escapar,
+     e a que virou `navigation.varredura.test.ts`. */
+  '/assinatura',
   '/conta',
 ]
 
