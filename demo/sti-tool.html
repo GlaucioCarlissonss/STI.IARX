@@ -801,6 +801,8 @@
     ['usuarios.convites.ver','usuarios','convites','ver','Ver convites enviados','admin'],
     ['usuarios.convites.criar','usuarios','convites','criar','Convidar alguém para a empresa','admin'],
     ['usuarios.convites.revogar','usuarios','convites','revogar','Revogar convite pendente','admin'],
+    ['ambiente.assinatura','ambiente','assinatura',null,'Assinatura','gestor'],
+    ['ambiente.assinatura.ver','ambiente','assinatura','ver','Ver a situação da assinatura','gestor'],
     ['integracoes','integracoes',null,null,'Integrações','admin'],
     ['integracoes.hub','integracoes','hub',null,'Hub de integrações','admin'],
     ['integracoes.hub.ver','integracoes','hub','ver','Consultar integrações','admin'],
@@ -1901,6 +1903,16 @@
     ];
 
     /* Preferências do ambiente (0025): o que é da EMPRESA, não da pessoa. */
+    /* A assinatura (0062). Em avaliação, perto de vencer, de propósito: é o
+       estado em que a tela tem o que dizer. Semente que só mostra "ativa"
+       esconde justamente a conversa que o produto precisa ter. */
+    const assinatura = {
+      status:'trial', trialEndsOn:dISO(6), criadaEm:dISO(-84),
+      eventos:[
+        { id:1, de:null, para:'trial', motivo:'Cadastro público', por:null, at:dISO(-84) },
+      ],
+    };
+
     const envPrefs = {
       tenantName:'IAR Office', slug:'iarx',
       spheres:['management','rental'],
@@ -2004,6 +2016,7 @@
              sphereFocus:null,
              /* Gestão: as dezessete telas que a aplicação ganhou entre a 0021 e
                 a 0061 e que nunca chegaram ao protótipo. */
+             assinatura,
              businessHours, holidays, channels, conversations,
              kbArticles, serviceCatalog, projects, projectTasks, budgetLines,
              agents, software, aiConfig, aiSuggestions, envPrefs,
@@ -6094,6 +6107,52 @@
   };
 
   /* ---------------------------------------------------------------------- */
+  views['assinatura'] = () => {
+    const a = db.assinatura;
+    const SIT = { active:['Ativa','ok'], trial:['Em avaliação','info'],
+                  suspended:['Suspensa','warn'], cancelled:['Cancelada','neutral'] };
+    const s = SIT[a.status] || [a.status,'neutral'];
+    const dias = a.trialEndsOn
+      ? Math.ceil((new Date(a.trialEndsOn) - new Date()) / 864e5) : null;
+    const emVigencia = a.status === 'active' || (a.status === 'trial' && dias !== null && dias >= 0);
+
+    return `
+      <div class="page-head">
+        <div><p class="eyebrow">Administração</p><h1>Assinatura</h1>
+        <p class="lede">A situação desta empresa no STI. É tela de <strong>leitura</strong>:
+        quem vende e cobra é a operação da plataforma, e um botão "reativar" aqui seria um
+        botão que a própria empresa usaria para se reativar.</p></div></div>
+
+      <div class="tiles">
+        ${tile('Situação', s[0], a.status === 'trial' && dias !== null
+          ? (dias > 0 ? `faltam ${dias} dia(s)` : 'termina hoje') : null, s[1])}
+        ${tile('Cadastro novo', emVigencia ? 'liberado' : 'suspenso', null,
+               emVigencia ? 'ok' : 'warn')}
+        ${tile('Consulta', 'sempre liberada', 'nada é apagado nem escondido', 'ok')}
+      </div>
+
+      ${!emVigencia ? `<div class="alert" data-kind="warn">
+        <strong>O cadastro de coisas novas está suspenso.</strong> Abrir chamado, lançar título
+        e registrar medição param até a contratação. <strong>Nada foi apagado</strong>: a equipe
+        continua entrando, consultando e exportando tudo o que é desta empresa.</div>`
+      : `<div class="alert" data-kind="info">
+        Durante a avaliação o sistema funciona por inteiro, sem recurso bloqueado. Quando o
+        prazo acabar, o que para é o cadastro de coisas novas — a consulta continua.</div>`}
+
+      <div class="card"><div class="card-body">
+        <h2>Histórico</h2>
+        <p class="dim" style="margin:.25rem 0 .8rem">Saber POR QUE foi suspensa é o mínimo que se
+        deve a quem foi. Esconder isso transforma a cobrança em mistério.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Quando</th><th>De</th><th>Para</th><th>Motivo</th></tr></thead>
+          <tbody>${a.eventos.map(e => `<tr>
+            <td class="mono dim">${dBR(e.at)}</td>
+            <td class="dim">${e.de ? esc((SIT[e.de]||[e.de])[0]) : '—'}</td>
+            <td>${pill((SIT[e.para]||[e.para,'neutral'])[0], (SIT[e.para]||['','neutral'])[1])}</td>
+            <td class="dim">${esc(e.motivo || 'automático')}</td></tr>`).join('')}</tbody></table></div>
+      </div></div>`;
+  };
+
   views['ambiente'] = () => {
     const e = db.envPrefs;
     const pode = may('ambiente.preferencias.editar');
@@ -8217,6 +8276,7 @@
     ['Administração', [
       ['usuarios','Usuários',false,'usuarios.usuarios.ver'],
       ['ambiente','Preferências do ambiente',true,'ambiente.preferencias.ver'],
+      ['assinatura','Assinatura',true,'ambiente.assinatura.ver'],
       ['auditoria','Trilha de alterações',true,'auditoria.trilha.ver'],
       ['trabalhos','Trabalhos agendados',true,'auditoria.trabalhos.ver'],
       ['avisos','Avisos enviados',true,'auditoria.avisos.ver'],

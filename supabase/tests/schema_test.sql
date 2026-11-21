@@ -1179,8 +1179,8 @@ reset role;
 -- checkbox que não governa nada.
 do $$
 begin
-  perform app.assert((select count(*) from public.permission_catalog) = 262,
-    'catálogo de permissões tem as 256 entradas geradas de src/lib/permissions.ts');
+  perform app.assert((select count(*) from public.permission_catalog) = 264,
+    'catálogo de permissões tem as 264 entradas geradas de src/lib/permissions.ts');
   perform app.assert(
     not exists (
       select 1 from public.permission_catalog c
@@ -1406,7 +1406,7 @@ begin
       select 1 from public.permission_grants
       where tenant_id = 'a0000000-0000-4000-8000-000000000001'),
     'tenant 2 não vê concessão do tenant 1');
-  perform app.assert((select count(*) from public.permission_catalog) = 262,
+  perform app.assert((select count(*) from public.permission_catalog) = 264,
     'catálogo é global: visível para qualquer tenant');
 end
 $$;
@@ -10604,6 +10604,191 @@ begin
     'nenhum número de fatura se repete dentro da mesma empresa');
 end
 $$;
+
+-- -----------------------------------------------------------------------------
+-- 61. A vigência da assinatura (0062)
+-- -----------------------------------------------------------------------------
+-- `tenants.status` existia desde a 0001 e NINGUÉM O LIA. Medido antes de
+-- escrever a 0062: nenhuma ocorrência em `src/lib/session.ts` nem em
+-- `src/proxy.ts`. Avaliação vencida, empresa suspensa e empresa cancelada
+-- funcionavam exatamente como uma ativa, e `trial_ends_on` era gravado pela
+-- 0060 e lido por ninguém.
+--
+-- Para quem vai VENDER o sistema isso é o maior defeito possível: toda empresa
+-- que se cadastrasse usaria para sempre, de graça, e não havia como suspender
+-- nem quem parasse de pagar nem quem abusasse.
+--
+-- A regra que esta seção prova é uma só, e os dois lados dela importam:
+-- **fora de vigência NÃO escreve, e CONTINUA lendo.** Tirar o acesso ao próprio
+-- histórico de quem atrasou uma fatura é reter dado alheio como garantia.
+\echo '=== 61. A vigência da assinatura (0062) ==='
+
+do $$
+declare
+  v_hoje date := current_date;
+begin
+  -- 1. A tabela-verdade da função, caso a caso.
+  perform app.assert(app.tenant_em_vigencia('active', null),
+    'empresa ativa escreve');
+  perform app.assert(app.tenant_em_vigencia('trial', v_hoje + 10),
+    'avaliação com prazo pela frente escreve');
+
+  /* O ÚLTIMO DIA VALE INTEIRO. Comparar com instante em vez de data faria a
+     empresa perder o acesso às 00h01 do próprio dia de vencimento — e ninguém
+     combina "até dia 10" querendo dizer "até o dia 9". */
+  perform app.assert(app.tenant_em_vigencia('trial', v_hoje),
+    'o último dia da avaliação vale inteiro');
+
+  perform app.assert(not app.tenant_em_vigencia('trial', v_hoje - 1),
+    'avaliação vencida ontem NÃO escreve');
+  perform app.assert(not app.tenant_em_vigencia('suspended', null),
+    'empresa suspensa não escreve');
+  perform app.assert(not app.tenant_em_vigencia('cancelled', null),
+    'empresa cancelada não escreve');
+
+  /*
+   * O VENCIMENTO É CONFERIDO PELA FUNÇÃO, não só pelo job.
+   *
+   * Se dependesse do job, uma empresa usaria o sistema entre o vencimento e a
+   * próxima execução — e um agendador parado daria uso ilimitado sem ninguém
+   * notar. É a mesma falha silenciosa que a 0055 existe para alertar.
+   */
+  perform app.assert(not app.tenant_em_vigencia('trial', v_hoje - 365),
+    'avaliação vencida há um ano não depende do job para deixar de valer');
+end
+$$;
+
+-- E o trabalho agendado, exercitado de ponta a ponta.
+do $$
+declare
+  v_tenant uuid;
+  v_admin  uuid;
+  v_antes  integer;
+  v_status text;
+begin
+  -- Uma empresa em avaliação que vence HOJE-1, e um administrador para avisar.
+  insert into public.tenants (name, slug, status, trial_ends_on, spheres)
+  values ('Empresa de Prova 0062', 'prova-0062', 'trial', current_date - 1, array['management'])
+  returning id into v_tenant;
+
+  insert into auth.users (id, email, raw_app_meta_data)
+  values (gen_random_uuid(), 'admin0062@exemplo.invalido',
+          jsonb_build_object('tenant_id', v_tenant))
+  returning id into v_admin;
+
+  insert into public.profiles (id, tenant_id, role, full_name, email, is_active)
+  values (v_admin, v_tenant, 'admin', 'Admin 0062', 'admin0062@exemplo.invalido', true);
+
+  select count(*) into v_antes from public.email_outbox where tenant_id = v_tenant;
+
+  perform app.job_vigencia_das_assinaturas();
+
+  select status into v_status from public.tenants where id = v_tenant;
+  perform app.assert(v_status = 'suspended',
+    'o job suspende a empresa cuja avaliação venceu');
+
+  perform app.assert(
+    (select trial_ends_on from public.tenants where id = v_tenant) is null,
+    'e limpa o prazo, que o CHECK da 0060 só admite em trial');
+
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where tenant_id = v_tenant and kind = 'trial_ended') = 1,
+    'o administrador é avisado de que a avaliação terminou');
+
+  /* O AVISO DIZ O QUE CONTINUA FUNCIONANDO. Uma mensagem que só anuncia o
+     bloqueio faz a pessoa supor que perdeu o acesso aos próprios dados — e a
+     primeira ligação é para perguntar isso. */
+  perform app.assert(
+    (select body_text from public.email_outbox
+      where tenant_id = v_tenant and kind = 'trial_ended' limit 1) ilike '%consultando%',
+    'e o aviso diz que consultar continua liberado');
+
+  perform app.assert(
+    (select count(*) from public.tenant_status_events
+      where tenant_id = v_tenant and para = 'suspended' and motivo = 'Avaliação vencida') = 1,
+    'a mudança fica registrada com o motivo');
+
+  /* `por` nulo é o do job: ninguém clicou, e inventar um autor humano para uma
+     decisão automática é pior que admitir que não houve um. */
+  perform app.assert(
+    (select por from public.tenant_status_events
+      where tenant_id = v_tenant and para = 'suspended' limit 1) is null,
+    'e sem autor humano, porque não houve');
+
+  -- 2. Rodar de novo NÃO reavisa nem reprocessa.
+  perform app.job_vigencia_das_assinaturas();
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where tenant_id = v_tenant and kind = 'trial_ended') = 1,
+    'rodar o job de novo não manda o aviso duas vezes');
+
+  -- 3. O aviso ANTES de vencer, que é a parte que evita o susto.
+  update public.tenants
+     set status = 'trial', trial_ends_on = current_date + 3
+   where id = v_tenant;
+  delete from public.email_outbox where tenant_id = v_tenant;
+
+  perform app.job_vigencia_das_assinaturas();
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where tenant_id = v_tenant and kind = 'trial_ending') = 1,
+    'quem está a 3 dias de vencer é avisado antes');
+  perform app.assert(
+    (select status from public.tenants where id = v_tenant) = 'trial',
+    'e NÃO é suspenso antes da hora');
+
+  perform app.job_vigencia_das_assinaturas();
+  perform app.assert(
+    (select count(*) from public.email_outbox
+      where tenant_id = v_tenant and kind = 'trial_ending') = 1,
+    'o aviso sai UMA vez — repetir todo dia faz ninguém ler no terceiro');
+
+  -- 4. O parâmetro desliga a suspensão automática, para quem vende por contrato
+  --    assinado fora do sistema.
+  update public.platform_settings set valor = 'false' where chave = 'suspensao_automatica';
+  update public.tenants set status = 'trial', trial_ends_on = current_date - 1 where id = v_tenant;
+
+  perform app.job_vigencia_das_assinaturas();
+  perform app.assert(
+    (select status from public.tenants where id = v_tenant) = 'trial',
+    'com a suspensão automática desligada, o prazo vence e o status fica');
+  update public.platform_settings set valor = 'true' where chave = 'suspensao_automatica';
+
+  -- Limpeza.
+  delete from public.email_outbox where tenant_id = v_tenant;
+  delete from public.profiles where id = v_admin;
+  delete from auth.users where id = v_admin;
+  delete from public.tenants where id = v_tenant;
+end
+$$;
+
+-- E o acesso: mudar a situação é da OPERAÇÃO DA PLATAFORMA, não da empresa.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  /* O administrador da empresa é quem mais teria motivo para se reativar — e é
+     exatamente por isso que ele não pode. */
+  begin
+    perform app.mudar_situacao_da_empresa(
+      'a0000000-0000-4000-8000-000000000001'::uuid, 'active', 'tentativa', null);
+    perform app.assert(false, 'o administrador da empresa NÃO deveria mudar a própria situação');
+  exception when insufficient_privilege then
+    perform app.assert(true, 'o administrador da empresa não muda a própria assinatura');
+  end;
+
+  -- Mas ele VÊ a própria situação e o histórico: ser suspenso sem saber por quê
+  -- transforma a cobrança em mistério.
+  perform app.assert((select count(*) from public.vw_assinatura) = 1,
+    'e enxerga a assinatura da própria empresa');
+  perform app.assert(
+    (select tenant_id from public.vw_assinatura) = 'a0000000-0000-4000-8000-000000000001',
+    'e só a dela');
+end
+$$;
+reset role;
+reset request.jwt.claims;
 
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

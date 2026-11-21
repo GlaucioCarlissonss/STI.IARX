@@ -498,6 +498,14 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
   act('usuarios', 'convites', 'criar', 'Convidar alguém para a empresa', 'admin'),
   act('usuarios', 'convites', 'revogar', 'Revogar convite pendente', 'admin'),
 
+  /* --- Assinatura -------------------------------------------------------- */
+  /* Teto `gestor`, e não `admin`: quem responde pelo orçamento precisa ver
+     quando a avaliação acaba sem depender de quem administra o sistema. A tela
+     é só leitura — mudar a situação é da operação da plataforma, e passa por
+     `app.mudar_situacao_da_empresa`. */
+  scr('ambiente', 'assinatura', 'Assinatura', 'gestor'),
+  act('ambiente', 'assinatura', 'ver', 'Ver a situação da assinatura', 'gestor'),
+
   /* --- Integrações ------------------------------------------------------- */
   mod('integracoes', 'admin'),
   scr('integracoes', 'hub', 'Hub de integrações', 'admin'),

@@ -332,6 +332,13 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         label: 'Preferências do ambiente',
         permission: 'ambiente.preferencias.ver',
       },
+      /* Ao lado das preferências porque as duas respondem "como esta empresa
+         está". A diferença é quem decide: a preferência é da empresa, a
+         assinatura é da operação da plataforma — por isso a tela é só leitura.
+
+         Sem ela, quem está fora de vigência descobre a situação sendo recusado
+         no meio de um trabalho, e a recusa não teria para onde apontar. */
+      { href: '/assinatura', label: 'Assinatura', permission: 'ambiente.assinatura.ver' },
       /* A trilha grava desde a 0010 em 45 tabelas e nunca teve onde ser lida. A
          pergunta que ela responde sempre vem em dia ruim: quem mudou isso. */
       { href: '/auditoria', label: 'Trilha de alterações', permission: 'auditoria.trilha.ver' },

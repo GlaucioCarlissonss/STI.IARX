@@ -26,6 +26,41 @@ export interface SessionContext {
    * SaaS atende.
    */
   esferas: Esfera[]
+  /**
+   * A empresa pode ESCREVER?
+   *
+   * `false` quando a avaliação venceu, ou quando a empresa foi suspensa ou
+   * cancelada. Ler continua permitido — tirar o acesso ao próprio histórico de
+   * quem atrasou uma fatura é reter dado alheio como garantia, e isso não é
+   * cobrança.
+   *
+   * Sessão sem tenant (a operação da plataforma) está sempre em vigência: não
+   * há assinatura a vencer.
+   */
+  emVigencia: boolean
+}
+
+/**
+ * A mesma conta de `app.tenant_em_vigencia`, do lado da aplicação.
+ *
+ * Duas implementações da mesma regra divergem — e esta base já decidiu isso
+ * antes, com o motor de mapeamento. Aqui a duplicação é deliberada e limitada:
+ * o banco é quem MANDA (a função existe lá e é chamada pelas policies e pelos
+ * jobs), e esta cópia existe só para a interface não precisar de uma ida ao
+ * servidor para saber se mostra um aviso.
+ *
+ * A prova de que as duas concordam está em `schema_test.sql` §61, que compara
+ * os mesmos casos nos dois lados.
+ */
+export function emVigencia(tenant: Tenant | null): boolean {
+  if (!tenant) return true
+  if (tenant.status === 'active') return true
+  if (tenant.status !== 'trial') return false
+  if (!tenant.trial_ends_on) return true
+  /* Comparação por DATA, não por instante: `trial_ends_on` é um `date`, e o
+     último dia da avaliação vale inteiro. Comparar com `new Date()` faria a
+     empresa perder o acesso às 00h01 do próprio dia de vencimento. */
+  return tenant.trial_ends_on >= new Date().toISOString().slice(0, 10)
 }
 
 /**
@@ -125,7 +160,7 @@ const resolverSessao = cache(async (): Promise<Resolucao> => {
       ? supabase
           .from('tenants')
           .select(
-            'id, name, slug, sla_warning_pct, sla_critical_pct, auto_close_after_days, spheres',
+            'id, name, slug, sla_warning_pct, sla_critical_pct, auto_close_after_days, spheres, status, trial_ends_on',
           )
           .eq('id', profile.tenant_id)
           .maybeSingle<Tenant>()
@@ -145,6 +180,7 @@ const resolverSessao = cache(async (): Promise<Resolucao> => {
       profile,
       tenant,
       esferas: tenant ? lerEsferas(tenant.spheres) : [...ESFERAS],
+      emVigencia: emVigencia(tenant),
       permissions: grants
         ? new Set(grants.map((g) => g.permission_key))
         : permissionsFromRole(profile.role),
@@ -233,11 +269,42 @@ export async function requireScreen(viewPermission: string): Promise<SessionCont
  */
 export async function requirePermission(
   permission: string,
-): Promise<{ ctx: SessionContext } | { error: string }> {
+): Promise<{ ctx: SessionContext } | { error: string; codigo?: string }> {
   const ctx = await requireSession()
   if (!can(ctx.permissions, permission)) {
     return { error: 'Sem permissão para esta ação.' }
   }
+
+  /*
+   * A VIGÊNCIA DA ASSINATURA, conferida no funil de toda ação.
+   *
+   * Aqui, e não em cada Server Action, pelo mesmo motivo de a permissão estar
+   * aqui: espalhar a regra por cento e tantas ações garante que alguma fique de
+   * fora, e a que ficar será a que ninguém revisa.
+   *
+   * **Ler continua permitido.** Uma empresa fora de vigência consulta e exporta
+   * tudo o que é dela — tirar o acesso ao próprio histórico de quem atrasou uma
+   * fatura é reter dado alheio como garantia, e isso não é cobrança. O que para
+   * é cadastrar coisa nova.
+   *
+   * A lista de ações de leitura é curta e explícita. Uma heurística do tipo
+   * "nega o que não parece leitura" erraria em silêncio e do lado errado.
+   */
+  const acao = permission.split('.').at(-1) ?? ''
+  const EH_LEITURA = acao === 'ver' || acao === 'exportar' || acao === 'imprimir'
+
+  if (!ctx.emVigencia && !EH_LEITURA) {
+    /* A mensagem diz o que aconteceu, o que CONTINUA funcionando e para onde
+       ir. Uma recusa que vira beco sem saída é defeito, mesmo estando certa. */
+    return {
+      error:
+        'A assinatura desta empresa está fora de vigência, então o cadastro de ' +
+        'coisas novas está suspenso. Consultar e exportar continuam liberados. ' +
+        'Veja a situação em Assinatura.',
+      codigo: 'fora_de_vigencia',
+    }
+  }
+
   return { ctx }
 }
 

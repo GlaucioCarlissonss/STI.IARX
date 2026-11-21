@@ -70,6 +70,16 @@ export interface Tenant {
   auto_close_after_days: number
   /** Esferas de negócio da empresa (migração 0047). Ver `lib/esferas.ts`. */
   spheres: Esfera[]
+  /**
+   * Situação da assinatura (migração 0062).
+   *
+   * Existia desde a 0001 e **ninguém a lia**: avaliação vencida, empresa
+   * suspensa e empresa cancelada funcionavam exatamente como uma ativa. Entrou
+   * na sessão para que a regra tenha onde ser aplicada.
+   */
+  status: 'trial' | 'active' | 'suspended' | 'cancelled'
+  /** Fim da avaliação. Só existe quando `status = 'trial'` (CHECK da 0060). */
+  trial_ends_on: string | null
 }
 
 /** Linha de `vw_tickets_enriched` — ticket já com SLA, rótulos e score. */
