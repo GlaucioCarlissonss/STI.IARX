@@ -100,6 +100,30 @@ liberar_porta() {
 
 titulo() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
+# O BANCO TEM DE ESTAR DE PÉ ANTES DA PRIMEIRA MEDIÇÃO.
+#
+# Esta varredura já rodou inteira com o PostgreSQL parado. O resultado não foi
+# "falhou": foram quinze minutos medindo nada, com `db:validate` e
+# `conferir-numeros` reprovando e quatro suítes de navegador MORRENDO no login
+# — e depois, do meio para o fim, tudo verde. O verde do fim é que enganava:
+# `banco-fora.spec.mjs` derruba o banco de propósito para provar que a
+# aplicação avisa, e no fim ele o LEVANTA. A suíte que existe para simular a
+# queda foi quem consertou o ambiente, oito minutos adentro da varredura.
+#
+# O relatório, com seis itens vermelhos, parecia um produto quebrado. Era um
+# aferidor rodando sem o que aferir — exatamente o que o §"uma suíte que morre
+# não é uma suíte limpa" manda distinguir.
+#
+# A recusa é a mesma do porto ocupado: não se começa uma medição de quarenta
+# minutos sabendo que ela vai medir o nada.
+if ! pg_isready -h "${PGHOST:-127.0.0.1}" -p "${PGPORT:-5433}" > /dev/null 2>&1; then
+  printf '\n\033[1mABORTOU\033[0m — o banco não está de pé em %s:%s\n' \
+    "${PGHOST:-127.0.0.1}" "${PGPORT:-5433}"
+  printf '  Levante antes de medir:  pg_ctlcluster 16 main start\n'
+  printf '  Ou aponte para outro:    PGHOST=... PGPORT=... bash scripts/verificar.sh\n\n'
+  exit 1
+fi
+
 # -----------------------------------------------------------------------------
 titulo '1. Estático — tipos, lint e testes unitários'
 # -----------------------------------------------------------------------------
@@ -110,6 +134,7 @@ titulo '1. Estático — tipos, lint e testes unitários'
 if npm run typecheck > "$TMP/tsc.log" 2>&1; then
   marcar 'tsc' 'ok'
 else
+  cp "$TMP/tsc.log" "$GUARDA/tsc.log"
   marcar 'tsc' 'FALHOU' "$(tail -3 "$TMP/tsc.log" | head -1)"
   falhas=$((falhas+1))
 fi
@@ -117,6 +142,7 @@ fi
 if npm run lint > "$TMP/lint.log" 2>&1; then
   marcar 'eslint' 'ok' "$(grep -oE '[0-9]+ problems?.*' "$TMP/lint.log" | tail -1)"
 else
+  cp "$TMP/lint.log" "$GUARDA/eslint.log"
   marcar 'eslint' 'FALHOU' "$(grep -E '✖' "$TMP/lint.log" | tail -1)"
   falhas=$((falhas+1))
 fi
@@ -124,6 +150,7 @@ fi
 if npm test > "$TMP/vitest.log" 2>&1; then
   marcar 'vitest' 'ok' "$(grep -oE 'Tests  [0-9]+ passed.*' "$TMP/vitest.log" | tail -1)"
 else
+  cp "$TMP/vitest.log" "$GUARDA/vitest.log"
   marcar 'vitest' 'FALHOU' "$(grep -oE 'Tests .*' "$TMP/vitest.log" | tail -1)"
   falhas=$((falhas+1))
 fi
@@ -135,6 +162,11 @@ if PGPASSWORD="${PGPASSWORD:-postgres}" npm run db:validate > "$TMP/db.log" 2>&1
   n=$(grep -c 'NOTICE:    ok' "$TMP/db.log" || true)
   marcar 'db:validate' 'ok' "$n asserções"
 else
+  # O PRIMEIRO QUE REPROVA É O QUE MAIS PRECISA DE LOG, e era o único que não
+  # o guardava: `$TMP` some no `trap`, e `db:validate FALHOU` sem saída obriga a
+  # rodar os quarenta minutos de novo só para reler a mesma linha. Foi o que
+  # aconteceu quando a varredura rodou sem banco.
+  cp "$TMP/db.log" "$GUARDA/db-validate.log"
   marcar 'db:validate' 'FALHOU' "$(grep -E 'ERRO|ERROR|FALHOU' "$TMP/db.log" | head -1)"
   falhas=$((falhas+1))
 fi
@@ -145,6 +177,7 @@ if PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres PGPASSWORD="${PGPASSWORD:-postgr
      python3 scripts/conferir-numeros.py > "$TMP/numeros.log" 2>&1; then
   marcar 'conferir-numeros' 'ok'
 else
+  cp "$TMP/numeros.log" "$GUARDA/conferir-numeros.log"
   marcar 'conferir-numeros' 'FALHOU' "$(grep -E 'ERRADO' "$TMP/numeros.log" | head -1)"
   falhas=$((falhas+1))
 fi
