@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { requireScreen, allowed } from '@/lib/session'
 import { formatDateTime } from '@/lib/format'
-import { ROTULO_DO_CANAL, type TipoDeCanal } from '@/lib/canais/registro'
+import { ROTULO_DO_CANAL, type TipoDeCanal } from '@/lib/canais/rotulos'
 import { Badge, Card, PageHeader } from '@/components/ui'
 import { ContatoForm } from './contato-form'
 

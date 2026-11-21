@@ -277,7 +277,7 @@ As partes, se quiser rodar separado:
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 npm test              # 816 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
-npm run db:validate   # migrações + seed + 1218 asserções em PostgreSQL real
+npm run db:validate   # migrações + seed + 1250 asserções em PostgreSQL real
 ```
 
 Mais as suítes em navegador de verdade, que rodam à parte porque precisam de
@@ -299,7 +299,7 @@ node demo/tests/local/telas.spec.mjs      # 49 telas autenticadas, uma a uma
 node demo/tests/local/aprovacao.spec.mjs  # o fluxo de aprovação com três pessoas
 node demo/tests/local/menu.spec.mjs       # o menu que abre e fecha, e lembra
 node demo/tests/local/banco-fora.spec.mjs # PARA o PostgreSQL e confere o que a tela diz
-# … e as outras dezenove em demo/tests/local/
+# … e as outras vinte e duas em demo/tests/local/
 ```
 
 > **`playwright` não está no `package.json`.** As suítes o importam, e ele vem do
@@ -366,7 +366,7 @@ src/
   proxy.ts            # renovação de sessão e guarda de rotas
 
 supabase/
-  migrations/         # 61 migrações
+  migrations/         # 63 migrações
   functions/          # Edge Functions (Deno)
   tests/              # asserções de schema e RLS
   seed.sql
@@ -421,9 +421,9 @@ Cada uma tem justificativa e alternativas rejeitadas em
 
 `bash scripts/verificar.sh` sai **VARREDURA LIMPA**: `tsc` sem apontamentos,
 `eslint` com 4 avisos de variável não usada em teste, **816 testes unitários**,
-**1218 asserções de banco**, os números da documentação conferindo contra o
+**1250 asserções de banco**, os números da documentação conferindo contra o
 banco, **56 asserções no protótipo**, build de produção limpo, as **49 telas**
-autenticadas varridas uma a uma, as **21 suítes de comportamento** e **61
+autenticadas varridas uma a uma, as **24 suítes de comportamento** e **61
 asserções na aplicação** — incluindo a aritmética de horário útil conferida
 contra 8 cenários (almoço, fim de semana, feriado, fora de expediente).
 
@@ -548,7 +548,7 @@ compilado e as dependências que ele carrega em tempo de execução.
 | [01 — Requisitos](docs/01-requisitos.md) | Requisitos rastreáveis, matriz de permissões, lacunas e decisões por padrão |
 | [02 — Benchmarking](docs/02-benchmarking.md) | Freshservice, Jira SM, Zendesk, GLPI, ManageEngine — padrões adotados e 10 antipatterns evitados |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Visão geral e 12 ADRs com alternativas rejeitadas |
-| [04 — Modelo de dados](docs/04-modelo-dados.md) | 123 tabelas, funções, triggers, views e estratégia de índices |
+| [04 — Modelo de dados](docs/04-modelo-dados.md) | 125 tabelas, funções, triggers, views e estratégia de índices |
 | [05 — Bitrix24](docs/05-integracao-bitrix24.md) | Estudo da API, mapeamento, configuração passo a passo e limitações |
 | [06 — Lacunas e Roadmap](docs/06-lacunas-e-roadmap.md) | Especificação dos 11 módulos pendentes, cronograma em lotes e 14 lacunas globais |
 | [07 — Financeiro e Permissões](docs/07-financeiro-e-permissoes.md) | Permissões granulares, financeiro (contas a pagar/receber, fluxo de caixa) e controle de despesas: 9 módulos no template, matriz de permissões e 15 lacunas |

@@ -1,5 +1,4 @@
 import { htmlToText } from '@/lib/integrations/mapping'
-import { provedorConfigurado } from '@/lib/mail/provedor'
 import { type Entrega, type MensagemNormalizada, type Provedor } from './tipos'
 import { dataIso, primeiroTexto } from './n8n'
 
@@ -155,11 +154,28 @@ export const email: Provedor = {
    * de saída do canal com o motivo visível, em vez de sumir.
    */
   async enviar(destino, texto) {
+    /*
+     * O provedor é carregado AQUI, e não no topo do arquivo.
+     *
+     * Este módulo chega ao navegador: `lib/canais/registro.ts` exporta os
+     * rótulos e as exigências que `canal-form.tsx` (componente de cliente) usa,
+     * e importa este adaptador na mesma linha. Com o import estático, o grafo
+     * arrastava `mail/provedor` e, com ele, o `nodemailer` — que abre socket e
+     * não existe no navegador.
+     *
+     * O build morria com "the chunking context does not support external
+     * modules (request: node:net)", apontando a PÁGINA DE CANAIS, que não tem
+     * nada a ver com e-mail. O que as liga é o grafo de módulos, não o assunto.
+     *
+     * `serverExternalPackages` no `next.config.ts` não resolve sozinho: ele diz
+     * para não empacotar no servidor, e o problema era o pacote do cliente.
+     */
+    const { provedorConfigurado } = await import('@/lib/mail/provedor')
     const provedor = provedorConfigurado()
     if (!provedor) {
       return {
         ok: false,
-        erro: 'Sem provedor de e-mail configurado (RESEND_API_KEY e MAIL_FROM).',
+        erro: 'Sem provedor de e-mail configurado (SMTP_HOST ou RESEND_API_KEY, com MAIL_FROM).',
       }
     }
 

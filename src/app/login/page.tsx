@@ -68,6 +68,8 @@ export default async function LoginPage({
           <LoginForm proxima={proxima} />
         </div>
 
+        {/* O preço fica a um clique da entrada: quem chega aqui sem conta
+            precisa saber quanto custa antes de decidir criar uma. */}
         <p className="mt-4 text-center text-sm">
           <Link
             href="/recuperar-senha"
@@ -81,6 +83,15 @@ export default async function LoginPage({
           Ainda não tem conta?{' '}
           <Link href="/criar-conta" className="font-medium text-[var(--color-brand-ink)] hover:underline">
             Criar a conta da sua empresa
+          </Link>
+        </p>
+
+        {/* O preço fica a um clique da entrada. Quem chega aqui sem conta
+            precisa saber quanto custa ANTES de decidir se cria uma — esconder
+            o preço atrás do cadastro faz a pessoa fechar a aba. */}
+        <p className="mt-2 text-center text-sm text-[var(--color-ink-2)]">
+          <Link href="/planos" className="font-medium text-[var(--color-brand-ink)] hover:underline">
+            Ver os planos e o que entra em cada um
           </Link>
         </p>
 

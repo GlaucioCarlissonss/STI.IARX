@@ -3,7 +3,7 @@
 import { useActionState, useState } from 'react'
 import { SubmitButton } from '@/components/action-form'
 import { Card, ErrorNote, Field, inputClass } from '@/components/ui'
-import { ROTULO_DO_CANAL, type TipoDeCanal } from '@/lib/canais/registro'
+import { ROTULO_DO_CANAL, type TipoDeCanal } from '@/lib/canais/rotulos'
 import { ListaDeExigencias } from './exigencias'
 import { salvarCanal, type CanalActionState } from '../actions'
 

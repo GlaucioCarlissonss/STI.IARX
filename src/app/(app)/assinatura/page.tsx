@@ -13,7 +13,15 @@ interface Assinatura {
   trial_ends_on: string | null
   em_vigencia: boolean
   dias_restantes: number | null
+  plano_id: string | null
   created_at: string
+}
+
+interface Plano {
+  nome: string
+  resumo: string
+  preco_mensal: number | null
+  limite_usuarios: number | null
 }
 
 interface Evento {
@@ -81,6 +89,17 @@ export default async function AssinaturaPage() {
   const s = SITUACAO[assinatura.status] ?? { rotulo: assinatura.status, tom: 'neutral' as const }
   const historico = eventos ?? []
 
+  /* O plano numa segunda consulta, e não num `join` na view: o catálogo é da
+     PLATAFORMA e não tem `tenant_id`, então juntá-lo à view recortada por
+     empresa misturaria dois escopos de RLS numa consulta só. */
+  const { data: plano } = assinatura.plano_id
+    ? await supabase
+        .from('planos')
+        .select('nome, resumo, preco_mensal, limite_usuarios')
+        .eq('id', assinatura.plano_id)
+        .maybeSingle<Plano>()
+    : { data: null }
+
   return (
     <>
       <PageHeader
@@ -109,6 +128,26 @@ export default async function AssinaturaPage() {
             título e registrar medição deixam de funcionar até a contratação.{' '}
             <strong>Nada foi apagado e nada ficou escondido</strong>: a equipe continua entrando,
             consultando e exportando tudo o que é desta empresa.
+          </div>
+        )}
+
+        {plano && (
+          <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+            <p className="text-sm text-[var(--color-ink-2)]">
+              Plano <strong className="text-[var(--color-ink)]">{plano.nome}</strong>
+              {plano.preco_mensal !== null && (
+                <>
+                  {' · '}
+                  {plano.preco_mensal.toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+                  /mês
+                </>
+              )}
+              {plano.limite_usuarios !== null && <> · até {plano.limite_usuarios} usuários</>}
+            </p>
+            <p className="mt-1 text-xs text-[var(--color-ink-3)]">{plano.resumo}</p>
           </div>
         )}
 

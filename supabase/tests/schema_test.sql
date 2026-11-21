@@ -10790,5 +10790,117 @@ $$;
 reset role;
 reset request.jwt.claims;
 
+-- -----------------------------------------------------------------------------
+-- 62. Planos (0063)
+-- -----------------------------------------------------------------------------
+-- O catálogo é da PLATAFORMA, não de cada empresa: `planos` não tem
+-- `tenant_id`, pela mesma razão de `platform_settings` e `permission_catalog`.
+-- Uma empresa não inventa o próprio plano; ela escolhe um dos que existem.
+--
+-- O que esta seção cobra, além do caminho feliz:
+--
+--  · a leitura PÚBLICA devolve só o que é público e ativo. A página `/planos` é
+--    vista por quem não tem conta, e dar `select` direto ao papel anônimo
+--    abriria a tabela inteira — incluindo plano que ainda não foi anunciado;
+--  · toda empresa nova nasce com plano, por GATILHO. Pôr a regra em cada
+--    caminho de criação garante que o próximo esqueça.
+\echo '=== 62. Planos (0063) ==='
+
+do $$
+declare
+  v_tenant uuid;
+  v_plano  uuid;
+  v_antes  integer;
+begin
+  perform app.assert((select count(*) from public.planos where is_active) >= 3,
+    'o catálogo nasce com os três planos de partida');
+
+  /* Tabela vazia faria a página pública nascer sem nada para mostrar, e
+     "nenhum plano cadastrado" na primeira visita de um prospecto é pior que um
+     preço que será revisado. */
+  perform app.assert(
+    (select count(*) from public.planos_publicos()) >= 3,
+    'e a leitura pública devolve os três');
+
+  -- 1. O que NÃO é público não sai pela função pública.
+  insert into public.planos (codigo, nome, resumo, publico, ordem)
+  values ('rascunho-0063', 'Rascunho', 'Ainda não anunciado', false, 99);
+
+  perform app.assert(
+    not exists (select 1 from public.planos_publicos() where codigo = 'rascunho-0063'),
+    'plano não público NÃO aparece na página de preços');
+
+  update public.planos set publico = true, is_active = false where codigo = 'rascunho-0063';
+  perform app.assert(
+    not exists (select 1 from public.planos_publicos() where codigo = 'rascunho-0063'),
+    'nem plano inativo, ainda que marcado como público');
+
+  delete from public.planos where codigo = 'rascunho-0063';
+
+  -- 2. O GATILHO carimba o plano em toda empresa nova.
+  insert into public.tenants (name, slug, status, spheres)
+  values ('Empresa de Prova 0063', 'prova-0063', 'active', array['management'])
+  returning id, plano_id into v_tenant, v_plano;
+
+  perform app.assert(v_plano is not null,
+    'empresa criada sem plano é carimbada pelo gatilho');
+
+  /* O plano de avaliação é o MAIS COMPLETO de propósito: quem experimenta
+     precisa ver o produto inteiro para decidir. Avaliar uma versão recortada é
+     avaliar outro produto, e a decisão sai errada nos dois sentidos. */
+  perform app.assert(
+    (select codigo from public.planos where id = v_plano) = 'locacao',
+    'e o plano de avaliação é o mais completo');
+
+  -- 3. Um plano escolhido NÃO é sobrescrito pelo gatilho.
+  insert into public.tenants (name, slug, status, spheres, plano_id)
+  values ('Empresa de Prova 0063b', 'prova-0063b', 'active', array['management'],
+          (select id from public.planos where codigo = 'essencial'))
+  returning plano_id into v_plano;
+  perform app.assert(
+    (select codigo from public.planos where id = v_plano) = 'essencial',
+    'o gatilho não sobrescreve o plano que veio escolhido');
+
+  -- 4. Apagar um plano NÃO apaga a empresa que o usava.
+  select count(*) into v_antes from public.tenants;
+  delete from public.planos where codigo = 'essencial';
+  perform app.assert((select count(*) from public.tenants) = v_antes,
+    'apagar um plano não leva junto a empresa que o usava');
+  perform app.assert(
+    (select plano_id from public.tenants where slug = 'prova-0063b') is null,
+    'a empresa fica sem plano, e não com uma referência quebrada');
+
+  -- Limpeza.
+  delete from public.tenants where slug in ('prova-0063', 'prova-0063b');
+  insert into public.planos (codigo, nome, resumo, preco_mensal, limite_usuarios,
+                             limite_chamados_mes, esferas, destaques, ordem)
+  values ('essencial', 'Essencial',
+          'Para a equipe de TI que atende uma empresa e quer parar de usar planilha.',
+          249.00, 10, 500, array['management'],
+          array['Chamados com SLA em horário útil'], 1);
+end
+$$;
+
+-- E o catálogo é global: qualquer empresa o lê, nenhuma o escreve pela
+-- aplicação. Recortá-lo por empresa criaria a ilusão de isolamento onde não há
+-- nada a isolar — é a mesma decisão de `permission_catalog`.
+set role rls_tester;
+set request.jwt.claims = '{"sub":"22220000-0000-4000-8000-000000000001","role":"authenticated","app_metadata":{"tenant_id":"a0000000-0000-4000-8000-000000000001"}}';
+do $$
+begin
+  perform app.assert((select count(*) from public.planos) >= 3,
+    'a empresa lê o catálogo de planos');
+
+  begin
+    insert into public.planos (codigo, nome, resumo) values ('pirata', 'Pirata', 'x');
+    perform app.assert(false, 'a empresa NÃO deveria inventar o próprio plano');
+  exception when insufficient_privilege or others then
+    perform app.assert(true, 'e não escreve nele');
+  end;
+end
+$$;
+reset role;
+reset request.jwt.claims;
+
 \echo ''
 \echo '################  TODOS OS TESTES PASSARAM  ################'

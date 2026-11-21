@@ -1,4 +1,4 @@
-import { EXIGENCIAS_DO_CANAL, type TipoDeCanal } from '@/lib/canais/registro'
+import { EXIGENCIAS_DO_CANAL, type TipoDeCanal } from '@/lib/canais/rotulos'
 
 /**
  * As exigências de um tipo de canal, com as crases viradas em `<code>`.

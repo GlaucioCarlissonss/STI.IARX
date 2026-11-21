@@ -77,6 +77,10 @@ const PUBLIC_PREFIXES = [
      freio por origem (0059) e do token de uso único (0057). */
   '/criar-conta',
   '/confirmar-email',
+  /* `/planos` é a página de onde sai a decisão de criar conta: exigir sessão
+     para ver o preço seria pedir que a pessoa se cadastre antes de saber quanto
+     custa. Ela não lê nada da sessão — o catálogo é da plataforma. */
+  '/planos',
   /* O convite (0061) é público pelo mesmo motivo: quem o abre ainda não tem
      conta — é o link que a cria. */
   '/convite',

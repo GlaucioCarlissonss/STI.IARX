@@ -1,6 +1,23 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  /*
+   * `nodemailer` NUNCA entra num pacote de navegador.
+   *
+   * Ele abre socket (`node:net`, `node:tls`) e só existe no servidor. Sem esta
+   * linha o Turbopack tenta empacotá-lo junto de uma página e o build morre
+   * com "the chunking context does not support external modules (request:
+   * node:net)" — apontando uma página que nada tem a ver com e-mail, porque o
+   * que a liga ao provedor é o grafo de módulos, não o assunto.
+   *
+   * O `await import()` dentro da função ajuda a carga preguiçosa em tempo de
+   * execução, mas NÃO diz ao empacotador que o módulo é do servidor. É isto que
+   * diz.
+   *
+   * Descoberto quebrando o build — e depois de eu ter commitado o provedor SMTP
+   * rodando só `tsc`, que compila e não empacota.
+   */
+  serverExternalPackages: ['nodemailer'],
   reactStrictMode: true,
   /*
    * A saída autocontida, LIGADA POR VARIÁVEL e não sempre.
