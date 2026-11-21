@@ -75,15 +75,120 @@ function resend(apiKey: string, remetente: string): Provedor {
 }
 
 /**
+ * SMTP, para quem já tem caixa de e-mail e não quer um serviço a mais.
+ *
+ * ## Por que ele existe
+ *
+ * O Resend é o de menor atrito para COMEÇAR, e o de maior atrito para quem
+ * compra hospedagem com e-mail incluído — que é o caso de quase toda VPS
+ * brasileira. Exigir um serviço de fora, com verificação de domínio por DNS,
+ * para mandar um link de redefinição de senha é pedir que a pessoa monte uma
+ * dependência nova antes de conseguir publicar.
+ *
+ * Sem um dos dois provedores, confirmação de cadastro, convite e redefinição de
+ * senha **não saem**. Isso não é um recurso a mais: é o que faz a entrada
+ * pública funcionar.
+ *
+ * ## Por que `nodemailer`, e não um cliente escrito à mão
+ *
+ * SMTP tem AUTH em vários sabores, STARTTLS, codificação de cabeçalho com
+ * acento, quebra de linha canônica e *dot-stuffing* (uma linha que começa com
+ * ponto encerra a mensagem se não for escapada). Um cliente caseiro funciona
+ * contra o servidor em que foi testado e falha contra o seguinte — e falha
+ * entregando mensagem truncada, que é pior que não entregar.
+ *
+ * ## A porta decide o modo, e isso evita o erro mais comum
+ *
+ * 465 é TLS desde o primeiro byte; 587 e 25 começam em claro e sobem para TLS
+ * com STARTTLS. Trocar os dois dá "wrong version number" ou um tempo de espera
+ * sem mensagem — e é o primeiro tropeço de quem configura SMTP. Aqui o padrão
+ * vem da porta, e `SMTP_SEGURO` só existe para o caso raro de precisar
+ * contrariá-lo.
+ */
+function smtp(cfg: {
+  host: string
+  port: number
+  user?: string
+  pass?: string
+  secure: boolean
+  remetente: string
+}): Provedor {
+  return {
+    nome: 'smtp',
+    async enviar(m) {
+      try {
+        /* Importado aqui dentro, e não no topo: sem SMTP configurado o módulo
+           nunca é carregado, e quem roda só com Resend não paga por ele. */
+        const { createTransport } = await import('nodemailer')
+        const transporte = createTransport({
+          host: cfg.host,
+          port: cfg.port,
+          secure: cfg.secure,
+          auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
+          /* Um envio que nunca responde prende o trabalho agendado inteiro. A
+             drenagem tem limite de mensagens por execução justamente para ter
+             fim; sem tempo-limite aqui, uma mensagem travada anula isso. */
+          connectionTimeout: 10_000,
+          greetingTimeout: 10_000,
+          socketTimeout: 20_000,
+        })
+
+        const r = await transporte.sendMail({
+          from: cfg.remetente,
+          to: m.toName ? `${m.toName} <${m.to}>` : m.to,
+          subject: m.subject,
+          text: m.text,
+        })
+        return { ok: true, id: r.messageId }
+      } catch (e) {
+        /* Falha de rede, autenticação recusada, destinatário rejeitado: tudo
+           cai aqui e vira falha de TENTATIVA. A caixa de saída reagenda, e o
+           motivo vai para `last_error`, que só administrador lê. */
+        return { ok: false, erro: e instanceof Error ? e.message : String(e) }
+      }
+    },
+  }
+}
+
+/**
  * O provedor que as variáveis de ambiente descrevem, ou `null`.
  *
- * `MAIL_FROM` é obrigatório junto com a chave: o Resend recusa remetente de
- * domínio não verificado, e descobrir isso só no primeiro envio de produção
- * seria descobrir tarde.
+ * ## A ordem: SMTP primeiro
+ *
+ * Quem configurou SMTP o fez de propósito — é mais trabalho que colar uma
+ * chave de API. Se as duas estiverem presentes, a escolha explícita ganha.
+ *
+ * `MAIL_FROM` é obrigatório nos dois: o Resend recusa remetente de domínio não
+ * verificado, e um servidor SMTP recusa remetente que não é da caixa
+ * autenticada. Descobrir isso no primeiro envio de produção seria descobrir
+ * tarde.
  */
 export function provedorConfigurado(): Provedor | null {
-  const chave = process.env.RESEND_API_KEY
   const remetente = process.env.MAIL_FROM
-  if (!chave || !remetente) return null
+  if (!remetente) return null
+
+  const host = process.env.SMTP_HOST
+  if (host) {
+    const port = Number(process.env.SMTP_PORT ?? 587)
+    if (!Number.isFinite(port) || port <= 0) {
+      console.error('[email] SMTP_PORT inválido:', process.env.SMTP_PORT)
+      return null
+    }
+    /* A porta manda; a variável só existe para contrariá-la quando preciso. */
+    const secure = process.env.SMTP_SEGURO
+      ? process.env.SMTP_SEGURO === 'true'
+      : port === 465
+    return smtp({
+      host,
+      port,
+      user: process.env.SMTP_USUARIO,
+      pass: process.env.SMTP_SENHA,
+      secure,
+      remetente,
+    })
+  }
+
+  const chave = process.env.RESEND_API_KEY
+  if (!chave) return null
   return resend(chave, remetente)
 }

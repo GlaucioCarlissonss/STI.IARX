@@ -276,7 +276,7 @@ As partes, se quiser rodar separado:
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
-npm test              # 809 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
+npm test              # 816 testes: cadastros, permissões, coordenadas, contraste dos temas, mensagens de erro, paginação, canais, sugestões de IA, trilha de auditoria, exportação, cronograma de projetos, rateio do orçamento, estoque, leitura de planilha e segredos que não podem ir ao navegador
 npm run db:validate   # migrações + seed + 1218 asserções em PostgreSQL real
 ```
 
@@ -420,7 +420,7 @@ Cada uma tem justificativa e alternativas rejeitadas em
 ## Estado atual e próximos passos
 
 `bash scripts/verificar.sh` sai **VARREDURA LIMPA**: `tsc` sem apontamentos,
-`eslint` com 4 avisos de variável não usada em teste, **809 testes unitários**,
+`eslint` com 4 avisos de variável não usada em teste, **816 testes unitários**,
 **1218 asserções de banco**, os números da documentação conferindo contra o
 banco, **56 asserções no protótipo**, build de produção limpo, as **49 telas**
 autenticadas varridas uma a uma, as **21 suítes de comportamento** e **61

@@ -8,6 +8,19 @@ import { explicarSegredosExpostos, segredosExpostos } from './segredos'
  */
 
 describe('segredosExpostos — o que ela precisa acusar', () => {
+  it('acusa a senha do SMTP, e deixa passar o host', () => {
+    /* O provedor SMTP entrou para a instalação não depender de um serviço de
+       fora. A senha da caixa é segredo pelo mesmo motivo de qualquer outra; o
+       host e a porta não são — publicá-los não dá acesso a nada, e tratá-los
+       como segredo ensinaria que a lista é arbitrária. */
+    const achados = segredosExpostos({
+      NEXT_PUBLIC_SMTP_SENHA: 'a-senha-da-caixa',
+      NEXT_PUBLIC_SMTP_HOST: 'smtp.exemplo.com.br',
+      NEXT_PUBLIC_SMTP_PORT: '465',
+    })
+    expect(achados.map((a) => a.variavel)).toEqual(['NEXT_PUBLIC_SMTP_SENHA'])
+  })
+
   it('acusa a chave de serviço, que é o erro que custa tudo', () => {
     const achados = segredosExpostos({
       NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY: 'eyJhbG...',
