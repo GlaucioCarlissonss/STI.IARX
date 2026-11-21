@@ -135,7 +135,16 @@ describe('menu do protótipo × menu da aplicação', () => {
      * As três exceções são do próprio artefato e não existem como tela do
      * produto — são sobre o artefato.
      */
-    const SO_DO_ARTEFATO = new Set(['Novidades', 'Mapa do menu', 'Peças incorporadas', 'Minha conta'])
+    const SO_DO_ARTEFATO = new Set([
+      'Novidades',
+      'Mapa do menu',
+      'Peças incorporadas',
+      /* As capturas da aplicação rodando. É sobre o produto, e não é tela do
+         produto — cobrar dela uma rota em `NAV_GROUPS` seria exigir que a
+         aplicação tivesse uma tela que mostra fotos de si mesma. */
+      'Telas da aplicação',
+      'Minha conta',
+    ])
     const app = new Set(menuDaAplicacao().map((i) => i.rotulo))
 
     const sobrando = menuDoPrototipo()

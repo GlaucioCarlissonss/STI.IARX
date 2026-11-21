@@ -4072,17 +4072,41 @@
    * -las como telas daqui seria refazer o trabalho e, no caminho, perder
    * detalhe. Como página, o endereço é um só e nada se perde.
    */
+  /*
+   * SEM BOTÃO, E É POR ISSO QUE ESTA LISTA MUDOU.
+   *
+   * Cada uma destas cinco peças tinha aqui um `Abrir ›` apontando para
+   * `pecas/<nome>.html`. Nenhum desses cinco arquivos existe neste
+   * repositório: eles vieram de projetos anteriores e nunca foram trazidos.
+   * Aberto como arquivo, o botão não fazia nada; publicado como artefato, ele
+   * levava a uma página que o servidor não tem.
+   *
+   * A tela se chama "Peças incorporadas" e afirma que tudo passou a morar
+   * aqui — ela prometia em voz alta exatamente o que não entregava. Botão que
+   * não leva a lugar nenhum é pior que ausência: a ausência se vê, o botão
+   * morto só se descobre clicando, e quem clica conclui que o sistema quebrou.
+   *
+   * O que ficou no lugar é o que se pode afirmar: o que cada peça tinha e para
+   * onde o conteúdo dela foi. `navigation.artefato.test.ts` passou a exigir que
+   * todo caminho escrito aqui exista no disco, para que o sexto botão morto não
+   * nasça em silêncio.
+   */
   const PECAS = [
-    ['Guia da Plataforma', 'pecas/guia-da-plataforma.html',
-     'O texto de apresentação: o que cada tela faz, quem abre o quê, o que falta. É o material que se manda para quem está chegando.'],
-    ['Painel de TI do Grupo', 'pecas/painel-do-grupo.html',
-     'A visão de diretoria: evolução mensal, compromisso contratado, custo por tipo e por filial, projetos em curso.'],
-    ['Gestão financeira', 'pecas/gestao-financeira.html',
-     'Despesas por reconhecer, projeção de doze meses, lançamentos e fechamento de competência — o protótipo financeiro completo.'],
-    ['Locação de impressão', 'pecas/locacao-de-impressao.html',
-     'Contratos de franquia, leitura de contadores e faturamento do parque de impressão.'],
-    ['Locação de impressão — versão anterior', 'pecas/locacao-de-impressao-anterior.html',
-     'A versão de agosto, guardada porque é a que algumas conversas citam.'],
+    ['Guia da Plataforma',
+     'O texto de apresentação: o que cada tela faz, quem abre o quê, o que falta.',
+     'virou a documentação do repositório — `docs/01` a `docs/26`'],
+    ['Painel de TI do Grupo',
+     'A visão de diretoria: evolução mensal, compromisso contratado, custo por tipo e por filial.',
+     'virou a tela "Visão de resultado", aqui dentro e na aplicação'],
+    ['Gestão financeira',
+     'Despesas por reconhecer, projeção de doze meses, lançamentos e fechamento de competência.',
+     'virou o grupo Financeiro inteiro, com seis telas'],
+    ['Locação de impressão',
+     'Contratos de franquia, leitura de contadores e faturamento do parque.',
+     'virou o grupo Locação, com nove telas'],
+    ['Locação de impressão — versão anterior',
+     'A versão de agosto, que algumas conversas ainda citam.',
+     'substituída pela de cima; o histórico está no repositório'],
   ];
 
   const ABSORVIDAS = [
@@ -4099,19 +4123,15 @@
     <div class="tiles" style="margin-bottom:1.5rem">
       ${tile('Endereços antes', 9, 'nove protótipos, nenhum deles "o atual"')}
       ${tile('Endereços agora', 1, 'esta ferramenta')}
-      ${tile('Peças guardadas', PECAS.length, 'as que tinham conteúdo próprio')}
+      ${tile('Peças absorvidas', PECAS.length + ABSORVIDAS.length, 'nenhuma delas abre em separado')}
     </div>
 
-    ${PECAS.map(([nome, href, porque]) => `
+    ${PECAS.map(([nome, oque, onde]) => `
       <div class="card" style="margin-bottom:.85rem"><div class="card-body">
-        <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-start">
-          <div style="flex:1;min-width:16rem">
-            <h2 style="margin:0 0 .3rem">${esc(nome)}</h2>
-            <p class="dim" style="margin:0">${esc(porque)}</p>
-          </div>
-          <a class="btn" href="${href}" target="_blank" rel="noopener"
-             style="text-decoration:none;display:inline-block">Abrir ›</a>
-        </div>
+        <h2 style="margin:0 0 .3rem">${esc(nome)}</h2>
+        <p class="dim" style="margin:0 0 .5rem">${esc(oque)}</p>
+        <p style="margin:0"><span class="pill" data-tone="ok">Onde está agora</span>
+          <span class="muted" style="margin-left:.4rem">${esc(onde)}</span></p>
       </div></div>`).join('')}
 
     <div class="card" style="margin-top:1.25rem"><div class="card-body">
@@ -4124,6 +4144,119 @@
           <td class="strong">${esc(n)}</td><td class="muted">${esc(onde)}</td>
         </tr>`).join('')}</tbody></table></div>
     </div></div>`;
+
+
+  /*
+   * TELAS DA APLICAÇÃO — o módulo que mostra o produto rodando, não o protótipo.
+   *
+   * Por que ele existe aqui dentro, e não num endereço próprio
+   * ---------------------------------------------------------
+   * As capturas chegaram a ser publicadas como um artefato separado. Foi o
+   * décimo endereço, e o defeito que a tela "Peças incorporadas" descreve
+   * voltou inteiro: nove protótipos espalhados, nenhum deles "o atual". Um
+   * artefato por entrega é exatamente o jeito de ninguém mais saber qual abrir.
+   *
+   * Então o endereço continua sendo um só, e isto virou módulo do menu.
+   *
+   * O que cada imagem é
+   * -------------------
+   * A aplicação de verdade: servidor servindo o pacote de produção, banco com
+   * as migrações e as policies em vigor, sessão aberta como um gestor. Nenhum
+   * número aqui foi desenhado — todos saíram de consulta sob RLS.
+   *
+   * A lista NÃO foi digitada. O roteiro de captura entra no sistema, lê a barra
+   * lateral que o servidor montou para aquela pessoa e fotografa o que achou.
+   * Uma lista escrita à mão envelheceria calada e mentiria justamente sobre a
+   * pergunta que o módulo responde: o que o gestor alcança.
+   */
+  const CAPTURAS = [
+    ['Entrada', 'Olá, Gestor', '/painel', null, 'telas/01-painel.webp', null],
+    ['Entrada', 'Olá, Gestor', '/portal', null, 'telas/02-portal.webp', null],
+    ['Atendimento', 'Tickets', '/tickets', 'helpdesk.tickets.ver', 'telas/03-tickets.webp', null],
+    ['Atendimento', 'Abrir ticket', '/tickets/novo', 'helpdesk.tickets.criar', 'telas/04-tickets-novo.webp', null],
+    ['Atendimento', 'Filas', '/filas', 'helpdesk.filas.ver', 'telas/05-filas.webp', null],
+    ['Atendimento', 'SLA', '/sla', 'sla.compliance.ver', 'telas/06-sla.webp', null],
+    ['Atendimento', 'Expediente e feriados', '/sla/horarios', 'sla.horarios.ver', 'telas/07-sla-horarios.webp', null],
+    ['Atendimento', 'Satisfação', '/satisfacao', 'helpdesk.satisfacao.ver', 'telas/08-satisfacao.webp', null],
+    ['Atendimento', 'Conversas', '/conversas', 'canais.conversas.ver', 'telas/09-conversas.webp', null],
+    ['Autoatendimento', 'Base de conhecimento', '/base', 'autoatendimento.base.ver', 'telas/10-base.webp', null],
+    ['Autoatendimento', 'Catálogo de serviços', '/catalogo', 'autoatendimento.catalogo.ver', 'telas/11-catalogo.webp', null],
+    ['Gestão', 'Visão de resultado', '/resultado', 'gestao.resultado.ver', 'telas/12-resultado.webp', null],
+    ['Gestão', 'Projetos', '/projetos', 'projetos.projetos.ver', 'telas/13-projetos.webp', null],
+    ['Financeiro', 'Orçamento de TI', '/financeiro/orcamento', 'financeiro.orcamento.ver', 'telas/14-financeiro-orcamento.webp', 'Única tela do Financeiro que este gestor alcança. O teto do papel permitiria as outras cinco; é o perfil "Gestor de TI" que não as concede.'],
+    ['Inventário e monitoramento', 'Inventário de TI', '/inventario', 'inventario.ativos.ver', 'telas/15-inventario.webp', null],
+    ['Inventário e monitoramento', 'Agentes nas máquinas', '/inventario/agentes', 'inventario.agentes.ver', 'telas/16-inventario-agentes.webp', null],
+    ['Inventário e monitoramento', 'Software instalado', '/inventario/software', 'inventario.software.ver', 'telas/17-inventario-software.webp', null],
+    ['Inventário e monitoramento', 'Telefonia', '/telefonia', 'telefonia.linhas.ver', 'telas/18-telefonia.webp', null],
+    ['Inventário e monitoramento', 'Links de internet', '/conectividade/links', 'conectividade.links.ver', 'telas/19-conectividade-links.webp', null],
+    ['Inventário e monitoramento', 'Mapa da operação', '/mapas', 'mapas.geolocalizacao.ver', 'telas/20-mapas.webp', 'O ladrilho vem de servidor de fora, que a máquina da captura não alcança. A tela diz isso em vez de mostrar um quadro cinza — é o comportamento certo quando o provedor cai.'],
+    ['Clientes e contratos', 'Clientes e filiais', '/clientes', 'clientes.grupos.ver', 'telas/21-clientes.webp', null],
+    ['Clientes e contratos', 'Fornecedores', '/fornecedores', 'fornecedores.cadastro.ver', 'telas/22-fornecedores.webp', null],
+    ['Administração', 'Trilha de alterações', '/auditoria', 'auditoria.trilha.ver', 'telas/23-auditoria.webp', null],
+    ['Administração', 'Painéis de TV', '/tv', 'tv.tokens.ver', 'telas/24-tv.webp', null],
+    ['Conta', 'Minha conta', '/conta', null, 'telas/25-conta.webp', 'Trocar a própria senha não é permissão de módulo, é direito de quem tem conta — por isso esta tela não exige chave nenhuma.'],
+  ];
+
+  /* As três camadas que decidem o que FALTA nas capturas — e elas não são a
+     mesma coisa. Cada linha responde uma pergunta diferente. */
+  const CAMADAS = [
+    ['Esfera', 'esta tela existe neste negócio?', 'tirou a Locação inteira, nove telas'],
+    ['Teto do papel', 'este papel pode?', 'tirou Integrações e Sugestões de IA, que exigem admin'],
+    ['Perfil de acesso', 'esta pessoa pode?', 'tirou cinco das seis telas do Financeiro, e Usuários, Perfis, Convites, Assinatura e Planilhas'],
+  ];
+
+  views.telas = () => {
+    const grupos = ["Entrada","Atendimento","Autoatendimento","Gestão","Financeiro","Inventário e monitoramento","Clientes e contratos","Administração","Conta"];
+    return `
+      <div class="page-head"><div><p class="eyebrow">A ferramenta</p><h1>Telas da aplicação</h1>
+        <p class="lede">As telas que um gestor alcança na aplicação de verdade — servidor de pé,
+        banco com as migrações e as policies em vigor, sessão aberta como
+        <span class="mono">gestor@iaroffice.com.br</span>. Não é esta ferramenta: é o produto.</p></div></div>
+
+      <div class="tiles" style="margin-bottom:1.5rem">
+        ${tile('Telas alcançadas', CAPTURAS.length, 'lidas da barra lateral, não de uma lista')}
+        ${tile('Responderam 200', CAPTURAS.length, 'nenhuma quebrou')}
+        ${tile('Chaves concedidas', '153/264', 'o perfil "Gestor de TI" no catálogo inteiro')}
+        ${tile('Telas de Locação', 0, 'outra esfera — não é falta, é desenho')}
+      </div>
+
+      <div class="card" style="margin-bottom:1.5rem"><div class="card-body">
+        <h2 style="margin-top:0">O que falta aqui, e por qual das três camadas</h2>
+        <p class="dim" style="margin:.3rem 0 .7rem">O perfil só restringe — nunca eleva privilégio.
+        É por isso que Diego e Elis, com o mesmo papel <span class="mono">gestor</span>, veem
+        menus diferentes.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Camada</th><th>Pergunta que ela responde</th><th>O que ela tirou</th></tr></thead>
+          <tbody>${CAMADAS.map(([c, p, o]) => `<tr>
+            <td class="strong">${esc(c)}</td><td class="muted">${esc(p)}</td><td class="muted">${esc(o)}</td>
+          </tr>`).join('')}</tbody></table></div>
+      </div></div>
+
+      ${grupos.map(g => {
+        const doGrupo = CAPTURAS.filter(c => c[0] === g);
+        if (!doGrupo.length) return '';
+        return `
+        <h2 style="margin:1.5rem 0 .6rem">${esc(g)}</h2>
+        ${doGrupo.map(([, titulo, rota, perm, arq, nota]) => `
+          <div class="card" style="margin-bottom:.85rem"><div class="card-body">
+            <h3 style="margin:0 0 .35rem;font-size:1.02rem">${esc(titulo)}</h3>
+            <p style="margin:0 0 .5rem;display:flex;flex-wrap:wrap;gap:.35rem;align-items:center">
+              <span class="pill"><span class="mono">${esc(rota)}</span></span>
+              ${perm ? `<span class="pill"><span class="mono">${esc(perm)}</span></span>`
+                     : '<span class="pill" data-tone="ok">sem permissão exigida</span>'}
+              <span class="pill" data-tone="ok">HTTP 200</span>
+            </p>
+            ${nota ? `<p class="dim" style="margin:0 0 .6rem">${esc(nota)}</p>` : ''}
+            <img src="${arq}" loading="lazy" decoding="async"
+                 alt="Tela ${esc(titulo)} da aplicação"
+                 style="display:block;width:100%;height:auto;border:1px solid var(--border);border-radius:8px">
+          </div></div>`).join('')}`;
+      }).join('')}
+
+      <p class="dim" style="margin:1.5rem 0 0">Capturas em 1440 × 950, página inteira, tema claro.
+      Os dados são a semente de exemplo versionada no repositório: dado de cliente não entra aqui,
+      e é por isso que a semente pode ser versionada.</p>`;
+  };
 
   views.satisfacao = () => {
     const encerrados = db.tickets.filter(t => t.status === 'resolved' || t.status === 'closed');
@@ -8194,6 +8327,7 @@
       ['portal','Portal',true,null],
       ['menu','Mapa do menu',false,null],
       ['arquivo','Peças incorporadas',false,null],
+      ['telas','Telas da aplicação',true,null],
     ]],
     ['Atendimento', [
       ['tickets','Tickets',false,'helpdesk.tickets.ver'],
