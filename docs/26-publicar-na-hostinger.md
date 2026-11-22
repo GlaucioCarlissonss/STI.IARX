@@ -303,6 +303,115 @@ histórico do shell.
 
 ---
 
+## 7b. A outra arquitetura: banco no Supabase, aplicação na VPS
+
+A §7 sobe **tudo** na VPS: a aplicação e um PostgreSQL próprio, no mesmo
+`compose`. Funciona, é mais barato e o backup é problema seu.
+
+A alternativa é deixar o banco no **Supabase** e só a aplicação na VPS. O que
+muda de verdade:
+
+| | PostgreSQL na VPS (§7) | Supabase |
+| --- | --- | --- |
+| senha de usuário | `LOCAL_AUTH_SECRET`, no próprio banco | GoTrue, do Supabase |
+| backup | `scripts/backup.sh` + envio para fora | do provedor, com restauração por data |
+| anexos | pasta no disco (`LOCAL_STORAGE_DIR`) | Storage do Supabase |
+| o que a VPS precisa | 4 GB e disco para o banco | só a aplicação |
+| custo | uma VPS | uma VPS + o plano do Supabase |
+
+**Não dá para misturar.** Com `DATABASE_URL` apontando para um PostgreSQL e
+`NEXT_PUBLIC_SUPABASE_URL` preenchido ao mesmo tempo, a aplicação escolhe o
+Supabase e o outro banco fica parado, com dado dentro — que é o pior desfecho,
+porque ninguém repara até alguém procurar um registro antigo.
+
+### Provisionar
+
+Um script só, do banco vazio ao primeiro login:
+
+```bash
+# ensaio primeiro: confere tudo e não escreve nada
+DATABASE_URL='postgresql://postgres.<ref>:<senha>@<host>:5432/postgres' \
+  bash scripts/supabase-provisionar.sh --ensaio
+
+# de verdade, já criando a primeira empresa
+DATABASE_URL='postgresql://postgres.<ref>:<senha>@<host>:5432/postgres' \
+SUPABASE_URL='https://<ref>.supabase.co' \
+SUPABASE_SERVICE_ROLE_KEY='...' \
+EMPRESA='IAR Office' SLUG=iarx EMAIL=admin@iarx.com.br \
+SENHA='uma-senha-longa-de-verdade' ESFERAS=management,rental \
+  bash scripts/supabase-provisionar.sh
+```
+
+A URI está em **Project Settings › Database › Connection string › URI**.
+
+**Use a conexão DIRETA, porta 5432 — nunca a 6543.** A 6543 é o pooler em modo
+transação: cada comando pode cair numa conexão diferente, a transação por
+migração deixa de envolver a migração inteira, e um erro no meio deixa metade
+aplicada. O script recusa essa porta antes de tocar em qualquer coisa, e diz
+por quê.
+
+### O que ele recusa, e isso é o ponto
+
+- **porta 6543** — pelo motivo acima;
+- **banco que não é Supabase** (sem `auth.users` ou sem os três papéis) — e
+  manda para o `migrar.sh`, que aplica o shim;
+- **banco de outra aplicação** — tabelas em `public` e nenhum livro-razão.
+  Aplicar 64 migrações ali misturaria dois sistemas no mesmo schema, e não há
+  desfazer;
+- **senha de administrador com menos de 12 caracteres**;
+- **segunda execução do primeiro acesso** — se já existe empresa, ele para.
+
+### A conferência, que você pode repetir quando quiser
+
+O último passo roda `supabase/tests/conferir-producao.sql`, que é **somente
+leitura** e por isso pode rodar na segunda-feira de manhã, com gente usando.
+Ele não é o `schema_test.sql`: aquele cria empresa, fatura e movimento de
+estoque para provar que as regras recusam o que devem, e isso não se faz num
+banco com dado de cliente.
+
+O que ele prova — tudo invariante de **isolamento**, e nenhum deles se
+manifesta como erro:
+
+1. toda tabela de `public` com RLS ligada, e **forçada** onde há `tenant_id`;
+2. toda tabela sem `tenant_id` está na lista de catálogos globais declarados —
+   assim uma tabela nova que **esqueça** a coluna não passa por catálogo;
+3. toda tabela com RLS tem ao menos uma policy (RLS sem policy nega tudo, em
+   silêncio);
+4. toda view com `security_invoker` — sem ele a view roda como `postgres`, que
+   ignora RLS, e devolve as linhas de **todas** as empresas;
+5. o catálogo de permissões chegou inteiro;
+6. o bucket `anexos` existe e **não** é público;
+7. nenhum dado de demonstração;
+8. o livro-razão bate com o número de migrações do repositório.
+
+Para repetir depois, sozinho:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -v migracoes=$(ls supabase/migrations/*.sql | wc -l) \
+  -f supabase/tests/conferir-producao.sql
+```
+
+### Uma ressalva honesta sobre o primeiro usuário
+
+No Supabase o administrador nasce pela **API do GoTrue**
+(`/auth/v1/admin/users`), e não por `insert` em `auth.users`. O `insert` é o
+que `scripts/primeiro-acesso.sh` faz, e está certo para a VPS com o shim, onde
+não há GoTrue. Aqui há — e ele guarda invariantes próprios (`aud`, `role`,
+confirmação de e-mail, o bloco de provedores) que um `insert` à mão não
+preenche. O usuário ficaria no banco, parecendo existir, e o login responderia
+`Invalid login credentials` sem nada que apontasse a causa.
+
+**Este trecho não foi executado contra um Supabase real** — não havia um
+disponível no ambiente em que o script foi escrito. O resto do script foi, do
+banco vazio às 64 migrações e às 8 conferências. Se a criação do usuário
+falhar, o erro do GoTrue é repassado inteiro (código e corpo), e o caminho
+manual é criar o usuário pelo painel, em **Authentication › Users**, com
+`app_metadata` contendo `tenant_id`, e depois inserir a linha em
+`public.profiles`.
+
+---
+
 ## 8. Backup para FORA da VPS
 
 > **Backup que mora no mesmo disco do banco é cópia, não backup.** Se a VPS
