@@ -143,6 +143,10 @@ describe('menu do protótipo × menu da aplicação', () => {
          produto — cobrar dela uma rota em `NAV_GROUPS` seria exigir que a
          aplicação tivesse uma tela que mostra fotos de si mesma. */
       'Telas da aplicação',
+      /* O dicionário de dados e os artefatos SQL. Mesma natureza: é sobre o
+         schema, não uma tela do produto. Quem cobra que ele acompanhe o banco
+         é o gerador, com `--conferir`, e não este teste. */
+      'Banco de dados',
       'Minha conta',
     ])
     const app = new Set(menuDaAplicacao().map((i) => i.rotulo))

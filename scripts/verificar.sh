@@ -182,6 +182,20 @@ else
   falhas=$((falhas+1))
 fi
 
+# Os artefatos SQL do banco são GERADOS do schema vivo. Este passo regera para
+# uma pasta temporária e compara: vermelho no dia em que alguém mexeu numa
+# migração e não regerou. Sem ele, `docs/banco/` envelheceria em silêncio como
+# qualquer outra cópia — que é o defeito que quatro testes desta base já
+# existem para impedir.
+if PGPASSWORD="${PGPASSWORD:-postgres}" python3 scripts/gerar-artefatos-do-banco.py --conferir \
+     > "$TMP/artefatos.log" 2>&1; then
+  marcar 'artefatos do banco' 'ok' "$(tail -1 "$TMP/artefatos.log" | sed 's/^ *//')"
+else
+  cp "$TMP/artefatos.log" "$GUARDA/artefatos-do-banco.log"
+  marcar 'artefatos do banco' 'FALHOU' "$(grep -m1 'DIVERGEM' "$TMP/artefatos.log")"
+  falhas=$((falhas+1))
+fi
+
 # -----------------------------------------------------------------------------
 titulo '3. O artefato navegável'
 # -----------------------------------------------------------------------------

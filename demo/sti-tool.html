@@ -4258,6 +4258,217 @@
       e é por isso que a semente pode ser versionada.</p>`;
   };
 
+
+  /*
+   * BANCO DE DADOS — o dicionário, lido do schema e não escrito à mão.
+   *
+   * De onde vem o conteúdo
+   * ----------------------
+   * `dicionario.json` é GERADO por `scripts/gerar-artefatos-do-banco.py`, que
+   * lê o catálogo do próprio PostgreSQL num banco feito só das 64 migrações.
+   * Não há cópia a envelhecer: há uma leitura. `npm test` fica vermelho quando
+   * o arquivo e o schema divergem.
+   *
+   * Por que carregado e não embutido
+   * --------------------------------
+   * São 270 KB de dicionário. Embutidos, pesariam em toda abertura da
+   * ferramenta para uma tela que a maioria das visitas não abre. Carregados sob
+   * demanda, custam zero até alguém clicar — e o estado de carregando é
+   * desenhado, não um nada.
+   *
+   * O QUE NÃO EXISTE NESTE BANCO, dito aqui porque a ausência é decisão:
+   * `package` é construção do Oracle e o PostgreSQL não a tem — o equivalente é
+   * o esquema `app`, que agrupa a regra. Não há `procedure` (zero) nem cursor
+   * explícito; os catorze cursores são IMPLÍCITOS, dos laços
+   * `for ... in select` do PL/pgSQL.
+   */
+  let DICIONARIO = null;
+  let dicionarioErro = null;
+  let carregandoDicionario = false;
+  let filtroBanco = '';
+  let tabelaAberta = null;
+
+  function carregarDicionario() {
+    if (DICIONARIO || carregandoDicionario) return;
+    carregandoDicionario = true;
+    fetch('dicionario.json')
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(d => { DICIONARIO = d; carregandoDicionario = false; render(); })
+      .catch(e => {
+        /* O erro diz a CAUSA e o caminho, não "algo deu errado": aberto como
+           arquivo local sem o `dicionario.json` ao lado, o fetch falha e a
+           pessoa precisa saber que falta um arquivo, não que a tela quebrou. */
+        dicionarioErro = String(e.message || e);
+        carregandoDicionario = false;
+        render();
+      });
+  }
+
+  const ARQUIVOS_SQL = [
+    ['00-esquemas-e-extensoes.sql', 'O esquema `app`, as extensões e as funções que as próprias restrições `check` chamam. Vem primeiro porque doze `check` chamam `app.eh_competencia`, e restrição que chama função inexistente é recusada na hora.'],
+    ['01-tabelas-e-relacionamentos.sql', 'As 125 tabelas, com as sequências antes de quem as usa e as 354 chaves estrangeiras no fim — a ordem entre 125 tabelas tem ciclo, e separar as duas coisas é o que torna o arquivo executável de cima para baixo.'],
+    ['02-indices.sql', 'Os índices próprios. Os que o PostgreSQL cria sozinho para sustentar chave primária e unicidade ficam de fora: já estão na constraint que os pede.'],
+    ['03-funcoes-e-gatilhos.sql', 'As 211 funções e os 189 gatilhos. Abre com `check_function_bodies = off` porque função SQL tem o corpo validado na criação, e ordenar 211 funções por dependência é um grafo que muda a cada entrega.'],
+    ['04-rls-e-policies.sql', 'O isolamento entre empresas, e ele mora só aqui: `enable` e `force` por tabela, e as 278 policies.'],
+    ['05-views.sql', 'As 37 views, em ordem de dependência e todas com `security_invoker` — sem ele a view roda como `postgres`, que ignora RLS.'],
+    ['06-dados-iniciais.sql', 'Só catálogo: permissões, planos, transições de estado válidas e o bucket de anexos. Nenhum dado de empresa — a semente de desenvolvimento não entra aqui.'],
+  ];
+
+  function tabelasFiltradas() {
+    const q = filtroBanco.trim().toLowerCase();
+    if (!q) return DICIONARIO.tabelas;
+    return DICIONARIO.tabelas.filter(t =>
+      t.nome.includes(q) ||
+      (t.comentario || '').toLowerCase().includes(q) ||
+      t.colunas.some(c => c.nome.includes(q) || (c.fk || '').includes(q)));
+  }
+
+  function linhaDaTabela(t) {
+    const aberta = tabelaAberta === t.nome;
+    const selo = t.multiempresa
+      ? '<span class="pill" data-tone="ok">multiempresa</span>'
+      : '<span class="pill">catálogo global</span>';
+    const rls = t.rls
+      ? `<span class="pill" data-tone="${t.force ? 'ok' : 'warn'}">RLS${t.force ? ' + force' : ' sem force'}</span>`
+      : '<span class="pill" data-tone="breach">sem RLS</span>';
+    return `
+      <div class="card" style="margin-bottom:.5rem"><div class="card-body" style="padding:.7rem .9rem">
+        <div role="button" tabindex="0" data-tabela="${esc(t.nome)}"
+             aria-expanded="${aberta}"
+             aria-label="${aberta ? 'Fechar' : 'Abrir'} as colunas de ${esc(t.nome)}"
+             style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;cursor:pointer">
+          <span class="mono strong" style="flex:1;min-width:12rem">${aberta ? '▾' : '▸'} ${esc(t.nome)}</span>
+          <span class="pill">${t.colunas.length} colunas</span>
+          ${selo}${rls}
+          <span class="pill">${t.policies} policies</span>
+          <span class="pill">${t.indices} índices</span>
+          ${t.gatilhos ? `<span class="pill">${t.gatilhos} gatilhos</span>` : ''}
+        </div>
+        ${t.comentario ? `<p class="dim" style="margin:.45rem 0 0">${esc(t.comentario)}</p>` : ''}
+        ${!aberta ? '' : `
+        <div class="table-wrap" style="margin-top:.7rem"><table>
+          <thead><tr><th>Coluna</th><th>Tipo</th><th>Nulo</th><th>Padrão</th><th>Aponta para</th></tr></thead>
+          <tbody>${t.colunas.map(c => `<tr>
+            <td class="mono">${c.pk ? '<span class="pill" data-tone="info">PK</span> ' : ''}${esc(c.nome)}</td>
+            <td class="muted mono">${esc(c.tipo)}</td>
+            <td class="muted">${c.nulo ? 'sim' : '<strong>não</strong>'}</td>
+            <td class="muted mono" style="max-width:18rem;overflow:hidden;text-overflow:ellipsis">${esc(c.padrao || '—')}</td>
+            <td class="muted mono">${esc(c.fk || '—')}</td>
+          </tr>`).join('')}</tbody></table></div>`}
+      </div></div>`;
+  }
+
+  views.banco = () => {
+    if (dicionarioErro) {
+      return `
+        <div class="page-head"><div><p class="eyebrow">A ferramenta</p><h1>Banco de dados</h1></div></div>
+        <div class="card"><div class="card-body">
+          <h2 style="margin-top:0">O dicionário não carregou</h2>
+          <p class="dim">Falta <span class="mono">dicionario.json</span> ao lado desta página
+          (<span class="mono">${esc(dicionarioErro)}</span>). Ele é gerado por
+          <span class="mono">scripts/gerar-artefatos-do-banco.py</span> e publicado junto com o
+          artefato — abrindo o arquivo solto, sem a pasta ao lado, ele não existe.</p>
+        </div></div>`;
+    }
+    if (!DICIONARIO) {
+      carregarDicionario();
+      return `
+        <div class="page-head"><div><p class="eyebrow">A ferramenta</p><h1>Banco de dados</h1>
+          <p class="lede">Lendo o dicionário…</p></div></div>
+        <div class="card"><div class="card-body"><p class="dim">São 125 tabelas e 2058 colunas,
+        carregadas sob demanda para não pesar em quem nunca abre esta tela.</p></div></div>`;
+    }
+
+    const r = DICIONARIO.resumo;
+    const lista = tabelasFiltradas();
+    return `
+      <div class="page-head"><div><p class="eyebrow">A ferramenta</p><h1>Banco de dados</h1>
+        <p class="lede">O dicionário é <strong>lido do schema</strong>, não escrito: um gerador
+        pergunta ao catálogo do PostgreSQL, num banco feito só das 64 migrações. A suíte fica
+        vermelha quando este arquivo e o banco divergem.</p></div></div>
+
+      <div class="tiles" style="margin-bottom:1.25rem">
+        ${tile('Tabelas', r.tabelas, r.views + ' views')}
+        ${tile('Colunas', r.colunas, r.chaves_estrangeiras + ' chaves estrangeiras')}
+        ${tile('Índices', r.indices, 'fora os de chave e unicidade')}
+        ${tile('Funções', r.funcoes, r.gatilhos + ' gatilhos')}
+        ${tile('Policies', r.policies, 'o isolamento entre empresas')}
+      </div>
+
+      <div class="card" style="margin-bottom:1.25rem"><div class="card-body">
+        <h2 style="margin-top:0">O que este banco NÃO tem, e por quê</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Construção</th><th>Quantas</th><th>Por quê</th></tr></thead>
+          <tbody>
+            <tr><td class="strong">package</td><td class="mono">—</td>
+                <td class="muted">É construção do Oracle; o PostgreSQL não a tem. O equivalente
+                aqui é o esquema <span class="mono">app</span>, que agrupa a regra e a esconde
+                de <span class="mono">public</span>.</td></tr>
+            <tr><td class="strong">procedure</td><td class="mono">${r.procedures}</td>
+                <td class="muted">Tudo é função. <span class="mono">procedure</span> só se paga
+                quando se precisa de <span class="mono">commit</span> no meio, e nenhuma regra
+                daqui precisa — todas rodam dentro da transação de quem chamou.</td></tr>
+            <tr><td class="strong">cursor explícito</td><td class="mono">0</td>
+                <td class="muted">Há <strong>${r.cursores_implicitos}</strong> cursores
+                <em>implícitos</em>, dos laços <span class="mono">for … in select</span> do
+                PL/pgSQL. Declarar um à mão só se justificaria para percorrer resultado grande
+                com controle de posição, e não há caso desses.</td></tr>
+          </tbody></table></div>
+      </div></div>
+
+      <h2 style="margin:1.5rem 0 .6rem">Os arquivos, na ordem em que rodam</h2>
+      <p class="dim" style="margin:0 0 .7rem">Executados de cima para baixo contra um banco
+      vazio, eles reproduzem o schema inteiro — foi medido: o banco resultante tem as mesmas
+      125 tabelas, 907 restrições e 278 policies, e passa na conferência de produção.</p>
+      ${ARQUIVOS_SQL.map(([nome, oque]) => `
+        <div class="card" style="margin-bottom:.5rem"><div class="card-body" style="padding:.7rem .9rem">
+          <p class="mono strong" style="margin:0 0 .25rem">docs/banco/${esc(nome)}</p>
+          <p class="dim" style="margin:0">${esc(oque)}</p>
+        </div></div>`).join('')}
+
+      <h2 style="margin:1.75rem 0 .6rem">Dicionário de dados</h2>
+      <p class="dim" style="margin:0 0 .7rem">Clique numa tabela para ver as colunas. A busca
+      alcança nome de tabela, nome de coluna e destino de chave estrangeira.</p>
+      <input type="search" id="busca-banco" value="${esc(filtroBanco)}"
+             placeholder="tabela, coluna ou destino de chave…"
+             aria-label="Buscar no dicionário de dados"
+             style="width:100%;max-width:28rem;margin-bottom:.8rem">
+      <p class="dim" style="margin:0 0 .6rem"><span data-banco-conta>${lista.length}</span>
+        de ${r.tabelas} tabelas</p>
+      <div data-banco-lista>${listaDoBanco()}</div>`;
+  };
+
+  /*
+   * A LISTA SE REPINTA SOZINHA, sem passar pelo `render()` da tela inteira.
+   *
+   * Re-renderizar tudo a cada tecla tiraria o foco do campo de busca no meio
+   * da digitação — a pessoa escreve "tick", perde o foco, e as letras
+   * seguintes vão para lugar nenhum. É o mesmo motivo pelo qual a busca do
+   * mapa repinta só o marcador e a lista.
+   */
+  function listaDoBanco() {
+    const lista = tabelasFiltradas();
+    if (!lista.length) {
+      return `<div class="card"><div class="card-body"><p class="dim" style="margin:0">
+        Nenhuma tabela, coluna ou chave estrangeira casa com
+        <span class="mono">${esc(filtroBanco)}</span>.</p></div></div>`;
+    }
+    return lista.map(linhaDaTabela).join('');
+  }
+
+  function repintarBanco() {
+    const alvo = document.querySelector('[data-banco-lista]');
+    if (!alvo) return;
+    alvo.innerHTML = listaDoBanco();
+    const conta = document.querySelector('[data-banco-conta]');
+    if (conta) conta.textContent = String(tabelasFiltradas().length);
+  }
+
+  function alternarTabela(nome) {
+    tabelaAberta = tabelaAberta === nome ? null : nome;
+    repintarBanco();
+  }
+
   views.satisfacao = () => {
     const encerrados = db.tickets.filter(t => t.status === 'resolved' || t.status === 'closed');
     const avaliados = encerrados.filter(t => typeof t.rating === 'number');
@@ -8328,6 +8539,7 @@
       ['menu','Mapa do menu',false,null],
       ['arquivo','Peças incorporadas',false,null],
       ['telas','Telas da aplicação',true,null],
+      ['banco','Banco de dados',true,null],
     ]],
     ['Atendimento', [
       ['tickets','Tickets',false,'helpdesk.tickets.ver'],
@@ -8691,6 +8903,8 @@
   document.getElementById('mode-wall').addEventListener('click', () => setMode(true));
   /* Delegado no documento porque o botão nasce e morre a cada render da tela. */
   document.addEventListener('click', (ev) => {
+    const linhaBanco = ev.target.closest && ev.target.closest('[data-tabela]');
+    if (linhaBanco) { alternarTabela(linhaBanco.dataset.tabela); return; }
     if (ev.target.closest('#tv-abrir')) setMode(true);
   });
   /* Trocar a pessoa da sessão recarrega as concessões e re-renderiza. É o
@@ -8750,6 +8964,12 @@
   });
 
   document.addEventListener('keydown', e => {
+    /* Enter e Espaço no gatilho da tabela: `role="button"` sem teclado é
+       `div` com `onclick` disfarçado. O Espaço também cancela a rolagem, que
+       é o que um botão de verdade faz. */
+    const gatilhoBanco = (e.key === 'Enter' || e.key === ' ')
+      && e.target.closest && e.target.closest('[data-tabela]');
+    if (gatilhoBanco) { e.preventDefault(); alternarTabela(gatilhoBanco.dataset.tabela); return; }
     if (e.key === 'Escape') {
       if (document.querySelector('.modal')) closeModal();
       else if (document.querySelector('.drawer')) closeDrawer();
@@ -9958,6 +10178,9 @@
 
   document.addEventListener('input', e => {
     const T = e.target;
+    /* Dicionário de dados: repinta só a lista, para não tirar o foco do campo
+       no meio da digitação. */
+    if (T.id === 'busca-banco') { filtroBanco = T.value; repintarBanco(); return; }
     if (['qm-w0','qm-w1','qm-w2'].includes(T.id)) {
       document.getElementById(T.id + 'v').textContent = T.value; return;
     }

@@ -50,3 +50,7 @@ agente/dist/
 # Saída das suítes que reprovaram em `scripts/verificar.sh`. Guardada porque
 # "FALHOU" sem o log faz a investigação recomeçar do zero a cada varredura.
 .verificacao/
+
+# Resto de execução do gerador de artefatos do banco.
+__pycache__/
+*.pyc
